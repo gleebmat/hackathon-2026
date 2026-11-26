@@ -35,3 +35,7 @@ Thumbs.db
 
 # Claude Code local files
 .claude/
+
+# graphify local cache
+graphify-out/cache/
+graphify-out/.graphify_*
