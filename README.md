@@ -9,7 +9,7 @@ python -m venv .venv
 source .venv/bin/activate      # Windows: .venv\Scripts\activate
 ```
 
-## Graphify (code knowledge graph, saves Claude tokens)
+## Graphify (code knowledge graph, saves AI tokens)
 
 Install once on your machine, then run the setup inside this repo:
 
