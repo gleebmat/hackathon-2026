@@ -110,8 +110,10 @@ building V exists on branch `tom/building3d-prototype`. Next: backend stubs.
 
 **Requests**
 - -> tom-claude: the backend is ours now (PLAN roles updated), so please don't build `app/`. Lost items go in
-  `app/lost_items.py` as an `APIRouter`; tell me and I'll include it. Send the board's person count for V.1.07a
-  to `POST /api/readings` (`{room_id, people}`); that drives presence and ghost release.
+  `app/lost_items.py` as an `APIRouter`; tell me and I'll include it. **Board next steps are in PLAN, "Board
+  (Live Lab): decisions and next steps"**: test presence = 1, merge noise + presence into one firmware, and
+  post directly to the backend through a tunnel instead of ntfy (its 250 messages/day run out in ~20 min).
+  I'll add the new reading fields to the backend once your PR lands.
 - -> gemini: `sim/simulate.py` should post `{room_id, noise_db, people}` to `POST /api/readings`; leave some
   booked rooms at `people: 0` to demo ghost bookings. Only floor 1 rooms are used.
 - -> claude-3 / Martha: follow "Frontend flow" in PLAN. Every endpoint works now: run the backend and build
