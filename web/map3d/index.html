@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AAU Campus 3D</title>
+<style>
+  :root { --bg1: #1b2433; --bg2: #0b0f17; --card: rgba(255,255,255,.94); --ink: #1d2430; --muted: #6a7686; --accent: #2a8fb0; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; font: 15px/1.4 system-ui, sans-serif; color: var(--ink);
+    background: radial-gradient(ellipse at 50% 35%, var(--bg1), var(--bg2)); overflow: hidden; }
+  #scene { position: fixed; inset: 0; }
+  .bar { position: fixed; top: 16px; left: 16px; right: 16px; display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .bar input { width: 260px; max-width: 60vw; padding: 10px 14px; border-radius: 10px; border: 0; font: inherit; background: var(--card); }
+  .bar button { padding: 10px 14px; border-radius: 10px; border: 0; font: inherit; cursor: pointer; background: var(--card); color: var(--ink); }
+  .bar button.on { background: var(--accent); color: #fff; }
+  .msg { color: #ffb4ae; font-size: 14px; }
+  .group { display: inline-flex; gap: 2px; padding: 3px; border-radius: 12px; background: rgba(255,255,255,.18); }
+  .group button { padding: 7px 12px; }
+  .card { position: fixed; left: 16px; bottom: 16px; width: 280px; padding: 14px 16px; border-radius: 12px; background: var(--card); display: none; }
+  .card h2 { margin: 0 0 4px; font-size: 18px; }
+  .card .muted { color: var(--muted); font-size: 13px; }
+  .legend { position: fixed; right: 16px; bottom: 16px; padding: 10px 12px; border-radius: 12px; background: var(--card); font-size: 13px; }
+  .legend i { display: inline-block; width: 12px; height: 12px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; border: 1px solid #0002; }
+  #tip { position: fixed; pointer-events: none; padding: 4px 8px; border-radius: 6px; background: #000c; color: #fff; font-size: 12px; display: none; }
+</style>
+<script type="importmap">
+  { "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+                 "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/" } }
+</script>
+</head>
+<body>
+<div id="scene"></div>
+<div class="bar">
+  <input id="q" list="ids" placeholder="Search a room, e.g. HS 1 or V.1.07" autocomplete="off">
+  <datalist id="ids"></datalist>
+  <button id="all">Show all</button>
+  <span class="group" id="bldgs"></span>
+  <span class="group" id="floors"></span>
+  <button id="offices">Offices: hidden</button>
+  <span class="msg" id="msg"></span>
+</div>
+<div class="card" id="card"></div>
+<div class="legend">
+  <div><i style="background:#fff"></i>free</div><div><i style="background:#f5b642"></i>partly booked</div>
+  <div><i style="background:#e0483e"></i>fully booked</div><div><i style="background:#2a8fb0"></i>seminar room</div>
+  <div><i style="background:#d9dde3"></i>office / other</div>
+</div>
+<div id="tip"></div>
+<script type="module">
+  import { createBuilding } from "./building3d.js";
+  const data = await (await fetch("campus.json")).json();
+  const b = createBuilding(document.getElementById("scene"), data, { controls: false });   // this page has its own buttons
+  const allRooms = data.buildings.flatMap((bd) => bd.rooms);
+  const byId = new Map(allRooms.map((r) => [r.id, r]));
+  const $ = (id) => document.getElementById(id);
+  $("ids").innerHTML = allRooms.filter((r) => r.bookable).map((r) => `<option value="${r.label ?? r.id}">${r.label ? r.id + " · " : ""}${r.name}</option>`).join("");
+  let offices = false, building = null;
+  $("offices").onclick = () => { offices = !offices; b.setOfficesVisible(offices); $("offices").textContent = `Offices: ${offices ? "shown" : "hidden"}`; $("offices").classList.toggle("on", offices); };
+
+  // Building selector (All / V / N) and floor selector for the selected building
+  const mark = (groupId, btn) => $(groupId).querySelectorAll("button").forEach((x) => x.classList.toggle("on", x === btn));
+  const renderFloors = () => {
+    const sel = b.buildings().filter((x) => !building || x.id === building || x.group === building);
+    const list = [...new Set(sel.flatMap((x) => x.floors))].sort();
+    $("floors").innerHTML = `<button class="on">All floors</button>` +
+      [...list].reverse().map((f) => `<button data-f="${f}">Floor ${f}</button>`).join("");
+    $("floors").querySelectorAll("button").forEach((btn) => btn.onclick = () => {
+      mark("floors", btn);
+      b.setFloor(btn.dataset.f === undefined ? null : btn.dataset.f);
+    });
+  };
+  $("bldgs").innerHTML = `<button class="on">All buildings</button>` +
+    b.buildings().filter((x) => !x.group).map((x) => `<button data-b="${x.id}" title="${x.name}">${x.id}</button>`).join("") +
+    [...new Set(b.buildings().map((x) => x.group).filter(Boolean))].map((g) => `<button data-b="${g}" title="${g} Park">${g}</button>`).join("");
+  $("bldgs").querySelectorAll("button").forEach((btn) => btn.onclick = () => {
+    mark("bldgs", btn);
+    building = b.setBuilding(btn.dataset.b ?? null);
+    renderFloors();
+    $("card").style.display = "none";
+  });
+  renderFloors();
+
+  // sample statuses until the backend exists
+  const demo = { "V.1.07": { status: "partial", noise_class: "moderate" }, "V.1.01": { status: "full" },
+                 "V.1.07a": { status: "partial", noise_class: "quiet", live: true }, "V.0.20": { status: "full", noise_class: "loud" },
+                 "V.1.27": { status: "free" }, "V.1.34": { status: "partial" },
+                 "N.1.43": { status: "full" }, "N.1.44": { status: "partial", noise_class: "loud" }, "N.0.13": { status: "partial" } };
+  for (const [id, s] of Object.entries(demo)) b.setStatus(id, s);
+
+  const show = (id) => {
+    const r = byId.get(id), s = demo[id] || {};
+    $("card").style.display = "block";
+    $("card").innerHTML = `<h2>${r.label ?? r.id}</h2><div>${r.label ? r.id + " · " : ""}${r.name}</div>
+      <div class="muted">Floor ${r.floor} · ${r.w.toFixed(1)} × ${r.d.toFixed(1)} m · ${r.capacity ? r.capacity + " seats" : "no seats"}</div>
+      <div class="muted">${r.bookable ? "Bookable" + (s.status ? " · " + s.status : "") : "Not bookable"}${s.live ? " · LIVE noise from PSOC Edge" : ""}</div>`;
+  };
+  const search = () => {
+    const key = b.focusRoom($("q").value);
+    $("msg").textContent = key ? "" : `No room "${$("q").value}" found`;
+    if (key) show(key);
+  };
+  $("q").addEventListener("keydown", (e) => e.key === "Enter" && search());
+  $("q").addEventListener("change", search);
+  $("all").onclick = () => { b.showAll(); renderFloors(); $("card").style.display = "none"; $("q").value = ""; $("msg").textContent = ""; };
+  b.onRoomClick((id) => { $("q").value = id; show(id); });
+  b.onRoomHover((id, e) => {
+    const t = $("tip");
+    t.style.display = id ? "block" : "none";
+    if (id) { const r = byId.get(id); t.textContent = `${r.label ? r.label + " · " : ""}${id} · ${r.name}`; t.style.left = e.clientX + 12 + "px"; t.style.top = e.clientY + 12 + "px"; }
+  });
+</script>
+</body>
+</html>
