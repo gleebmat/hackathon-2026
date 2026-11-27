@@ -313,7 +313,7 @@ def build_s():
 REAL_ROOMS = [  # (building, floor, px, py, real id, label shown on the map, name)
     ("Z", 1, 383, 367, "Z.1.10", "HS 4", "Hörsaal 4"), ("Z", 1, 438, 372, "Z.1.11", "HS 3", "Hörsaal 3"),
     ("Z", 1, 561, 358, "Z.1.15", "HS 2", "Hörsaal 2 - Infineon"), ("Z", 1, 616, 350, "Z.1.17", "HS 1", "Hörsaal 1"),
-    ("Z", 1, 697, 361, "Z.1.29", None, "Seminar room"), ("Z", 1, 272, 491, "Z.1.08", None, "Seminar room"),
+    ("Z", 1, 272, 491, "Z.1.08", None, "Seminar room"),   # Z.1.04 stays as generated: it is the board room (BOARD_ROOM)
     ("Z", 1, 327, 487, "Z.1.09", None, "Seminar room"),
     ("S", 0, 476, 750, "S.0.26", "HS A", "Hörsaal A"), ("S", 1, 299, 727, "S.0.22", "HS B", "Hörsaal B"),
     ("S", 1, 632, 697, "S.0.34", "HS C", "Hörsaal C"),

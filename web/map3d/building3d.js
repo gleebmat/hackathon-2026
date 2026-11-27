@@ -15,7 +15,13 @@ const STATUS_COLOR = { free: 0xffffff, partial: 0xf5b642, full: 0xe0483e, ghost:
 const HIDDEN_BY_DEFAULT = new Set(["office", "wc", "foyer"]);  // "offices" toggle
 const SLAB = 0.35;
 
-export function createBuilding(el, input) {
+/**
+ * @param el     container element (the canvas fills it)
+ * @param input  campus.json ({buildings: [...]}) or a single building
+ * @param opts   {controls: true}: draws a small building / floor selector inside the container. Pass
+ *               {controls: false} if the page has its own buttons (they should call setBuilding / setFloor).
+ */
+export function createBuilding(el, input, opts = {}) {
   const buildings = input.buildings ?? [{ id: input.building, ...input,
     blocks: [{ x: 0, z: 0, w: input.outer.w, d: input.outer.d, courtyard: input.courtyard }] }];
 
@@ -308,7 +314,7 @@ export function createBuilding(el, input) {
     return s;
   };
 
-  return {
+  const api = {
     rooms: () => [...rooms.values()].map((r) => r.data),
     setStatus(id, { status, noise_class, live } = {}) {
       const r = rooms.get(id);
@@ -370,4 +376,55 @@ export function createBuilding(el, input) {
     onRoomClick(cb) { clickCb = cb; },
     onRoomHover(cb) { hoverCb = cb; },
   };
+  if (opts.controls !== false) mountControls(el, api);
+  return api;
+}
+
+// Built-in building / floor selector, so any page that embeds the map can switch floors without its own UI.
+function mountControls(el, api) {
+  if (getComputedStyle(el).position === "static") el.style.position = "relative";
+  const box = document.createElement("div");
+  box.style.cssText = "position:absolute;left:12px;bottom:12px;display:flex;flex-direction:column;gap:6px;" +
+    "font:12px/1 system-ui,sans-serif;z-index:5;pointer-events:none";
+  el.appendChild(box);
+  let building = null, floor = null;
+  const row = () => {
+    const r = document.createElement("div");
+    r.style.cssText = "display:flex;gap:3px;flex-wrap:wrap;padding:3px;border-radius:10px;" +
+      "background:rgba(15,20,30,.55);pointer-events:auto";
+    box.appendChild(r);
+    return r;
+  };
+  const bRow = row(), fRow = row();
+  const button = (parent, text, on, title, click) => {
+    const b = document.createElement("button");
+    b.textContent = text;
+    b.title = title ?? "";
+    b.style.cssText = "border:0;border-radius:7px;padding:6px 9px;cursor:pointer;font:inherit;" +
+      (on ? "background:#2a8fb0;color:#fff" : "background:rgba(255,255,255,.9);color:#1d2430");
+    b.onclick = click;
+    parent.appendChild(b);
+  };
+  const render = () => {
+    bRow.replaceChildren(); fRow.replaceChildren();
+    button(bRow, "All", building === null, "All buildings", () => { building = api.setBuilding(null); floor = null; render(); });
+    for (const b of api.buildings()) {
+      button(bRow, b.id, building === b.id, b.name, () => { building = api.setBuilding(b.id); floor = null; render(); });
+    }
+    const floors = [...new Set(api.buildings().filter((b) => !building || b.id === building).flatMap((b) => b.floors))]
+      .sort((a, b) => b - a);
+    button(fRow, "All floors", floor === null, "Show every floor", () => { floor = null; api.setFloor(null); render(); });
+    for (const f of floors) {
+      button(fRow, `Floor ${f}`, floor === f, `Floor ${f} (floors above are hidden)`, () => { floor = f; api.setFloor(f); render(); });
+    }
+  };
+  // keep the selector in sync when the page calls the API directly
+  for (const [name, after] of [["setBuilding", (id) => { building = id ?? null; floor = null; }],
+                               ["setFloor", (_, n) => { floor = n === null || n === undefined ? null : Number(n); }],
+                               ["showAll", () => { floor = null; }],
+                               ["focusRoom", (key) => { if (!key) return; floor = null; if (building && key.split(".")[0] !== building) building = null; }]]) {
+    const orig = api[name];
+    api[name] = (...args) => { const res = orig(...args); after(res, args[0]); render(); return res; };
+  }
+  render();
 }

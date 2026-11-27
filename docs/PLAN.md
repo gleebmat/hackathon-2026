@@ -210,12 +210,12 @@ The backend already serves it at **http://localhost:8000/map3d/**. It isn't wire
 
 ```js
 import { createBuilding } from "./building3d.js";      // path relative to web/map3d/
-const b = createBuilding(containerEl, await (await fetch("campus.json")).json());
+const b = createBuilding(containerEl, await (await fetch("campus.json")).json());   // 3rd arg {controls: false} hides the built-in building/floor selector
 b.setStatus(roomId, {status, noise_class, live});   // free=white, partial=amber, full=red, ghost=light violet, closed=grey; loud=red pulse; live=LIVE badge; label colour follows
 b.focusRoom(roomId);     // flies to the room, which glows and pulses while the rest dims; floors above it are hidden; returns the id or false
 b.showAll();             // clears the highlight; back to the current building, all floors
 b.setBuilding(id|null);  // isolate one building ("V", "N", "Z", "L", "S") or show all
-b.setFloor(n | null);    // floors 0..n of the visible building(s), or all floors
+b.setFloor(n | null);    // floors 0..n of the visible building(s), or all floors (the glass case always stays)
 b.setOfficesVisible(bool);
 b.onRoomClick(cb);       // cb(roomId)
 b.onRoomHover(cb);       // cb(roomId | null, pointerEvent)

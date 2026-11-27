@@ -50,7 +50,7 @@
 <script type="module">
   import { createBuilding } from "./building3d.js";
   const data = await (await fetch("campus.json")).json();
-  const b = createBuilding(document.getElementById("scene"), data);
+  const b = createBuilding(document.getElementById("scene"), data, { controls: false });   // this page has its own buttons
   const allRooms = data.buildings.flatMap((bd) => bd.rooms);
   const byId = new Map(allRooms.map((r) => [r.id, r]));
   const $ = (id) => document.getElementById(id);
