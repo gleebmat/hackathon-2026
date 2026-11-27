@@ -138,6 +138,8 @@ def build_z():
 
     for floor in (0, 1, 2):
         for x0, y0, x1, y1, kind, name in Z_ROOMS:
+            if name == "Lecture hall" and floor != 1:    # HS 1-4 are on floor 1; don't stack copies on them
+                continue
             add(floor, *z_rect(x0, y0, x1, y1), kind, name)
         for x0, y0, x1, y1 in Z_OFFICE_ROWS:   # split each row into ~5 m offices along its long side
             cx, cz, w, d = z_rect(x0, y0, x1, y1)
@@ -150,6 +152,7 @@ def build_z():
                     round(length / k, 2) if along_x else w, d if along_x else round(length / k, 2), "office", "Office")
     cx, cz, w, d = z_rect(525, 485, 690, 685)   # Aula floor area east of building L (L stands inside the hall)
     add(0, cx, cz, w, d, "hall", "Aula")     # the big glass hall south of Z, ground floor
+    add(1, *z_rect(542, 325, 580, 392), "seminar", "Hörsaal 2 - Infineon")   # HS 2, between HS 3 and HS 1
     connectors = [dict(zip("xzwd", z_rect(*c)), floors=[0, 1]) for c in Z_CONNECTORS]
     snap_connectors(connectors, build_n()["blocks"], blocks)
     return {"id": "Z", "name": "Zentralgebäude", "floors": [0, 1, 2], "floor_height": 4.0,
@@ -178,13 +181,24 @@ def build_wing(bid, name, segments, teal, floors, floor_height, extra=(), source
         blocks.append({"x": cx, "z": cz, "w": w, "d": d})
         north_d, corr = d * 0.38, d * 0.2
         south_d = d - north_d - corr
+        # halls that cover (nearly) the whole depth of the wing become one full-depth room
+        full = [(t[0] - t[2] / 2, t[0] + t[2] / 2) for t in teal_m
+                if t[3] >= 0.7 * d and abs(t[1] - cz) < d / 2 and cx - w / 2 < t[0] < cx + w / 2]
         for floor in floors:
+            hall_here = full if floor == 1 or len(floors) == 1 else []   # big halls are on floor 1 only
+            for f0, f1 in hall_here:
+                f0, f1 = max(f0, cx - w / 2), min(f1, cx + w / 2)
+                add(floor, (f0 + f1) / 2, cz, f1 - f0, d, "seminar", "Lecture hall")
             for rz, rd in ((cz - d / 2 + north_d / 2, north_d), (cz + d / 2 - south_d / 2, south_d)):
                 x0, x_end = cx - w / 2, cx + w / 2
-                spans = sorted((t[0] - t[2] / 2, t[0] + t[2] / 2) for t in teal_m
-                               if abs(t[1] - rz) < rd and t[0] + t[2] / 2 > x0 and t[0] - t[2] / 2 < x_end)
+                spans = sorted([(t[0] - t[2] / 2, t[0] + t[2] / 2) for t in teal_m
+                                if abs(t[1] - rz) < rd and t[0] + t[2] / 2 > x0 and t[0] - t[2] / 2 < x_end
+                                and t[3] < 0.7 * d] + hall_here)
                 while x_end - x0 > 1.5:
                     span = next((s for s in spans if s[0] <= x0 + 1.0 < s[1]), None)
+                    if span in hall_here:
+                        x0 = min(span[1], x_end)
+                        continue
                     if span:
                         x1 = min(span[1], x_end)
                         add(floor, (x0 + x1) / 2, rz, x1 - x0, rd, "seminar", "Lecture hall" if (x1 - x0) * rd > 60 else "Seminar room")
@@ -294,6 +308,48 @@ def build_s():
     return s
 
 
+# Real lecture halls (campusplan.aau.at search): matched by a point inside them (Z screenshot px) on a floor.
+# The named halls are two storeys tall: the floor above is cut open over them, so they stay visible from above.
+REAL_ROOMS = [  # (building, floor, px, py, real id, label shown on the map, name)
+    ("Z", 1, 383, 367, "Z.1.10", "HS 4", "Hörsaal 4"), ("Z", 1, 438, 372, "Z.1.11", "HS 3", "Hörsaal 3"),
+    ("Z", 1, 561, 358, "Z.1.15", "HS 2", "Hörsaal 2 - Infineon"), ("Z", 1, 616, 350, "Z.1.17", "HS 1", "Hörsaal 1"),
+    ("Z", 1, 697, 361, "Z.1.29", None, "Seminar room"), ("Z", 1, 272, 491, "Z.1.08", None, "Seminar room"),
+    ("Z", 1, 327, 487, "Z.1.09", None, "Seminar room"),
+    ("S", 0, 476, 750, "S.0.26", "HS A", "Hörsaal A"), ("S", 1, 299, 727, "S.0.22", "HS B", "Hörsaal B"),
+    ("S", 1, 632, 697, "S.0.34", "HS C", "Hörsaal C"),
+]
+
+
+def name_real_rooms(buildings):
+    from shapely.geometry import Point, Polygon, box
+    by_id = {b["id"]: b for b in buildings}
+    real_ids = {r[4] for r in REAL_ROOMS}
+    for bid, floor, px, py, rid, label, name in REAL_ROOMS:
+        pt = Point(*zm(px, py))
+        for r in by_id[bid]["rooms"]:
+            shape = Polygon(r["poly"]) if "poly" in r else box(r["x"] - r["w"] / 2, r["z"] - r["d"] / 2,
+                                                                  r["x"] + r["w"] / 2, r["z"] + r["d"] / 2)
+            if r["floor"] == floor and r["bookable"] and shape.contains(pt):
+                r.update(id=rid, name=name, real=True)
+                if label:
+                    r["label"] = label
+                    r["storeys"] = 2
+                break
+        else:
+            raise SystemExit(f"no room found for {rid}")
+    for b in buildings:                      # generated numbers must not collide with real ones
+        used = {r["id"] for r in b["rooms"]}
+        for r in b["rooms"]:
+            if r["id"] in real_ids and not r.get("real"):
+                k = 90
+                while f"{b['id']}.{r['floor']}.{k:02d}" in used:
+                    k += 1
+                r["id"] = f"{b['id']}.{r['floor']}.{k:02d}"
+                used.add(r["id"])
+        for r in b["rooms"]:
+            r.pop("real", None)
+
+
 def build_v():
     v = json.loads((HERE / "building_v_rooms.json").read_text(encoding="utf-8"))
     block = {"x": 0.0, "z": 0.0, "w": v["outer"]["w"], "d": v["outer"]["d"], "courtyard": v["courtyard"]}
@@ -307,8 +363,10 @@ def build_v():
 if __name__ == "__main__":
     campus = {"campus": "AAU Klagenfurt", "units": "metres; x east, z south; origin = centre of building V",
               "buildings": [build_v(), build_n(), build_z(), build_l(), build_s()]}
-    from resolve_overlaps import resolve_blocks, resolve_rooms   # needs shapely (uv run --with shapely)
+    from resolve_overlaps import resolve_blocks, resolve_connectors, resolve_rooms   # needs shapely
+    name_real_rooms(campus["buildings"])
     resolve_blocks(campus["buildings"])
+    resolve_connectors(campus["buildings"])
     print("dropped rooms:", resolve_rooms(campus["buildings"]))
     (HERE.parent.parent / "web" / "map3d" / "campus.json").write_text(json.dumps(campus, indent=1), encoding="utf-8")
     for b in campus["buildings"]:

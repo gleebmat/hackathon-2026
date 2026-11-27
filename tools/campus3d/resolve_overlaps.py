@@ -126,8 +126,9 @@ def _fit(r, region):
 def resolve_rooms(buildings):
     floors = sorted({r["floor"] for bd in buildings for r in bd["rooms"]})
     dropped = 0
+    taken = {f: Polygon() for f in range(min(floors), max(floors) + 3)}   # per floor; tall rooms fill several
     for f in floors:
-        occupied = Polygon()
+        occupied = taken[f]
         queue = [(bd, r) for bd in buildings for r in bd["rooms"] if r is not None and r["floor"] == f]
         queue.sort(key=lambda x: (-PRIORITY.get(x[1]["type"], 1), -_rpoly(x[1]).area))
         for bd, r in queue:
@@ -138,8 +139,24 @@ def resolve_rooms(buildings):
                 dropped += 1
                 continue
             bd["rooms"][idx] = fitted
-            occupied = occupied.union(geom.buffer(-0.05))
+            g = geom.buffer(-0.05)
+            occupied = occupied.union(g)
+            for k in range(1, fitted.get("storeys", 1)):          # a two-storey hall also blocks the floor above
+                taken[f + k] = taken[f + k].union(g)
     for bd in buildings:
         bd["rooms"] = [r for r in bd["rooms"] if r is not None]
         bd.pop("_footprint", None)
     return dropped
+
+
+def resolve_connectors(buildings):
+    """Trim every corridor to the open gap between buildings, so it ends flush at both walls.
+    Must run after resolve_blocks (needs the building outlines)."""
+    everything = unary_union([bd["_footprint"] for bd in buildings])
+    for bd in buildings:
+        for c in bd.get("connectors", []):
+            pieces = _pieces(_bpoly(c).difference(everything), 0.5)
+            if not pieces:
+                continue
+            x0, z0, x1, z1 = max(pieces, key=lambda g: g.area).bounds
+            c.update(x=round((x0 + x1) / 2, 2), z=round((z0 + z1) / 2, 2), w=round(x1 - x0, 2), d=round(z1 - z0, 2))

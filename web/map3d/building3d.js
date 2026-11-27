@@ -59,9 +59,22 @@ export function createBuilding(el, input) {
     s.closePath();
     return s;
   };
-  const slab = (b, y, hole, mat, thick = SLAB) => {
+  const inside = ([px, pz], pts) => {   // point in polygon (ray casting)
+    let hit = false;
+    for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+      const [xi, zi] = pts[i], [xj, zj] = pts[j];
+      if ((zi > pz) !== (zj > pz) && px < ((xj - xi) * (pz - zi)) / (zj - zi) + xi) hit = !hit;
+    }
+    return hit;
+  };
+  const roomCorners = (r) => r.poly ?? [[r.x - r.w / 2, r.z - r.d / 2], [r.x + r.w / 2, r.z - r.d / 2],
+                                        [r.x + r.w / 2, r.z + r.d / 2], [r.x - r.w / 2, r.z + r.d / 2]];
+  // `openings`: outlines of tall rooms below that pass through this slab (only those inside this block are cut)
+  const slab = (b, y, hole, mat, thick = SLAB, openings = []) => {
     const s = polyShape(corners(b));
-    for (const hp of b.holes ?? []) {   // footprints with holes (e.g. a hall wrapped around another building)
+    const cuts = openings.filter((o) => inside([o.reduce((a, p) => a + p[0], 0) / o.length,
+                                                  o.reduce((a, p) => a + p[1], 0) / o.length], corners(b)));
+    for (const hp of [...(b.holes ?? []), ...cuts]) {   // footprint holes (a hall around another building) + tall rooms
       const h = new THREE.Path();
       hp.forEach(([x, z], i) => (i ? h.lineTo(x, -z) : h.moveTo(x, -z)));
       h.closePath();
@@ -98,12 +111,13 @@ export function createBuilding(el, input) {
     r.text.material = lum > 0.82 ? textDark : textWhite;
   };
   const label3d = (font, r, h) => {
-    const g = new TextGeometry(r.id, { font, size: 1, height: TEXT_DEPTH, curveSegments: 3, bevelEnabled: false });
+    const g = new TextGeometry(r.label ?? r.id, { font, size: 1, height: TEXT_DEPTH, curveSegments: 3, bevelEnabled: false });
     g.computeBoundingBox();
     const bb = g.boundingBox, tw = bb.max.x - bb.min.x, th = bb.max.y - bb.min.y;
     g.translate(-(bb.min.x + tw / 2), -(bb.min.y + th / 2), 0);   // centre in the plane, base at z = 0
-    const long = Math.max(r.w, r.d), short = Math.min(r.w, r.d);
-    const s = Math.min((long * 0.95) / tw, (short * 0.72) / th, 3.2 / th);  // fill ~95% of the long side; letters ≤ 3.2 m
+    // text runs along `angle` (rooms on a curve) or along the longer side; size it to that side and the other one
+    const along = r.angle !== undefined ? r.w : Math.max(r.w, r.d), across = r.angle !== undefined ? r.d : Math.min(r.w, r.d);
+    const s = Math.min((along * 0.9) / tw, (across * 0.7) / th, 3.2 / th);  // fill ~90% of the room; letters ≤ 3.2 m
     const m = new THREE.Mesh(g, textWhite);
     m.scale.set(s, s, 1);                                          // depth stays TEXT_DEPTH
     m.rotation.x = -Math.PI / 2;                                   // lie flat, extruded upwards
@@ -131,7 +145,8 @@ export function createBuilding(el, input) {
       const g = new THREE.Group();
       for (const b of bd.blocks) {
         if ((b.open && f > 0) || (b.floors && !b.floors.includes(f))) continue;
-        g.add(slab(b, f * H, f > 0, slabMat));
+        const openings = bd.rooms.filter((r) => r.floor < f && f < r.floor + (r.storeys ?? 1)).map(roomCorners);
+        g.add(slab(b, f * H, f > 1, slabMat, SLAB, openings));   // courtyards open above floor 1 (atrium floor)
       }
       floorGroups.set(`${bd.id}:${f}`, g);
       scene.add(g);
@@ -161,7 +176,7 @@ export function createBuilding(el, input) {
       box(c.x, c.z, c.w, c.d, 0, c.floors.length * H, glass, shell, 0.5);
     }
     for (const r of bd.rooms) {
-      const isAtrium = r.type === "atrium", h = isAtrium ? 0.25 : H - 0.8;
+      const isAtrium = r.type === "atrium", h = isAtrium ? 0.25 : (r.storeys ?? 1) * H - 0.8;   // tall halls span floors
       const mat = new THREE.MeshStandardMaterial({ color: TYPE_COLOR[r.type] ?? 0xcccccc, roughness: 0.7,
         transparent: true, opacity: isAtrium ? 0.75 : 0.92 });
       let geo;
@@ -310,7 +325,8 @@ export function createBuilding(el, input) {
     },
     /** Highlight a room inside the model: it glows and pulses, the rest dims, the camera frames it with context. */
     focusRoom(id) {
-      const key = [...rooms.keys()].find((k) => k.toLowerCase() === String(id).trim().toLowerCase());
+      const norm = (v) => String(v ?? "").replace(/\s+/g, "").toLowerCase();   // "HS1" = "HS 1" = "hs 1"
+      const key = [...rooms.keys()].find((k) => norm(k) === norm(id) || norm(rooms.get(k).data.label) === norm(id));
       if (!key) return false;
       clearHighlight();
       const r = rooms.get(key);

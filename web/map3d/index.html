@@ -32,7 +32,7 @@
 <body>
 <div id="scene"></div>
 <div class="bar">
-  <input id="q" list="ids" placeholder="Search a room, e.g. V.1.07a" autocomplete="off">
+  <input id="q" list="ids" placeholder="Search a room, e.g. HS 1 or V.1.07" autocomplete="off">
   <datalist id="ids"></datalist>
   <button id="all">Show all</button>
   <span class="group" id="bldgs"></span>
@@ -54,7 +54,7 @@
   const allRooms = data.buildings.flatMap((bd) => bd.rooms);
   const byId = new Map(allRooms.map((r) => [r.id, r]));
   const $ = (id) => document.getElementById(id);
-  $("ids").innerHTML = allRooms.filter((r) => r.bookable).map((r) => `<option value="${r.id}">${r.name}</option>`).join("");
+  $("ids").innerHTML = allRooms.filter((r) => r.bookable).map((r) => `<option value="${r.label ?? r.id}">${r.label ? r.id + " · " : ""}${r.name}</option>`).join("");
   let offices = false, building = null;
   $("offices").onclick = () => { offices = !offices; b.setOfficesVisible(offices); $("offices").textContent = `Offices: ${offices ? "shown" : "hidden"}`; $("offices").classList.toggle("on", offices); };
 
@@ -91,7 +91,7 @@
   const show = (id) => {
     const r = byId.get(id), s = demo[id] || {};
     $("card").style.display = "block";
-    $("card").innerHTML = `<h2>${r.id}</h2><div>${r.name}</div>
+    $("card").innerHTML = `<h2>${r.label ?? r.id}</h2><div>${r.label ? r.id + " · " : ""}${r.name}</div>
       <div class="muted">Floor ${r.floor} · ${r.w.toFixed(1)} × ${r.d.toFixed(1)} m · ${r.capacity ? r.capacity + " seats" : "no seats"}</div>
       <div class="muted">${r.bookable ? "Bookable" + (s.status ? " · " + s.status : "") : "Not bookable"}${s.live ? " · LIVE noise from PSOC Edge" : ""}</div>`;
   };
@@ -107,7 +107,7 @@
   b.onRoomHover((id, e) => {
     const t = $("tip");
     t.style.display = id ? "block" : "none";
-    if (id) { t.textContent = `${id} · ${byId.get(id).name}`; t.style.left = e.clientX + 12 + "px"; t.style.top = e.clientY + 12 + "px"; }
+    if (id) { const r = byId.get(id); t.textContent = `${r.label ? r.label + " · " : ""}${id} · ${r.name}`; t.style.left = e.clientX + 12 + "px"; t.style.top = e.clientY + 12 + "px"; }
   });
 </script>
 </body>

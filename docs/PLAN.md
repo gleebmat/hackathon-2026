@@ -203,7 +203,7 @@ The backend already serves it at **http://localhost:8000/map3d/**. It isn't wire
 - **Buildings:** V, N, Z, L and S, from campusplan.aau.at, simplified, with overlaps removed. V's room numbers are
   real; N, Z, L and S numbers are generated (`N.1.44` …). Bookable rooms are seminar rooms, lecture halls, the
   Aula and the atrium. Offices are hidden by default.
-- **Data:** `campus.json` = `{buildings: [{id, name, floors, floor_height, blocks: [{x,z,w,d} | {poly, holes?, floors?, open?}], rooms: [{id, floor, x, z, w, d, poly?, angle?, capacity, type, bookable, name}], connectors?}]}`.
+- **Data:** `campus.json` = `{buildings: [{id, name, floors, floor_height, blocks: [{x,z,w,d} | {poly, holes?, floors?, open?}], rooms: [{id, label?, floor, storeys?, x, z, w, d, poly?, angle?, capacity, type, bookable, name}], connectors?}]}`. `label` is the main name shown on the map (HS 1-4, HS A-C; search accepts it, e.g. "HS1"), `storeys: 2` = a tall hall with the floor above cut open.
   Units are metres; the origin is the centre of V; x points east and z points south.
 - **Regenerate:** `uv run --with shapely python tools/campus3d/gen_campus.py`. It reads `building_v_rooms.json`
   and writes `web/map3d/campus.json`. The backend still reads `web/data/building_v.json`, so it is unaffected.
