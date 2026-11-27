@@ -15,8 +15,12 @@ This is a website for AAU students. A student logs in, finds a room in a **3D mo
   - **Purpose:** quiet study, group study, gaming, meeting, board games, event, or custom text.
   - **Sharing:** a partial booking means "others may join". Another student joins by booking the same room as
     partial with their number of people; all seats together never exceed the room's capacity.
-- **Ghost bookings:** if a room's sensor reports 0 people for the first 15 min of a booking, the booking is
-  released automatically. Until then the room shows as `ghost`.
+- **Ghost bookings:** the board (or the simulator) reports the people count. When a booked room is empty, a
+  10-minute timer starts: at the start of the booking, or when everyone leaves. If nobody is back when it runs
+  out, the booking is released and its time slots are free again. Meanwhile the room shows as `ghost` with the
+  release time. A sensor that goes silent for over 2 minutes never releases anything.
+- **Search:** typing a room number or name shows suggestions as you type (`107a`, `V.1.07a` and `atrium` all
+  find V.1.07a), like campusplan.aau.at.
 - **Noise detector for partial bookings:** every room shows a live noise level, so someone who wants silence can
   choose another room.
   - **V.1.07a is measured by the real PSOC Edge E84 microphone.** This already works (see `docs/LOG.md`,
@@ -60,20 +64,26 @@ web/ (static, Three.js from CDN) <-- JSON --> FastAPI + SQLite (app/) <-+ LiveNo
 ### `web/data/building_v.json` (gemini; read by the backend and by the 3D model)
 ```json
 {"building": "V", "outer": {"w": 60, "d": 40}, "courtyard": {"w": 30, "d": 16}, "floor_height": 4,
- "rooms": [{"id": "V.1.07a", "floor": 1, "x": 12, "z": -18, "w": 8, "d": 6, "capacity": 12, "name": "Seminar room"}]}
+ "rooms": [{"id": "V.1.07a", "floor": 1, "x": 12, "z": -18, "w": 8, "d": 6, "capacity": 12, "name": "Atrium"},
+           {"id": "V.1.05", "floor": 1, "x": 20, "z": -18, "w": 4, "d": 6, "name": "Büro", "bookable": false}]}
 ```
 - Units are metres. The origin is the building centre and `y` is up. `x`/`z` give the room centre on its floor.
-- Only floor 1 is used: roughly 10–12 rooms arranged in the ring around the courtyard. The backend loads only rooms
-  with `"floor": 1`. An optional `"closed": true` marks a room that can't be booked.
-- `V.1.07a` must exist. Until this file exists, the backend uses built-in floor 1 rooms (`app/db.py`).
+- Only floor 1 is used. Use the **real room numbers and names from campusplan.aau.at** (Etage 1 runs from
+  `V.1.01` to `V.1.39`, with names like `Seminarraum`, `Atrium`, `Mediathek`, `Büro`, `WC Damen`).
+- The backend books only floor 1 rooms. Offices, toilets and storage get `"bookable": false` (the 3D model still
+  draws them); `"closed": true` marks a bookable room that is closed today.
+- `V.1.07a` (Atrium, where the board is) must exist. Until this file exists, the backend uses the 12 bookable
+  rooms listed in `DEFAULT_ROOMS` in `app/db.py`; keep the same ids and names here.
 
 ### API (gleb-claude; implemented in `app/`, tested in `tests/test_api.py`)
-Errors are `{error}` with 400 (bad input), 401 (not logged in), 404 or 409 (the room can't take it).
+Every error is `{error: "message to show"}` with 400 (bad input), 401 (not logged in), 403, 404 or 409 (the room
+can't take it). Times are campus time (Europe/Vienna) without a zone: `"2026-11-27T14:00"`.
 | Method | Path | Body / result |
 |---|---|---|
+| GET | `/api/search?q=&limit=8` | search-as-you-type: `[{id, name, floor, status, seats_free}]`, best match first; `[]` for an empty `q` |
 | POST | `/api/register` | `{email, password, name?}` returns 201 `{email, name}` and logs in. 400 if the email isn't `@edu.aau.at` or the password is under 4 characters, 409 if the account exists |
 | POST | `/api/login` | `{email, password}` sets a session cookie. `POST /api/logout`, `GET /api/me` returns `{email, name}` or 401 |
-| GET | `/api/rooms?q=` | `[{id, floor, capacity, name, status, noise_db, noise_class, people, seats_free, live, sensor, bookings_now:[{id, mode, purpose, seats, end, shareable}]}]`. `q` searches room numbers (`107a` finds `V.1.07a`) and names |
+| GET | `/api/rooms?q=` | `[{id, floor, capacity, name, status, noise_db, noise_class, people, seats_free, live, sensor, ghost_release_at, bookings_now:[{id, mode, purpose, seats, end, shareable}]}]`; poll it every few seconds to colour the 3D model. `q` filters like `/api/search` |
 | GET | `/api/rooms/{id}` | the room above plus `bookings_today:[booking]` |
 | GET | `/api/rooms/{id}/availability?date=YYYY-MM-DD` | `{room_id, date, open, close, slots:[{start:"HH:MM", end, status, seats_free, shareable, noise}]}`; slot `status` is `free`, `partial`, `full`, `closed` or `past` |
 | POST | `/api/bookings` | `{room_id, start:"YYYY-MM-DDTHH:MM", hours, mode:"full"|"partial", seats, purpose, custom_purpose}` returns 201 with the booking, or `409 {error, suggestions:[room_id,...]}` |
@@ -82,8 +92,14 @@ Errors are `{error}` with 400 (bad input), 401 (not logged in), 404 or 409 (the 
 | GET | `/api/suggest?hours=&mode=&seats=&purpose=&start=` | room objects ranked by fit, the quietest first for quiet study |
 | POST | `/api/readings` | `{room_id, noise_db?, people?}` from the simulator or the board; header `X-Token` if `READINGS_TOKEN` is set |
 
-- A booking is `{id, room_id, start, end, hours, mode, seats, purpose, custom_purpose, status, checked_in, mine}`;
-  its `status` is `active`, `cancelled` or `released` (ghost).
+- A booking is `{id, room_id, start, end, hours, mode, seats, purpose, custom_purpose, status, checked_in,
+  ghost_release_at, mine}`. Its `status` is `active`, `cancelled` or `released` (ghost: slot freed).
+  `ghost_release_at` is set while the room is empty during the booking: show a countdown ("released at 10:15
+  unless someone shows up").
+- `seats` is the number of people coming. `mode: "full"` is private (nobody else can join); `mode: "partial"`
+  means "open to share": others join by booking the same room as partial, until the capacity is reached.
+- Bookings: start on :00 or :30, 0.5–4 h, between 08:00 and 22:00, up to 14 days ahead. `custom_purpose` is
+  required when `purpose` is `custom`.
 - Purpose values: `quiet_study`, `group_study`, `meeting`, `custom`, `gaming`, `board_games`, `event`.
 - Room `status` is `free`, `partial` (people there, seats left), `full`, `ghost` (booked, sensor sees 0 people) or
   `closed`. `live: true` means real board noise (V.1.07a only); `sensor: true` means a people count arrived in the
@@ -98,6 +114,22 @@ Errors are `{error}` with 400 (bad input), 401 (not logged in), 404 or 409 (the 
     API returns 409 with 3 suggestions.
   - Events must be full bookings.
   - A student can't hold two bookings at the same time, and their active bookings on one day total at most 4 h.
+
+### Frontend flow (claude-3 / Martha; every call above is live on `uvicorn app.main:app`)
+1. **Login page:** `POST /api/login` or `POST /api/register`, then the main page. On load, `GET /api/me`; 401 →
+   login page. The session is a cookie, so the frontend never stores a token (serve `web/` from the backend).
+2. **3D view:** load `web/data/building_v.json`, then poll `GET /api/rooms` every 5 s and call
+   `b.setStatus(id, room)` for each room. Clicking a room opens its panel.
+3. **Search bar:** on each keystroke (debounce ~150 ms) call `GET /api/search?q=` and show the list; picking one
+   calls `b.focusRoom(id)` and opens the panel.
+4. **Room panel:** `GET /api/rooms/{id}` (status, live noise, people, who is in now, today's bookings) and
+   `GET /api/rooms/{id}/availability?date=` for the slot picker: `free` and `partial` slots with enough
+   `seats_free` are selectable; `shareable` marks slots where people are open to sharing.
+5. **Booking form:** start slot, hours (0.5–4), "Private room" (`full`) or "Open to share" (`partial`), number of
+   people (`seats`, max = capacity), purpose. `POST /api/bookings`; on 409 show `error` and offer
+   `suggestions` as buttons that open those rooms; on 400 show `error`.
+6. **My bookings:** `GET /api/bookings/mine`, with a cancel button (`DELETE /api/bookings/{id}`) on active ones and
+   the ghost countdown when `ghost_release_at` is set.
 
 ### Lost items (tom-claude, in `detector/` and `app/lost_items.py`)
 **Pipeline**

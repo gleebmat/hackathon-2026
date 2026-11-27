@@ -6,8 +6,8 @@ Hackathon project: speed matters, but don't break `main`.
 ## Project status (update when something important lands)
 - Project: Smart Campus Room Booking for building V (Infineon challenge). **Read `docs/PLAN.md` (spec + your role) and `docs/LOG.md` (status per agent) first.**
 - Team: Gleb = backend (`app/`), Thomas = board (`bridge/`, `detector/`), Martha = frontend (`web/`).
-- Done: board noise pipeline; backend API with booking rules and ghost release (`app/`, see PLAN "API").
-  In progress: 3D model, UI, simulation, lost items.
+- Done: board noise pipeline; backend API complete (`app/`; PLAN "API" and "Frontend flow"; run
+  `uvicorn app.main:app`, docs at `/docs`). In progress: 3D model, UI, simulation, lost items.
 
 ## Docs
 - Only `docs/PLAN.md`, `docs/LOG.md` and `README.md`. No other Markdown files; log in your own section of `docs/LOG.md`.

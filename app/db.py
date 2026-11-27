@@ -1,4 +1,4 @@
-"""SQLite storage: schema, connection and seed data (floor 1 rooms of building V, demo accounts)."""
+"""SQLite storage: schema, connection and seed data (bookable floor 1 rooms of building V, demo accounts)."""
 
 import json
 import os
@@ -10,6 +10,7 @@ from app.auth import hash_password
 ROOT = Path(__file__).resolve().parent.parent
 BUILDING_JSON = ROOT / "web" / "data" / "building_v.json"
 FLOOR = 1
+DEFAULT_CAPACITY = 10
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS users (
@@ -18,29 +19,37 @@ CREATE TABLE IF NOT EXISTS sessions (
     token TEXT PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id), created_at TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS rooms (
     id TEXT PRIMARY KEY, floor INTEGER NOT NULL, name TEXT NOT NULL, capacity INTEGER NOT NULL,
-    closed INTEGER NOT NULL DEFAULT 0);
+    closed INTEGER NOT NULL DEFAULT 0, listed INTEGER NOT NULL DEFAULT 1);
 CREATE TABLE IF NOT EXISTS bookings (
     id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id), room_id TEXT NOT NULL REFERENCES rooms(id),
     start TEXT NOT NULL, end TEXT NOT NULL, mode TEXT NOT NULL, seats INTEGER NOT NULL, purpose TEXT NOT NULL,
     custom_purpose TEXT, status TEXT NOT NULL DEFAULT 'active', checked_in_at TEXT, created_at TEXT NOT NULL);
-CREATE TABLE IF NOT EXISTS readings (
-    room_id TEXT PRIMARY KEY REFERENCES rooms(id), noise_db REAL, people INTEGER, at TEXT NOT NULL);
+CREATE INDEX IF NOT EXISTS bookings_room_time ON bookings (room_id, status, start);
+CREATE INDEX IF NOT EXISTS bookings_user_time ON bookings (user_id, status, start);
 """
+# Latest sensor values per room. It is only a cache, so it is rebuilt whenever its columns change.
+READINGS = """
+CREATE TABLE IF NOT EXISTS readings (
+    room_id TEXT PRIMARY KEY REFERENCES rooms(id), noise_db REAL, noise_at TEXT, people INTEGER, people_at TEXT,
+    empty_since TEXT)
+"""
+READINGS_COLUMNS = {"room_id", "noise_db", "noise_at", "people", "people_at", "empty_since"}
 
-# Used until web/data/building_v.json exists. All numbers are made up.
+# Real room numbers and names from campusplan.aau.at (bookable rooms only); capacities are made up.
+# Used until web/data/building_v.json exists.
 DEFAULT_ROOMS = [
-    {"id": "V.1.01", "name": "Lecture hall", "capacity": 60},
-    {"id": "V.1.02", "name": "Seminar room", "capacity": 30},
-    {"id": "V.1.03", "name": "Group room", "capacity": 8},
-    {"id": "V.1.04", "name": "Group room", "capacity": 8},
-    {"id": "V.1.05", "name": "Computer lab", "capacity": 24},
-    {"id": "V.1.06", "name": "Seminar room", "capacity": 20},
-    {"id": "V.1.07a", "name": "Seminar room", "capacity": 12},
-    {"id": "V.1.07b", "name": "Study room", "capacity": 6},
-    {"id": "V.1.08", "name": "Meeting room", "capacity": 10},
-    {"id": "V.1.09", "name": "Project room", "capacity": 16},
-    {"id": "V.1.10", "name": "Quiet study room", "capacity": 14},
-    {"id": "V.1.11", "name": "Group room", "capacity": 6, "closed": True},
+    {"id": "V.1.01", "name": "Seminarraum", "capacity": 30},
+    {"id": "V.1.02", "name": "Arbeits- und Aufenthaltsraum", "capacity": 20},
+    {"id": "V.1.03", "name": "Seminarraum", "capacity": 24},
+    {"id": "V.1.04", "name": "Seminarraum", "capacity": 24},
+    {"id": "V.1.07", "name": "Seminarraum", "capacity": 30},
+    {"id": "V.1.07a", "name": "Atrium", "capacity": 12},
+    {"id": "V.1.08", "name": "Seminarraum", "capacity": 20},
+    {"id": "V.1.12", "name": "Sozialraum", "capacity": 8},
+    {"id": "V.1.24", "name": "Reflektorium", "capacity": 16, "closed": True},
+    {"id": "V.1.27", "name": "Seminarraum", "capacity": 30},
+    {"id": "V.1.29", "name": "Mediathek", "capacity": 10},
+    {"id": "V.1.34", "name": "Seminarraum", "capacity": 24},
 ]
 DEMO_USERS = [(f"student{i}@edu.aau.at", f"Student {i}") for i in range(1, 5)]
 DEMO_PASSWORD = "demo"
@@ -51,7 +60,8 @@ def db_path() -> str:
 
 
 def connect() -> sqlite3.Connection:
-    conn = sqlite3.connect(db_path(), check_same_thread=False)
+    """Autocommit connection; callers open transactions explicitly (BEGIN IMMEDIATE)."""
+    conn = sqlite3.connect(db_path(), timeout=10, isolation_level=None, check_same_thread=False)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
     return conn
@@ -60,22 +70,52 @@ def connect() -> sqlite3.Connection:
 def load_rooms() -> list[dict]:
     if BUILDING_JSON.exists():
         rooms = json.loads(BUILDING_JSON.read_text(encoding="utf-8"))["rooms"]
-        return [r for r in rooms if r.get("floor") == FLOOR]
-    return [{**r, "floor": FLOOR} for r in DEFAULT_ROOMS]
+        rooms = [r for r in rooms if r.get("floor") == FLOOR and r.get("bookable", True)]
+    else:
+        rooms = [{**r, "floor": FLOOR} for r in DEFAULT_ROOMS]
+    return [{"id": r["id"], "floor": FLOOR, "name": r.get("name") or r["id"],
+             "capacity": int(r.get("capacity") or DEFAULT_CAPACITY), "closed": int(bool(r.get("closed")))}
+            for r in rooms]
+
+
+def columns(conn: sqlite3.Connection, table: str) -> set[str]:
+    return {row["name"] for row in conn.execute(f"PRAGMA table_info({table})")}
+
+
+def upgrade(conn: sqlite3.Connection) -> None:
+    """Bring a database created by an older version up to date, keeping users, sessions and bookings."""
+    if "listed" not in columns(conn, "rooms"):
+        conn.execute("ALTER TABLE rooms ADD COLUMN listed INTEGER NOT NULL DEFAULT 1")
+    if columns(conn, "readings") not in (set(), READINGS_COLUMNS):
+        conn.execute("DROP TABLE readings")
+    conn.execute(READINGS)
 
 
 def init() -> None:
     conn = connect()
-    with conn:
+    try:
+        conn.execute("PRAGMA journal_mode = WAL")
         conn.executescript(SCHEMA)
+        conn.execute("BEGIN IMMEDIATE")
+        upgrade(conn)
+        rooms = load_rooms()
+        # Rooms that left the data file stay in the database (their bookings keep a valid room) but are hidden.
+        conn.execute("UPDATE rooms SET listed = 0")
         conn.executemany(
-            "INSERT INTO rooms (id, floor, name, capacity, closed) VALUES (:id, :floor, :name, :capacity, :closed) "
-            "ON CONFLICT(id) DO UPDATE SET floor=excluded.floor, name=excluded.name, "
-            "capacity=excluded.capacity, closed=excluded.closed",
-            [{**r, "closed": int(bool(r.get("closed")))} for r in load_rooms()],
+            "INSERT INTO rooms (id, floor, name, capacity, closed, listed) "
+            "VALUES (:id, :floor, :name, :capacity, :closed, 1) "
+            "ON CONFLICT(id) DO UPDATE SET floor=excluded.floor, name=excluded.name, capacity=excluded.capacity, "
+            "closed=excluded.closed, listed=1",
+            rooms,
         )
         for email, name in DEMO_USERS:
             if not conn.execute("SELECT 1 FROM users WHERE email = ?", (email,)).fetchone():
                 conn.execute("INSERT INTO users (email, name, pw_hash) VALUES (?, ?, ?)",
                              (email, name, hash_password(DEMO_PASSWORD)))
-    conn.close()
+        conn.execute("COMMIT")
+    except BaseException:
+        if conn.in_transaction:
+            conn.execute("ROLLBACK")
+        raise
+    finally:
+        conn.close()

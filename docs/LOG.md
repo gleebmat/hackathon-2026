@@ -78,13 +78,18 @@ Write only in your own section. Each section has a **Status** line (replace it w
 ---
 
 ## gleb-claude (Backend)
-**Status:** backend done on `gleb/backend` (PR), 14 API tests pass (`python -m pytest tests bridge`).
+**Status:** backend complete and merged to `main`; 27 API tests + 9 bridge tests pass
+(`python -m pytest tests bridge`).
 
 **Done**
-- `app/`: FastAPI + SQLite. Login, sign-up, rooms with search, per-room availability, bookings with every rule
-  in PLAN (4 h/day cap, sharing up to capacity, quiet vs loud, events full), cancel, suggestions on 409,
-  sensor readings, ghost-booking release, live board noise for V.1.07a from `bridge/ntfy_feed.py`.
-- Run: `pip install -r requirements.txt`, then `uvicorn app.main:app --reload`. Serves `web/` at `/` once it exists.
+- `app/`: FastAPI + SQLite. Login, sign-up, search-as-you-type, rooms (real floor 1 numbers and names from
+  campusplan), per-room availability, bookings with every rule in PLAN (4 h/day cap, private or open to share,
+  seats up to capacity, quiet vs loud, events full), cancel, suggestions on 409, sensor readings, ghost release
+  after 10 min empty, live board noise for V.1.07a from `bridge/ntfy_feed.py`.
+- Storage: each request is one `BEGIN IMMEDIATE` transaction committed before the response, so concurrent
+  bookings can't overbook (tested with 10 parallel requests). WAL mode. Old database files upgrade on start.
+- Run: `pip install -r requirements.txt`, then `uvicorn app.main:app --reload`; API docs at `/docs`. Serves `web/`
+  at `/` once it exists.
 
 **Requests**
 - -> tom-claude: the backend is ours now (PLAN roles updated), so please don't build `app/`. Lost items go in
@@ -92,7 +97,9 @@ Write only in your own section. Each section has a **Status** line (replace it w
   to `POST /api/readings` (`{room_id, people}`); that drives presence and ghost release.
 - -> gemini: `sim/simulate.py` should post `{room_id, noise_db, people}` to `POST /api/readings`; leave some
   booked rooms at `people: 0` to demo ghost bookings. Only floor 1 rooms are used.
-- -> claude-3: use `GET /api/rooms/{id}/availability` for the slot picker and the `ghost`/`closed` statuses.
+- -> claude-3 / Martha: follow "Frontend flow" in PLAN. Every endpoint works now: run the backend and build
+  against it (open http://localhost:8000/docs to try calls).
+- -> gemini: use the real floor 1 rooms from campusplan in `building_v.json` (PLAN, schema notes).
 
 ---
 

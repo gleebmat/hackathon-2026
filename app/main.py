@@ -1,11 +1,13 @@
 """Campus room booking API. Run: uvicorn app.main:app --reload"""
 
 import os
+import sqlite3
 from contextlib import asynccontextmanager
-from datetime import date, datetime
-from typing import Literal
+from datetime import date, datetime, timedelta
+from typing import Annotated, Literal
 
 from fastapi import Depends, FastAPI, Header, Query, Request, Response
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
@@ -37,14 +39,33 @@ async def api_error(_request: Request, exc: ApiError) -> JSONResponse:
     return JSONResponse({"error": exc.message}, status_code=exc.status)
 
 
+@app.exception_handler(RequestValidationError)
+async def validation_error(_request: Request, exc: RequestValidationError) -> JSONResponse:
+    first = exc.errors()[0]
+    field = ".".join(str(p) for p in first["loc"] if p not in ("body", "query", "path"))
+    return JSONResponse({"error": f"{field}: {first['msg']}" if field else first["msg"]}, status_code=400)
+
+
 def get_conn():
+    """One write-locked transaction per request, committed before the response is sent.
+
+    BEGIN IMMEDIATE serialises writers, so two people can't book the last seat at the same moment.
+    """
     conn = db.connect()
     try:
-        with conn:
+        conn.execute("BEGIN IMMEDIATE")
+        try:
             booking.release_ghosts(conn, clock.now())
             yield conn
+        except BaseException:
+            conn.execute("ROLLBACK")
+            raise
+        conn.execute("COMMIT")
     finally:
         conn.close()
+
+
+Conn = Annotated[sqlite3.Connection, Depends(get_conn, scope="function")]
 
 
 def live_data() -> dict:
@@ -52,16 +73,27 @@ def live_data() -> dict:
     return {latest["room_id"]: latest} if latest else {}
 
 
-def current_user(request: Request, conn=Depends(get_conn)) -> dict:
+def session_user(conn: sqlite3.Connection, request: Request) -> dict | None:
     token = request.cookies.get(auth.COOKIE)
-    row = token and conn.execute("SELECT u.id, u.email, u.name FROM sessions s JOIN users u ON u.id = s.user_id "
-                                 "WHERE s.token = ?", (token,)).fetchone()
-    if not row:
+    if not token:
+        return None
+    cutoff = (clock.now() - timedelta(days=SESSION_DAYS)).isoformat()
+    row = conn.execute("SELECT u.id, u.email, u.name FROM sessions s JOIN users u ON u.id = s.user_id "
+                       "WHERE s.token = ? AND s.created_at >= ?", (token, cutoff)).fetchone()
+    return dict(row) if row else None
+
+
+def current_user(request: Request, conn: Conn) -> dict:
+    user = session_user(conn, request)
+    if user is None:
         raise ApiError(401, "Not logged in")
-    return dict(row)
+    return user
 
 
-def start_session(conn, response: Response, user: dict) -> dict:
+User = Annotated[dict, Depends(current_user)]
+
+
+def start_session(conn: sqlite3.Connection, response: Response, user: dict) -> dict:
     token = auth.new_token()
     conn.execute("INSERT INTO sessions (token, user_id, created_at) VALUES (?, ?, ?)",
                  (token, user["id"], clock.now().isoformat()))
@@ -69,23 +101,19 @@ def start_session(conn, response: Response, user: dict) -> dict:
     return {"email": user["email"], "name": user["name"]}
 
 
-def local_naive(dt: datetime) -> datetime:
-    return dt.astimezone().replace(tzinfo=None) if dt.tzinfo else dt
-
-
 # --- accounts ---
 
 class Credentials(BaseModel):
-    email: str
-    password: str
+    email: str = Field(max_length=254)
+    password: str = Field(max_length=128)
 
 
 class Registration(Credentials):
-    name: str | None = None
+    name: str | None = Field(None, max_length=60)
 
 
 @app.post("/api/register", status_code=201)
-def register(body: Registration, response: Response, conn=Depends(get_conn)):
+def register(body: Registration, response: Response, conn: Conn):
     email = body.email.strip().lower()
     if not auth.valid_email(email):
         raise ApiError(400, f"Use your student email ({auth.EMAIL_DOMAIN})")
@@ -100,7 +128,7 @@ def register(body: Registration, response: Response, conn=Depends(get_conn)):
 
 
 @app.post("/api/login")
-def login(body: Credentials, response: Response, conn=Depends(get_conn)):
+def login(body: Credentials, response: Response, conn: Conn):
     row = conn.execute("SELECT * FROM users WHERE email = ?", (body.email.strip().lower(),)).fetchone()
     if not row or not auth.check_password(body.password, row["pw_hash"]):
         raise ApiError(401, "Wrong email or password")
@@ -108,46 +136,46 @@ def login(body: Credentials, response: Response, conn=Depends(get_conn)):
 
 
 @app.post("/api/logout")
-def logout(request: Request, response: Response, conn=Depends(get_conn)):
+def logout(request: Request, response: Response, conn: Conn):
     conn.execute("DELETE FROM sessions WHERE token = ?", (request.cookies.get(auth.COOKIE),))
     response.delete_cookie(auth.COOKIE)
     return {"ok": True}
 
 
 @app.get("/api/me")
-def me(user=Depends(current_user)):
+def me(user: User):
     return {"email": user["email"], "name": user["name"]}
 
 
 # --- rooms ---
 
-def matches(room, q: str) -> bool:
-    def norm(s: str) -> str:
-        return s.lower().replace(".", "").replace(" ", "")
-    return norm(q) in norm(room["id"]) or q.lower() in room["name"].lower()
-
-
 @app.get("/api/rooms")
-def rooms(q: str | None = None, conn=Depends(get_conn)):
+def rooms(conn: Conn, q: str | None = Query(None, max_length=50)):
     live, now = live_data(), clock.now()
-    return [booking.room_state(conn, r, now, live) for r in conn.execute("SELECT * FROM rooms ORDER BY id")
-            if not q or matches(r, q)]
+    found = booking.search(conn, q) if q and q.strip() else booking.listed_rooms(conn)
+    return [booking.room_state(conn, r, now, live) for r in found]
+
+
+@app.get("/api/search")
+def search(conn: Conn, q: str = Query("", max_length=50), limit: int = Query(8, ge=1, le=50)):
+    live, now = live_data(), clock.now()
+    return [{key: state[key] for key in ("id", "name", "floor", "status", "seats_free")}
+            for state in (booking.room_state(conn, r, now, live) for r in booking.search(conn, q)[:limit])]
 
 
 @app.get("/api/rooms/{room_id}")
-def room_detail(room_id: str, request: Request, conn=Depends(get_conn)):
+def room_detail(room_id: str, request: Request, conn: Conn):
     now = clock.now()
     room = booking.get_room(conn, room_id)
-    user = conn.execute("SELECT user_id FROM sessions WHERE token = ?",
-                        (request.cookies.get(auth.COOKIE),)).fetchone()
+    user = session_user(conn, request)
     today = conn.execute("SELECT * FROM bookings WHERE room_id = ? AND status = 'active' AND substr(start, 1, 10) = ? "
                          "ORDER BY start", (room_id, now.date().isoformat())).fetchall()
     return {**booking.room_state(conn, room, now, live_data()),
-            "bookings_today": [booking.booking_out(b, user and user["user_id"]) for b in today]}
+            "bookings_today": [booking.booking_out(conn, b, now, user and user["id"]) for b in today]}
 
 
 @app.get("/api/rooms/{room_id}/availability")
-def room_availability(room_id: str, day: date | None = Query(None, alias="date"), conn=Depends(get_conn)):
+def room_availability(room_id: str, conn: Conn, day: date | None = Query(None, alias="date")):
     now = clock.now()
     room = booking.get_room(conn, room_id)
     day = day or now.date()
@@ -162,19 +190,19 @@ Purpose = Literal[tuple(booking.PURPOSE_CLASS)]
 
 
 class BookingRequest(BaseModel):
-    room_id: str
+    room_id: str = Field(max_length=20)
     start: datetime
-    hours: float
+    hours: float = Field(ge=0.5, le=booking.MAX_HOURS_PER_DAY, multiple_of=0.5, allow_inf_nan=False)
     mode: Mode
-    seats: int = Field(ge=1)
+    seats: int = Field(ge=1, le=1000)
     purpose: Purpose
     custom_purpose: str | None = Field(None, max_length=80)
 
 
 @app.post("/api/bookings", status_code=201)
-def create_booking(body: BookingRequest, user=Depends(current_user), conn=Depends(get_conn)):
+def create_booking(body: BookingRequest, user: User, conn: Conn):
     now, live = clock.now(), live_data()
-    req = {**body.model_dump(), "start": local_naive(body.start)}
+    req = {**body.model_dump(), "start": clock.to_local(body.start)}
     try:
         return booking.create_booking(conn, user["id"], req, now, live)
     except ApiError as exc:
@@ -187,25 +215,30 @@ def create_booking(body: BookingRequest, user=Depends(current_user), conn=Depend
 
 
 @app.get("/api/bookings/mine")
-def my_bookings(user=Depends(current_user), conn=Depends(get_conn)):
-    rows = conn.execute("SELECT * FROM bookings WHERE user_id = ? ORDER BY start DESC", (user["id"],)).fetchall()
-    return [booking.booking_out(b, user["id"]) for b in rows]
+def my_bookings(user: User, conn: Conn):
+    now = clock.now()
+    rows = conn.execute("SELECT * FROM bookings WHERE user_id = ? ORDER BY start DESC, id DESC",
+                        (user["id"],)).fetchall()
+    return [booking.booking_out(conn, b, now, user["id"]) for b in rows]
 
 
 @app.delete("/api/bookings/{booking_id}")
-def cancel_booking(booking_id: int, user=Depends(current_user), conn=Depends(get_conn)):
-    cur = conn.execute("UPDATE bookings SET status = 'cancelled' WHERE id = ? AND user_id = ? AND status = 'active'",
-                       (booking_id, user["id"]))
-    if cur.rowcount == 0:
+def cancel_booking(booking_id: int, user: User, conn: Conn):
+    row = conn.execute("SELECT * FROM bookings WHERE id = ? AND user_id = ? AND status = 'active'",
+                       (booking_id, user["id"])).fetchone()
+    if row is None:
         raise ApiError(404, "No active booking with that id")
+    if booking.parse(row["end"]) <= clock.now():
+        raise ApiError(400, "This booking is already over")
+    conn.execute("UPDATE bookings SET status = 'cancelled' WHERE id = ?", (booking_id,))
     return {"ok": True}
 
 
 @app.get("/api/suggest")
-def suggest(hours: float, mode: Mode, seats: int = Query(ge=1), purpose: Purpose = "group_study",
-            start: datetime | None = None, conn=Depends(get_conn)):
+def suggest(conn: Conn, mode: Mode, hours: float = Query(ge=0.5, le=booking.MAX_HOURS_PER_DAY, allow_inf_nan=False),
+            seats: int = Query(ge=1, le=1000), purpose: Purpose = "group_study", start: datetime | None = None):
     now = clock.now()
-    start = local_naive(start) if start else booking.slot_start(now)
+    start = clock.to_local(start) if start else booking.slot_start(now)
     booking.validate_times(start, hours, now)
     return booking.suggest(conn, start, hours, mode, seats, purpose, now, live_data())
 
@@ -213,13 +246,13 @@ def suggest(hours: float, mode: Mode, seats: int = Query(ge=1), purpose: Purpose
 # --- sensors ---
 
 class Reading(BaseModel):
-    room_id: str
-    noise_db: float | None = None
-    people: int | None = Field(None, ge=0)
+    room_id: str = Field(max_length=20)
+    noise_db: float | None = Field(None, ge=0, le=150, allow_inf_nan=False)
+    people: int | None = Field(None, ge=0, le=1000)
 
 
 @app.post("/api/readings")
-def post_reading(body: Reading, x_token: str | None = Header(None), conn=Depends(get_conn)):
+def post_reading(body: Reading, conn: Conn, x_token: str | None = Header(None)):
     expected = os.environ.get("READINGS_TOKEN")
     if expected and x_token != expected:
         raise ApiError(403, "Bad sensor token")
