@@ -269,6 +269,7 @@ class Reading(BaseModel):
     noise_db: float | None = Field(None, ge=0, le=150, allow_inf_nan=False)
     people: int | None = Field(None, ge=0, le=1000)
     presence: bool | None = None
+    left_items: int | None = Field(None, ge=0, le=100)   # items left behind, counted on the board
 
 
 @app.post("/api/readings")
@@ -277,7 +278,7 @@ def post_reading(body: Reading, conn: Conn, x_token: str | None = Header(None)):
     if expected and x_token != expected:
         raise ApiError(403, "Bad sensor token")
     people = body.people if body.people is not None else (None if body.presence is None else int(body.presence))
-    booking.record_reading(conn, body.room_id, body.noise_db, people, clock.now())
+    booking.record_reading(conn, body.room_id, body.noise_db, people, clock.now(), body.left_items)
     return {"ok": True}
 
 

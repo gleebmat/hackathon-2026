@@ -366,6 +366,18 @@ def test_board_room_presence_and_live(app_env):
     assert room(c, "V.1.07a")["people"] == 0
 
 
+def test_board_left_items(app_env):
+    c = TestClient(main.app)
+    assert room(c, "V.1.07a")["left_items"] == 0
+    c.post("/api/readings", json={"room_id": "V.1.07a", "people": 2, "left_items": 0})
+    c.post("/api/readings", json={"room_id": "V.1.07a", "people": 0, "left_items": 1})   # people left, a bag stayed
+    state = room(c, "V.1.07a")
+    assert state["people"] == 0 and state["left_items"] == 1
+    c.post("/api/readings", json={"room_id": "V.1.07a", "people": 1, "left_items": 0})   # someone came back for it
+    assert room(c, "V.1.07a")["left_items"] == 0
+    assert c.post("/api/readings", json={"room_id": "V.1.07a", "left_items": -1}).status_code == 400
+
+
 def test_rooms_come_from_the_campus_map(tmp_path, monkeypatch, time_now):
     campus = {"buildings": [
         {"id": "Z", "rooms": [

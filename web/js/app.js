@@ -422,11 +422,13 @@ function fixSelection() {
 function renderSheetHead() {
   const r = state.sheet.room;
   const live = r.live ? `<span class="live-badge">LIVE</span>` : "";
+  const left = r.left_items > 0
+    ? `<span class="left-badge" title="Counted by the board after people left">🎒 ${r.left_items} item${r.left_items === 1 ? "" : "s"} left behind</span>` : "";
   $("sh-head").innerHTML = `
     <div>
       <div class="sheet-title"><h2 id="room-title">${esc(r.label || r.id)}</h2><span class="muted">${esc(r.label ? `${r.id} · ${r.name}` : r.name)}</span></div>
       <div class="sheet-meta">
-        <span class="pill ${esc(r.status)}">${STATUS[r.status] ?? esc(r.status)}</span>${live}
+        <span class="pill ${esc(r.status)}">${STATUS[r.status] ?? esc(r.status)}</span>${live}${left}
         <span class="meta"><svg class="icon"><use href="#i-users"/></svg>${r.people} here · ${r.capacity} max</span>
         <span class="meta"><svg class="icon"><use href="#i-sound"/></svg>${r.noise_db.toFixed(0)} dB · ${esc(r.noise_class)}</span>
       </div>
