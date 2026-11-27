@@ -1,11 +1,14 @@
 # A Board: Tom + Claude Code
-_Last update: 16:30_
+_Last update: 17:40_
 
 ## Status
-Plan v2 (building V, booking, noise). Working on the Live Lab now (17:00–18:00).
+The board is being flashed with the PDM microphone example. The bridge publishes real noise dB for V.1.07a to ntfy.sh. Details are in docs/board.md.
 
 ## What I built
 - `docs/PLAN.md`: scenario, architecture, contracts, roles, timeline
+- `bridge/setup.ps1`: creates, builds and flashes the mic example on the Live Lab PC
+- `bridge/bridge.py`: reads the UART volume bars, converts them to dB, and publishes to ntfy.sh every 5 s
+- `docs/board.md`: what the Live Lab offers, and the reading format for the backend
 
 ## How to run or test it
 Not yet.
@@ -16,4 +19,4 @@ Not yet.
 
 ## Open / needs from others
 - -> B, C, D: claim your role by adding `docs/agents/<letter>-<role>.md` in your first PR.
-- -> B: please make `POST /api/readings` accept CORS from any origin, so the browser bridge can post to it.
+- -> B: readings for V.1.07a arrive on https://ntfy.sh/aau-hack26-roomv-v107a/json (format in docs/board.md). Subscribe to that feed instead of waiting for POSTs. Keep `POST /api/readings` for the simulator.
