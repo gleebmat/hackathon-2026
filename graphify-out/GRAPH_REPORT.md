@@ -1,51 +1,112 @@
-# Graph Report - hackathon-2026  (2026-11-26)
+# Graph Report - hackathon-2026  (2026-11-27)
 
 ## Corpus Check
-- 3 files · ~459 words
+- 14 files · ~6,809 words
 - Verdict: corpus is large enough that graph structure adds value.
-- Unclassified: 2 file(s) not represented in the graph (top: (none) 2)
+- Unclassified: 3 file(s) not represented in the graph (top: (none) 2, .css 1)
 
 ## Summary
-- 14 nodes · 11 edges · 3 communities (2 shown, 1 thin omitted)
-- Extraction: 100% EXTRACTED · 0% INFERRED · 0% AMBIGUOUS
+- 124 nodes · 190 edges · 14 communities (10 shown, 4 thin omitted)
+- Extraction: 96% EXTRACTED · 4% INFERRED · 0% AMBIGUOUS · INFERRED: 8 edges (avg confidence: 0.87)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `a02ef0b1`
+- Built from commit: `76cd8298`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
 ## Community Hubs (Navigation)
 - hackathon-2026
 - AGENTS.md
+- test_ntfy_feed.py
+- app.js
+- bridge.py
+- mock-data.js
+- PLAN: Smart Campus Room Booking (Infineon challenge), building V
+- main
+- createPlaceholder
+- LOG: one section per agent
 
 ## God Nodes (most connected - your core abstractions)
-1. `hackathon-2026` - 3 edges
-2. `Project status (update when something important lands)` - 1 edges
-3. `Stack` - 1 edges
-4. `Git workflow (several people push to this repo at once)` - 1 edges
-5. `Code` - 1 edges
-6. `Secrets` - 1 edges
-7. `Keep usage low` - 1 edges
-8. `graphify (code knowledge graph in `graphify-out/`)` - 1 edges
-9. `Setup` - 1 edges
-10. `Graphify (code knowledge graph, saves AI tokens)` - 1 edges
+1. `LiveNoiseFeed` - 10 edges
+2. `replay()` - 10 edges
+3. `renderPanel()` - 9 edges
+4. `main()` - 9 edges
+5. `renderList()` - 7 edges
+6. `selectRoom()` - 7 edges
+7. `PLAN: Smart Campus Room Booking (Infineon challenge), building V` - 7 edges
+8. `esc()` - 6 edges
+9. `wireEvents()` - 6 edges
+10. `getJson()` - 5 edges
 
 ## Surprising Connections (you probably didn't know these)
-- None detected - all connections are within the same source files.
+- `claude-3 (Website UI)` --references--> `purpose()`  [INFERRED]
+  docs/LOG.md → web/js/app.js
+- `claude-3 (Website UI)` --references--> `setFloor()`  [INFERRED]
+  docs/LOG.md → web/js/app.js
+- `getRooms()` --calls--> `getRooms()`  [EXTRACTED]
+  web/js/api.js → web/js/mock-data.js
+- `getRoom()` --calls--> `getRoom()`  [EXTRACTED]
+  web/js/api.js → web/js/mock-data.js
+- `selectRoom()` --calls--> `getRoom()`  [EXTRACTED]
+  web/js/app.js → web/js/api.js
 
-## Communities (3 total, 1 thin omitted)
+## Import Cycles
+- None detected.
+
+## Communities (14 total, 4 thin omitted)
 
 ### Community 1 - "hackathon-2026"
 Cohesion: 0.50
 Nodes (3): Graphify (code knowledge graph, saves AI tokens), hackathon-2026, Setup
 
 ### Community 2 - "AGENTS.md"
-Cohesion: 0.22
-Nodes (7): Code, Git workflow (several people push to this repo at once), graphify (code knowledge graph in `graphify-out/`), Keep usage low, Project status (update when something important lands), Secrets, Stack
+Cohesion: 0.20
+Nodes (8): Code, Docs, Git workflow (several people push to this repo at once), graphify (code knowledge graph in `graphify-out/`), Keep usage low, Project status (update when something important lands), Secrets, Stack
+
+### Community 3 - "test_ntfy_feed.py"
+Cohesion: 0.15
+Nodes (12): LiveNoiseFeed, noise_class(), replay(), test_back_to_quiet_after_noise(), test_background_is_quiet(), test_classes(), test_floor_ignores_noise_bursts(), test_loud_is_loud() (+4 more)
+
+### Community 4 - "app.js"
+Cohesion: 0.25
+Nodes (18): claude-3 (Website UI), clearSelection(), esc(), findRoom(), liveBadge(), purpose(), PURPOSE_LABEL, renderAll() (+10 more)
+
+### Community 5 - "bridge.py"
+Cohesion: 0.17
+Nodes (3): main(), publish(), to_db()
+
+### Community 6 - "mock-data.js"
+Cohesion: 0.18
+Nodes (14): at(), bookings, building, CAPACITIES, current(), getRoom(), getRooms(), NAMES (+6 more)
+
+### Community 7 - "PLAN: Smart Campus Room Booking (Infineon challenge), building V"
+Cohesion: 0.17
+Nodes (11): 3D module API (claude-2; used by claude-3), API (tom-claude), Architecture, Contracts (code against these; whoever changes one updates this file in the same PR), Lost items (tom-claude), PLAN: Smart Campus Room Booking (Infineon challenge), building V, Product, Roles (+3 more)
+
+### Community 8 - "main"
+Cohesion: 0.36
+Nodes (9): detectSource(), forced, getBuilding(), getJson(), getRoom(), getRooms(), main(), refresh() (+1 more)
+
+### Community 9 - "createPlaceholder"
+Cohesion: 0.47
+Nodes (6): createPlaceholder(), plan(), render(), schedule(), createView(), ./building3d.js
+
+### Community 10 - "LOG: one section per agent"
+Cohesion: 0.40
+Nodes (4): claude-2 (3D model), gemini (Data, simulation, demo), LOG: one section per agent, tom-claude (Backend + Board)
 
 ## Knowledge Gaps
-- **1 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
+- **4 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Suggested Questions
-_Not enough signal to generate questions. This usually means the corpus has no AMBIGUOUS edges, no bridge nodes, no INFERRED relationships, and all communities are tightly cohesive. Add more files or run with --mode deep to extract richer edges._
+_Questions this graph is uniquely positioned to answer:_
+
+- **Why does `LiveNoiseFeed` connect `test_ntfy_feed.py` to `bridge.py`?**
+  _High betweenness centrality (0.035) - this node is a cross-community bridge._
+- **Should `test_ntfy_feed.py` be split into smaller, more focused modules?**
+  _Cohesion score 0.14624505928853754 - nodes in this community are weakly interconnected._
+- **Why does `claude-3 (Website UI)` connect `app.js` to `LOG: one section per agent`?**
+  _High betweenness centrality (0.033) - this node is a cross-community bridge._
+- **Why does `LOG: one section per agent` connect `LOG: one section per agent` to `app.js`?**
+  _High betweenness centrality (0.027) - this node is a cross-community bridge._
