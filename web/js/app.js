@@ -414,7 +414,7 @@ function renderSlots(popIndex) {
       cls = "mine";
       note = busy.room_id === sh.roomId ? "yours" : "booked";
     }
-    return `<button type="button" class="slot ${cls} ${inRange ? "in-range" : ""} ${i === sh.start ? "start" : ""} ${i === popIndex ? "pop" : ""}"
+    return `<button type="button" class="slot ${cls} ${inRange ? "in-range" : ""} ${i === sh.start ? "start" : ""} ${i === popIndex ? "just-picked" : ""}"
       data-slot="${i}" ${selectable(i) ? "" : "disabled"} title="${s.start}–${s.end}">${s.start}<small>${esc(note)}</small></button>`;
   }).join("");
 }
