@@ -6,7 +6,9 @@ Write only in your own section. Each section has a **Status** line (replace it w
 ---
 
 ## tom-claude (Backend + Board)
-**Status (17:50):** the board is live and tested. Starting on the backend stubs next.
+**Status (18:55):** both board features work on the real hardware: **noise** (microphone, session 1) and **person
+presence** (camera with YOLACT on the NPU, session 2). Each needs its own firmware. A local 3D prototype of
+building V exists on branch `tom/building3d-prototype`. Next: backend stubs.
 
 **Done**
 - `docs/PLAN.md`: product, contracts and roles.
@@ -30,10 +32,19 @@ Write only in your own section. Each section has a **Status** line (replace it w
   Python 3.12 + pyserial, but no git. The board's UART is COM3. The target is `APP_KIT_PSE84_EVAL_EPC2`.
 - **Board Controls:** BTN1, BTN2, Reset, a potentiometer (0–1.8 V), and **Microphone → "Click here to Unmute"**,
   which streams our microphone to the board.
-- **Next session** (the lab may be reset). In VS Code, click into the terminal, then:
-  1. Run `iwr -useb https://raw.githubusercontent.com/gleebmat/hackathon-2026/main/bridge/setup.ps1 | iex`.
-     It creates, builds and flashes the firmware in about 5 min.
-  2. Run `python $HOME\bridge.py COM3` and keep that terminal open.
+- **Every new session starts from a fresh lab PC** (no projects, empty `mtb_shared`), and the board is back on the
+  factory firmware. Sessions end with a 4-minute warning, so plan about 10 min of setup per firmware.
+- **Runbook for a session.** In the Developer Workspace, open VS Code from the taskbar, maximise it, click into the
+  terminal, and type `cls` to check that the terminal has focus. Then type the command in 3 short chunks:
+  - **Noise:** `iwr -useb https://raw.githubusercontent.com/gleebmat/hackathon-2026/main/bridge/setup.ps1 | iex`.
+    This takes about 5 min (create, build, flash).
+  - **Presence:** `iwr -useb https://raw.githubusercontent.com/gleebmat/hackathon-2026/main/bridge/setup_person.ps1 | iex`.
+    This takes about 8 min: create about 3 min, build about 4 min (2,268 objects), flash about 1 min.
+  - Then run `python $HOME\bridge.py COM3` and keep that terminal open. The bridge handles both firmwares: noise
+    readings carry `noise_db`, presence readings carry `presence` and `person_ratio`.
+- **Untested idea for a positive presence test.** First go to Application Demos → Vision Hand Gesture → Webcam
+  Access → Enable, so the simulation display shows our webcam. Then switch to the Developer Workspace and run the
+  presence runbook. If the simulation display keeps showing the webcam, the board will see us.
 - **Gotchas:**
   - Typing into the remote PC drops characters and garbles long strings and double quotes. Type short chunks in
     single quotes.
@@ -59,9 +70,15 @@ Write only in your own section. Each section has a **Status** line (replace it w
   - Hand Gesture runs at about 54 ms per frame.
   - **Face ID** runs at about 12 ms per frame, in inference mode, with 1 of 5 users already enrolled by someone
     else. Don't enrol faces: that stores biometric data.
-- Infineon examples we could flash in a later slot (each about 5 min to build and flash):
-  - `mtb-example-psoc-edge-ml-aihub-deploy-vision`: **real-time person segmentation** from a USB camera. This is
-    the basis for human presence.
+- **Person presence on the board (session 2, tested).** I flashed Infineon's
+  `mtb-example-psoc-edge-ml-aihub-deploy-vision` (YOLACT person segmentation, running on the NPU) with our
+  `bridge/firmware/inference_task.c`.
+  - The pipeline library has no API for its results, but it lights the USER LED while it sees a person. Our task
+    samples that pin after each frame and prints `PRESENCE <0|1> <person_frames>/<frames>` once per second.
+  - Result: about **10.6 inferences per second**. The EVK display shows "YOLACT PERSON SEGMENTATION" on the camera
+    image (`docs/img/board-person-segmentation.png`). With only the static leaf picture on the simulation display
+    the board correctly published `presence: false, person_ratio: 0.0` (`docs/img/bridge-presence-output.png`).
+  - **Not yet tested:** the positive case with a person on the simulation display (we ran out of session time).
   - The DEEPCRAFT Model Zoo has many detectors (YoloX, SSDMobileNetV1/V2, TinyYolov2, SwiftYolo,
     Yolov8nPersonDetection), but **all of them are trained for persons only**, so they can't detect bags. Each
     comes with a prebuilt `.hex`.
@@ -74,6 +91,32 @@ Write only in your own section. Each section has a **Status** line (replace it w
 
 **Requests**
 - -> Tom: book the next board slot for the final run and the demo recording.
+
+---
+
+## gleb-claude (Backend)
+**Status:** backend complete and merged to `main`; 27 API tests + 9 bridge tests pass
+(`python -m pytest tests bridge`).
+
+**Done**
+- `app/`: FastAPI + SQLite. Login, sign-up, search-as-you-type, rooms (real floor 1 numbers and names from
+  campusplan), per-room availability, bookings with every rule in PLAN (4 h/day cap, private or open to share,
+  seats up to capacity, quiet vs loud, events full), cancel, suggestions on 409, sensor readings, ghost release
+  after 10 min empty, live board noise for V.1.07a from `bridge/ntfy_feed.py`.
+- Storage: each request is one `BEGIN IMMEDIATE` transaction committed before the response, so concurrent
+  bookings can't overbook (tested with 10 parallel requests). WAL mode. Old database files upgrade on start.
+- Run: `pip install -r requirements.txt`, then `uvicorn app.main:app --reload`; API docs at `/docs`. Serves `web/`
+  at `/` once it exists.
+
+**Requests**
+- -> tom-claude: the backend is ours now (PLAN roles updated), so please don't build `app/`. Lost items go in
+  `app/lost_items.py` as an `APIRouter`; tell me and I'll include it. Send the board's person count for V.1.07a
+  to `POST /api/readings` (`{room_id, people}`); that drives presence and ghost release.
+- -> gemini: `sim/simulate.py` should post `{room_id, noise_db, people}` to `POST /api/readings`; leave some
+  booked rooms at `people: 0` to demo ghost bookings. Only floor 1 rooms are used.
+- -> claude-3 / Martha: follow "Frontend flow" in PLAN. Every endpoint works now: run the backend and build
+  against it (open http://localhost:8000/docs to try calls).
+- -> gemini: use the real floor 1 rooms from campusplan in `building_v.json` (PLAN, schema notes).
 
 ---
 
