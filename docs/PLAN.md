@@ -41,7 +41,7 @@ All numbers are made up. This is a prototype.
 |---|---|---|
 | **gleb-claude** (Gleb's Claude Code): Backend | `app/` (except `app/lost_items.py`), `tests/`, `requirements.txt`, `.env.example` | FastAPI + SQLite: login, sign-up, rooms, search, availability, bookings, the booking rules, ghost release, and the live noise feed for V.1.07a (**done**, see API below). |
 | **tom-claude** (Tom's Claude Code): Board | `bridge/` | Board bridge (noise and presence work, as separate firmwares). Next: see "Board (Live Lab): decisions and next steps". |
-| **claude-2**: 3D model | `web/js/building3d.js` | The Three.js building that floats in empty space, rotate and zoom, `focusRoom` with the others hidden, `showAll`, floor filter, status and noise colours. Use the module API below. |
+| **tom-claude**: 3D map (claude-2's role) | `web/map3d/`, `tools/campus3d/` | **Done:** a Three.js campus map of buildings V, N, Z, L and S with search, glow highlight, building and floor isolation, 3D room numbers and status colours. See "3D campus map" below. Standalone until the team decides how to combine it with the UI. |
 | **claude-3**: Website UI | `web/index.html`, `web/login.html`, `web/js/app.js`, `web/css/style.css` | The login page, the search bar (calls `focusRoom`), the room panel (live noise, people, today's bookings, a LIVE badge on V.1.07a), the booking form (hours, full or partial, seats, purpose, and suggestions on a 409), and "my bookings"., and the **Lost & found** page: item cards, a "That's mine" button, and a "maybe yours" banner. |
 | **tom-claude**, continued | `detector/`, `app/lost_items.py` (a FastAPI `APIRouter` that gleb-claude includes in `app/main.py`) | The lost-item service: snapshot vs reference diff, YOLOv8n labels, crops, and the endpoints below. Board: flash person detection and forward the person count through the bridge. |
 | **gemini** (Gemini Pro): Data, simulation, demo | `web/data/building_v.json`, `sim/`, `README.md` | Building V room layout and data (schema below; take real room numbers from https://campusplan.aau.at/ if that's cheap, otherwise invent plausible ones). `sim/simulate.py`, which posts simulated readings for the other rooms. The demo script, the pitch and the README. End-to-end QA, with bugs reported in LOG. Lost-item demo setup: reference photo of the empty desk and the bag scenario. |
@@ -197,15 +197,29 @@ can't take it). Times are campus time (Europe/Vienna) without a zone: `"2026-11-
 YOLO (`ultralytics`, which pulls in PyTorch) lives only in `detector/requirements.txt`, so the main app stays
 light.
 
-### 3D module API (claude-2; used by claude-3)
+### 3D campus map (tom-claude; built and working, standalone for now)
+The map is in **`web/map3d/`**: `index.html` (the demo page), `building3d.js` (the module) and `campus.json` (the data).
+The backend already serves it at **http://localhost:8000/map3d/**. It isn't wired into the UI yet, on purpose.
+- **Buildings:** V, N, Z, L and S, from campusplan.aau.at, simplified, with overlaps removed. V's room numbers are
+  real; N, Z, L and S numbers are generated (`N.1.44` …). Bookable rooms are seminar rooms, lecture halls, the
+  Aula and the atrium. Offices are hidden by default.
+- **Data:** `campus.json` = `{buildings: [{id, name, floors, floor_height, blocks: [{x,z,w,d} | {poly, holes?, floors?, open?}], rooms: [{id, floor, x, z, w, d, poly?, angle?, capacity, type, bookable, name}], connectors?}]}`.
+  Units are metres; the origin is the centre of V; x points east and z points south.
+- **Regenerate:** `uv run --with shapely python tools/campus3d/gen_campus.py`. It reads `building_v_rooms.json`
+  and writes `web/map3d/campus.json`. The backend still reads `web/data/building_v.json`, so it is unaffected.
+
 ```js
-import { createBuilding } from "./building3d.js";
-const b = createBuilding(containerEl, buildingJson);
-b.setStatus(roomId, {status, noise_class, live});   // free=white, partial=amber, full=red, ghost=dashed outline, closed=grey; loud=red pulse; live=badge
-b.focusRoom(roomId);   // animates the camera to the room, hides everything else; returns false if the room is unknown
-b.showAll();           // restores the full building
-b.setFloor(n | null);  // shows only floor n, or all floors
-b.onRoomClick(cb);     // cb(roomId)
+import { createBuilding } from "./building3d.js";      // path relative to web/map3d/
+const b = createBuilding(containerEl, await (await fetch("campus.json")).json());
+b.setStatus(roomId, {status, noise_class, live});   // free=white, partial=amber, full=red, ghost=light violet, closed=grey; loud=red pulse; live=LIVE badge; label colour follows
+b.focusRoom(roomId);     // flies to the room, which glows and pulses while the rest dims; floors above it are hidden; returns the id or false
+b.showAll();             // clears the highlight; back to the current building, all floors
+b.setBuilding(id|null);  // isolate one building ("V", "N", "Z", "L", "S") or show all
+b.setFloor(n | null);    // floors 0..n of the visible building(s), or all floors
+b.setOfficesVisible(bool);
+b.onRoomClick(cb);       // cb(roomId)
+b.onRoomHover(cb);       // cb(roomId | null, pointerEvent)
+b.buildings(); b.rooms();
 ```
 
 ## Timeline (today, Fri 27 Nov)
