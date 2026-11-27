@@ -1,6 +1,7 @@
 // Smart campus room sensor - Seeed XIAO ESP32S3 Sense (runs in the Velxio simulator and on the real board).
 //
-// Every 2 s it measures the room on the board itself and POSTs one JSON reading to <BACKEND>/api/readings:
+// Every 2 s it measures the room on the board itself and publishes one JSON reading over MQTT to the topic
+// aau-hack26/rooms/<room>/readings on a public broker; the backend (app/mqtt_feed.py) subscribes to it:
 //   {"room_id":"Z.1.04","noise_db":47.0,"presence":true,"person_score":0.91,"left_items":0}
 //  - presence: Arshia's 96x96 person model (models/vww_96_int8.tflite, TensorFlow Lite Micro), majority of the
 //    last 3 frames so one odd frame doesn't flip it
@@ -8,11 +9,10 @@
 //  - left_items: once the room is empty, the frame is compared with the empty-room snapshot; changed areas that
 //    touch each other count as one item
 // In Velxio: Camera button = your webcam, Mic button = your microphone (off = test pattern / 440 Hz tone).
-// Libraries: Chirale_TensorFlowLite (Library Manager; builds TFLM from source, works on arduino-esp32 3.x).
+// Libraries: Chirale_TensorFlowLite (builds TFLM from source, works on arduino-esp32 3.x), PubSubClient.
 // Files: sketch.ino + person_model.h.
 #include <WiFi.h>
-#include <WiFiClientSecure.h>
-#include <HTTPClient.h>
+#include <PubSubClient.h>
 #include <ESP_I2S.h>
 #include <math.h>
 #include "esp_camera.h"
@@ -23,7 +23,8 @@
 #include "person_model.h"
 
 const char* ROOM_ID = "Z.1.04";
-const char* BACKEND = "https://blind-rob-wondering-physical.trycloudflare.com";  // temporary test tunnel
+const char* MQTT_HOST = "broker.hivemq.com";   // public broker: fine for a demo, use your own for real data
+const int MQTT_PORT = 1883;
 const uint32_t PERIOD_MS = 2000;
 const float PERSON_THRESHOLD = 0.60;
 
@@ -180,16 +181,23 @@ float noiseDb() {
   return constrain(90.0 + dbfs, 30.0, 95.0);
 }
 
-void post(const String& json) {
-  if (!BACKEND[0] || WiFi.status() != WL_CONNECTED) return;
-  WiFiClientSecure tls;
-  tls.setInsecure();   // test tunnel; on a real deployment pin the server certificate
-  HTTPClient http;
-  http.begin(tls, String(BACKEND) + "/api/readings");
-  http.addHeader("Content-Type", "application/json");
-  int code = http.POST(json);
-  http.end();
-  Serial.printf("POST -> %d\n", code);
+WiFiClient net;
+PubSubClient mqtt(net);
+String topic;
+
+void publish(const String& json) {
+  if (WiFi.status() != WL_CONNECTED) return;
+  if (!mqtt.connected()) {
+    String id = String("xiao-") + String((uint32_t)ESP.getEfuseMac(), HEX);
+    if (!mqtt.connect(id.c_str())) {
+      Serial.printf("MQTT connect failed (%d)
+", mqtt.state());
+      return;
+    }
+  }
+  bool ok = mqtt.publish(topic.c_str(), json.c_str());
+  Serial.printf("MQTT %s -> %s
+", topic.c_str(), ok ? "sent" : "FAILED");
 }
 
 void setup() {
@@ -202,12 +210,12 @@ void setup() {
   mic.setPinsPdmRx(42, 41);
   micOk = mic.begin(I2S_MODE_PDM_RX, 16000, I2S_DATA_BIT_WIDTH_16BIT, I2S_SLOT_MODE_MONO);
   Serial.println(micOk ? "MIC OK" : "MIC FAILED");
-  if (BACKEND[0]) {
-    WiFi.mode(WIFI_STA);
-    WiFi.begin("Velxio-GUEST");   // Velxio's built-in open network; use your own SSID on the real board
-    for (int i = 0; i < 40 && WiFi.status() != WL_CONNECTED; i++) delay(250);
-    Serial.println(WiFi.status() == WL_CONNECTED ? "WIFI OK" : "WIFI FAILED");
-  }
+  WiFi.mode(WIFI_STA);
+  WiFi.begin("Velxio-GUEST");   // Velxio's built-in open network; use your own SSID on the real board
+  for (int i = 0; i < 40 && WiFi.status() != WL_CONNECTED; i++) delay(250);
+  Serial.println(WiFi.status() == WL_CONNECTED ? "WIFI OK" : "WIFI FAILED");
+  topic = String("aau-hack26/rooms/") + ROOM_ID + "/readings";
+  mqtt.setServer(MQTT_HOST, MQTT_PORT);
 }
 
 void loop() {
@@ -254,5 +262,6 @@ void loop() {
   }
   json += "}";
   Serial.println(json);
-  post(json);
+  publish(json);
+  mqtt.loop();
 }
