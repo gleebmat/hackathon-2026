@@ -283,7 +283,7 @@ export function createBuilding(el, input) {
       const coversTarget = hl && bid === hl.building && Number(f) > hl.data.floor;
       g.visible = inView(bid) && (floorFilter === null || Number(f) <= floorFilter) && !coversTarget;
     }
-    for (const { shell, building } of shells) shell.visible = inView(building.id) && floorFilter === null;
+    for (const { shell, building } of shells) shell.visible = inView(building.id);   // the glass case stays when floors are hidden
     for (const r of rooms.values()) {
       const isTarget = r.data.id === highlight;
       r.mesh.visible = isTarget || showOffices || !HIDDEN_BY_DEFAULT.has(r.data.type);

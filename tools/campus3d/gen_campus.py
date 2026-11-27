@@ -363,10 +363,11 @@ def build_v():
 if __name__ == "__main__":
     campus = {"campus": "AAU Klagenfurt", "units": "metres; x east, z south; origin = centre of building V",
               "buildings": [build_v(), build_n(), build_z(), build_l(), build_s()]}
-    from resolve_overlaps import resolve_blocks, resolve_connectors, resolve_rooms   # needs shapely
+    from resolve_overlaps import resolve_blocks, resolve_connectors, resolve_rooms, smooth_connectors   # needs shapely
     name_real_rooms(campus["buildings"])
     resolve_blocks(campus["buildings"])
     resolve_connectors(campus["buildings"])
+    smooth_connectors(campus["buildings"])
     print("dropped rooms:", resolve_rooms(campus["buildings"]))
     (HERE.parent.parent / "web" / "map3d" / "campus.json").write_text(json.dumps(campus, indent=1), encoding="utf-8")
     for b in campus["buildings"]:

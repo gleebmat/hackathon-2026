@@ -160,3 +160,38 @@ def resolve_connectors(buildings):
                 continue
             x0, z0, x1, z1 = max(pieces, key=lambda g: g.area).bounds
             c.update(x=round((x0 + x1) / 2, 2), z=round((z0 + z1) / 2, 2), w=round(x1 - x0, 2), d=round(z1 - z0, 2))
+
+
+def _face(everything, x, zc, direction):
+    """z of the first building wall hit when walking from (x, zc) north (-1) or south (+1)."""
+    from shapely.geometry import LineString
+    hit = LineString([(x, zc), (x, zc + direction * 200)]).intersection(everything)
+    if hit.is_empty:
+        return None
+    zs = [c[1] for g in getattr(hit, "geoms", [hit]) for c in g.coords]
+    return max(zs) if direction < 0 else min(zs)
+
+
+def smooth_connectors(buildings, max_shift=8.0, step=0.25):
+    """Slide each corridor sideways (as little as possible) until both of its side edges meet flat walls at both
+    ends, then make it span exactly from wall to wall, so it joins both buildings cleanly."""
+    everything = unary_union([bd["_footprint"] for bd in buildings])
+    for bd in buildings:
+        for c in bd.get("connectors", []):
+            half, zc = c["w"] / 2 - 0.05, c["z"]
+            best = None
+            for i in range(int(max_shift / step) + 1):
+                for shift in ((i * step,) if i == 0 else (i * step, -i * step)):
+                    x = c["x"] + shift
+                    tops = [_face(everything, x + e, zc, -1) for e in (-half, 0, half)]
+                    bots = [_face(everything, x + e, zc, +1) for e in (-half, 0, half)]
+                    if None in tops or None in bots:
+                        continue
+                    if max(tops) - min(tops) < 0.05 and max(bots) - min(bots) < 0.05:
+                        best = (x, max(tops), min(bots))
+                        break
+                if best:
+                    break
+            if best:
+                x, z0, z1 = best
+                c.update(x=round(x, 2), z=round((z0 + z1) / 2, 2), d=round(z1 - z0, 2))
