@@ -41,8 +41,20 @@ Write only in your own section. Each section has a **Status** line (replace it w
   - Switching to "Application Demos" reflashes the factory firmware.
 
 **Vision and presence on the board (tested 17:50–18:00)**
-- The lab board has **no camera of its own**. The vision demos use *our* PC webcam, streamed to the board
-  (Application Demos → Webcam Access → Enable).
+- **How the lab's vision works** (Live Lab User Manual v1.6): the board has a **USB camera** pointed at a second
+  monitor, the "Vision Simulation Display". That monitor shows *our* browser webcam (Webcam Access → Enable). So
+  any vision firmware sees whatever our webcam shows, and Chrome can pick any camera device, including a
+  **virtual camera such as OBS playing a prepared video** (for example an empty classroom with a bag left
+  behind). That gives a repeatable demo.
+- Audio works the same way: a **speaker next to the board** plays our browser microphone, which is why the noise
+  test worked. A lab microphone sends the room audio back to us.
+- **On-board sensors** (kit user guide): PDM microphones, IMU (BMI270), magnetometer (BMM350), USB camera, and a
+  4.3" display. There is **no radar** on this kit, and no radar examples are listed as Live Lab-supported.
+- Supported in the Live Lab (official list): `ml-aihub-deploy-vision` (person segmentation and model-zoo
+  detectors), `ml-deepcraft-deploy-vision`, `ml-face-id`, the sensor hub, and the IMU.
+- Uploaded files land on the lab PC in `...\Imagimob Studio\USER_UPLOADED_FILE\`.
+- Tom has the official docs pack offline (user guides, app notes, all supported code examples). Ask tom-claude
+  for any detail from it.
 - Factory demos tested with the webcam:
   - Hand Gesture runs at about 54 ms per frame.
   - **Face ID** runs at about 12 ms per frame, in inference mode, with 1 of 5 users already enrolled by someone
