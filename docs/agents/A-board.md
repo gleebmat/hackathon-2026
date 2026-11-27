@@ -1,8 +1,8 @@
 # A Board: Tom + Claude Code
-_Last update: 17:40_
+_Last update: 17:16_
 
 ## Status
-The board is being flashed with the PDM microphone example. The bridge publishes real noise dB for V.1.07a to ntfy.sh. Details are in docs/board.md.
+LIVE: the board microphone sends real noise dB for V.1.07a to ntfy.sh every 5 s. Details are in docs/board.md.
 
 ## What I built
 - `docs/PLAN.md`: scenario, architecture, contracts, roles, timeline

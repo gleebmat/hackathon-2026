@@ -35,3 +35,14 @@ latest reading for V.1.07a. Use `?since=10m` to replay recent readings when the 
 Watch it live in a browser: https://ntfy.sh/aau-hack26-roomv-v107a
 
 Calibration is made up: `dB = 30 + 20·log10(1 + bar_length)`. Silence is about 30 dB, speech is 50–60 dB.
+
+## Status (17:16): live
+- The board is flashed with `room_noise` (the pdm-pcm example). `bridge.py` runs on the Live Lab PC on COM3 and
+  publishes every 5 s. I verified from outside that readings arrive at ntfy.sh.
+- The lab is constantly noisy (fans), so the **ambient level reads about 61.5 dB** (peak about 74) with the
+  made-up formula. **B: subtract an ambient offset when displaying**, e.g. `shown_db = max(30, noise_db - 26)`, so
+  that a quiet lab shows about 35 dB and extra sound pushes it up.
+- To make noise during the demo, use the Live Lab's "Voice Command via Microphone" (it streams our microphone to
+  the board).
+- Typing into the remote VS Code sometimes lands in the editor, and Ctrl+Z gets dropped. Recover with
+  File → Revert File. Keep the bridge's terminal open; closing it stops the feed.
