@@ -128,54 +128,53 @@ building V exists on branch `tom/building3d-prototype`. Next: backend stubs.
 ---
 
 ## claude-3 (Website UI)
-**Status (19:30):** the full frontend runs on the real backend (branch `claude-3/ui-layout`): login and sign-up,
-search with suggestions, building view, booking sheet, my bookings. Tested in the browser. Next: lost & found
-page (waits for `app/lost_items.py`), then the 3D model once claude-2 pushes it.
+**Status (21:40):** the main page is now a minimal tool: campus map on top, a date/time picker and at most 3 room
+cards below (branch `claude-3/ui-layout`, PR #10). Booking sheet, my bookings and login work on the real backend.
+Tested in the browser, also with the 3D map from PR #13. Next: ratings once the backend has them, lost & found.
 
 **Run it**
 `pip install -r requirements.txt`, `uvicorn app.main:app --reload`, open http://localhost:8000 and log in as
 `student1@edu.aau.at` / `demo`. The backend serves the files without cache headers, so after pulling new frontend
 code press **Ctrl+Shift+R** (hard reload).
 
-**Files** (all in `web/`; mock data is gone, everything is live from the API)
-- `login.html`: log in and sign up (`/api/login`, `/api/register`), demo-account chips.
-- `index.html` + `js/app.js`: building view on top, live room cards with filters (free, open to join, quiet),
-  search with suggestions (`/api/search`, 150 ms debounce, arrow keys, `/` shortcut), booking sheet, my bookings
-  drawer, profile menu, polling `/api/rooms` and `/api/bookings/mine` every 5 s.
-- `js/api.js`: the only file that calls the backend; errors carry `{error, suggestions}`.
-- `js/plan2d.js`: 2D floor plan with the 3D module API, used while `js/building3d.js` doesn't exist. Until
-  `data/building_v.json` exists it lays the API rooms out in a ring around the courtyard.
-- `css/style.css`: the **THEME block at the top** holds every colour, font, radius and animation speed. Presets
-  violet / ocean / sunset / mint and light / dark / auto are switchable in the profile menu (saved per browser).
-
-**Booking sheet** (clicking a room on the plan, a card, or a search result)
-- 15 days (today + 14), 30-min slots 08:00–22:00 from `/availability`; past slots hidden. Tap a start, then an end.
-- The form mirrors `app/booking.py`, so it only offers what the backend accepts: durations capped by free
-  consecutive slots and by the 4 h/day limit (own bookings counted); "Private room" only when no one else booked
-  that time; seats capped by capacity (private) or the lowest `seats_free` (shared); events force private; quiet
-  vs loud purposes disabled when they would clash; own bookings shown as "yours", other rooms at that time as
-  "booked". The backend still decides: 400/409 errors are shown, 409 suggestions open that room with the same
-  time and settings.
-- My bookings: grouped per day with hours used out of 4, "Now" tag, ghost countdown, "+ Add time" (opens the room
-  at the booking's end time), two-tap cancel, history of past/cancelled/released.
-
-**Tested (19:00–19:30, backend on a scratch DB with `NOISE_FEED=0`)**: login redirect, search `semi` / `107a`,
-open from plan, card and search; book shared 3 people; join student2's shared room (max 4 seats, private
-disabled); 409 "too noisy for quiet study" → suggestion → booked; add time up to exactly 4 h, then add disabled;
-cancel; ghost countdown after `people: 0`; theme and dark mode; phone width. `pytest tests bridge`: 36 passed
-(backend untouched).
+**Files** (all in `web/`)
+- `index.html` + `js/app.js`: top bar (search with suggestions, my bookings, profile menu), the map, the picker,
+  the booking sheet and the my-bookings drawer. Polls `/api/rooms` and `/api/bookings/mine` every 5 s.
+- `js/picker.js`: the date pill opens a small calendar (today + 14 days, a start time in 30-min steps, 30 min to
+  4 h). Without a time, each card says how many hours are still bookable that day; with one, it shows Free /
+  Shared · n people (seats left) / Not available for exactly that range. Free rooms first; full and closed rooms
+  dimmed at the end. 3 cards per page with arrows (1 on phones). Hover (tap on phones) shows noise and, once the
+  backend has it, the rating. Clicking a card opens the booking sheet with that date and time already selected.
+  Slots come from `/availability` for every room (12 calls, reloaded every 30 s and after each booking).
+- `js/plan2d.js`: 2D floor plan, only used until `web/map3d/` (PR #13) is merged. With PR #13 the page loads
+  `map3d/building3d.js` and `map3d/campus.json` automatically (tested with a local copy of the branch).
+- `js/api.js`: the only file that calls the backend.
+- `login.html`: log in / sign up next to a photo of the AAU central wing (Naturpuur, CC BY-SA 4.0, Wikimedia
+  Commons, credited on the page; loaded from Wikimedia, not stored in the repo).
+- `css/style.css`: the THEME block at the top holds every colour, font, radius and animation curve.
 
 **Decisions**
-- Times from the API are campus time without a zone; the UI reads them as the browser's local time (fine in
-  Klagenfurt).
-- The UI is English, 24-hour clock. Fonts: Plus Jakarta Sans and Space Grotesk from Google Fonts.
+- Minimal on purpose: no stats, filters or card grid on the main page; the map is the hook, the cards are the tool.
+- The map panel stays dark in light and dark mode, matching the 3D scene.
+- Ratings are not faked: the rating row appears only when `/api/rooms` returns `rating`.
+- Times from the API are campus time without a zone; the UI reads them as the browser's local time.
 
 **Requests**
-- -> gleb-claude: please add `web/js/api.js` and `web/js/plan2d.js` to claude-3's files in PLAN.md.
-- -> claude-2: `createBuilding(el, buildingJson)` gets `data/building_v.json`, or the generated ring layout until it
-  exists; `setStatus(id, room)` receives the full room object from `/api/rooms` (uses `status`, `noise_class`,
-  `live`); `onRoomClick` opens the booking sheet, `focusRoom`/`showAll` run when it opens and closes.
-- -> gemini: once `building_v.json` lands, the plan uses its geometry automatically.
+- -> gleb-claude (backend changes the UI is ready for):
+  1. **Ratings:** store 1–5 stars per user and room; return `rating` (average) and `votes` in `/api/rooms`;
+     `POST /api/rooms/{id}/rating {stars}`, allowed only after the user had a booking in that room.
+  2. **All rooms for one range in one call:** `GET /api/rooms?date=&start=&hours=` with `status`, `people`,
+     `seats_free` and expected `noise_class` for that range. Today the picker makes 12 `/availability` calls.
+  3. **Free hours per day:** `free_hours` per room for a `date`, for the picker's "any time" view.
+  4. **No-cache headers** for `web/` (e.g. `Cache-Control: no-cache` on the static mount), so teammates don't run
+     stale JS after a pull.
+  5. **One room list:** the backend reads `web/data/building_v.json`, the map reads `web/map3d/campus.json`. Ids,
+     names and capacities should come from one source.
+  6. Please add `web/js/api.js`, `web/js/plan2d.js` and `web/js/picker.js` to claude-3's files in PLAN.md.
+- -> tom-claude (3D map, PR #13):
+  1. The mouse wheel over the map zooms it, so the page can't be scrolled past it. Please zoom only with Ctrl +
+     wheel or after a click into the map (an option in `createBuilding`).
+  2. An option for the scene colours (status colours, label colour), so the map can follow the site's theme.
 ---
 
 ## gemini (Data, simulation, demo)
