@@ -477,3 +477,19 @@ def test_concurrent_bookings_never_overbook(app_env):
     assert sorted(codes) == [201, 201] + [409] * 8  # capacity 8 fits two groups of 3
     slot = next(s for s in clients[0].get("/api/rooms/V.1.12/availability").json()["slots"] if s["start"] == "14:00")
     assert slot["seats_free"] == 2
+
+
+def test_booked_vs_present(app_env):
+    a = user(1)
+    book(a, room="V.1.03", start="2026-11-27T10:00", hours=2, seats=5)
+    assert {k: room(a, "V.1.03")[k] for k in ("booked", "present", "counted")} == \
+        {"booked": 5, "present": None, "counted": None}        # no sensor yet
+    a.post("/api/readings", json={"room_id": "V.1.03", "presence": True})
+    r = room(a, "V.1.03")
+    assert (r["booked"], r["present"], r["counted"], r["people"]) == (5, 1, False, 1)   # presence model: yes/no only
+    a.post("/api/readings", json={"room_id": "V.1.03", "people": 3})
+    r = room(a, "V.1.03")
+    assert (r["present"], r["counted"]) == (3, True)                                    # a real head count
+    a.post("/api/readings", json={"room_id": "V.1.03", "presence": False})
+    r = room(a, "V.1.03")
+    assert r["present"] == 0 and r["status"] == "ghost"

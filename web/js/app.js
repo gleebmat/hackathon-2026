@@ -429,7 +429,7 @@ function renderSheetHead() {
       <div class="sheet-title"><h2 id="room-title">${esc(r.label || r.id)}</h2><span class="muted">${esc(r.label ? `${r.id} · ${r.name}` : r.name)}</span></div>
       <div class="sheet-meta">
         <span class="pill ${esc(r.status)}">${STATUS[r.status] ?? esc(r.status)}</span>${live}${left}
-        <span class="meta"><svg class="icon"><use href="#i-users"/></svg>${r.people} here · ${r.capacity} max</span>
+        <span class="meta"><svg class="icon"><use href="#i-users"/></svg>${esc(occupancyText(r))}</span>
         <span class="meta"><svg class="icon"><use href="#i-sound"/></svg>${r.noise_db.toFixed(0)} dB · ${esc(r.noise_class)}</span>
       </div>
     </div>
@@ -440,7 +440,25 @@ function renderSheetHead() {
     : `<div class="now-item"><span>✨ Nobody has booked it right now</span></div>`;
   const ghost = r.status === "ghost" && r.ghost_release_at
     ? `<div class="ghost-alert" style="margin-top:8px">👻 Booked, but nobody is here. Frees up at ${hm(r.ghost_release_at)} unless someone shows up.</div>` : "";
-  $("sh-now").innerHTML = `<div class="block-title"><h3>Right now</h3></div><div class="now-list">${now}</div>${ghost}`;
+  $("sh-now").innerHTML = `<div class="block-title"><h3>Right now</h3></div><div class="now-list">${now}</div>${sensorCheck(r)}${ghost}`;
+}
+
+// Booked seats next to what the room's sensor actually sees. `counted` false = the board only knows yes/no.
+function seenText(r) {
+  if (r.counted) return `${r.present} ${r.present === 1 ? "person" : "people"} here now`;
+  return r.present > 0 ? "Someone is here" : "Nobody here";
+}
+
+function occupancyText(r) {
+  if (!r.sensor) return `${r.people} here · ${r.capacity} max`;
+  return r.booked ? `Booked for ${r.booked} · ${seenText(r)}` : `${seenText(r)} · ${r.capacity} max`;
+}
+
+function sensorCheck(r) {
+  if (!r.sensor || !r.booked) return "";
+  const match = r.counted ? r.present >= r.booked : r.present > 0;
+  return `<div class="sensor-check ${r.present === 0 ? "empty" : match ? "ok" : "fewer"}">
+    <span>📋 Booked for <b>${r.booked}</b></span><span>👀 Sensor: <b>${esc(seenText(r))}</b></span></div>`;
 }
 
 function renderDates() {

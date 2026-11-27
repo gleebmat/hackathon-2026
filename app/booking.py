@@ -78,11 +78,12 @@ def sensor(conn: sqlite3.Connection, room_id: str, now: datetime) -> dict:
     """Fresh sensor values for a room: noise_db, people and empty_since are None when unknown or stale."""
     row = conn.execute("SELECT * FROM readings WHERE room_id = ?", (room_id,)).fetchone()
     cutoff = now - SENSOR_STALE
-    out = {"noise_db": None, "people": None, "empty_since": None, "left_items": None}
+    out = {"noise_db": None, "people": None, "empty_since": None, "left_items": None, "counted": None}
     if row and row["noise_at"] and parse(row["noise_at"]) >= cutoff:
         out["noise_db"] = row["noise_db"]
     if row and row["people_at"] and parse(row["people_at"]) >= cutoff:
         out["people"] = row["people"]
+        out["counted"] = bool(row["counted"])
         out["empty_since"] = parse(row["empty_since"]) if row["empty_since"] else None
         out["left_items"] = row["left_items"]
     return out
@@ -185,6 +186,9 @@ def room_state(conn: sqlite3.Connection, room: sqlite3.Row, now: datetime, live:
             "status": status, "noise_db": round(noise_db, 1),
             "noise_class": noise_class(noise_db), "people": people, "seats_free": seats_free, "board": board,
             "live": is_live, "sensor": seen["people"] is not None, "left_items": seen["left_items"] or 0,
+            # booked vs actually here: `present` is what the sensor sees (None without one); `counted` is False when
+            # the board only knows yes/no (presence model), so the UI shows "someone is here" instead of a number.
+            "booked": booked, "present": seen["people"], "counted": seen["counted"],
             "ghost_release_at": min(deadlines).isoformat() if deadlines else None,
             "bookings_now": [{"id": b["id"], "mode": b["mode"], "purpose": b["purpose"], "seats": b["seats"],
                               "end": b["end"], "shareable": b["mode"] == "partial"} for b in current]}
@@ -367,14 +371,15 @@ def rate_room(conn: sqlite3.Connection, user_id: int, room_id: str, stars: int, 
 
 
 def record_reading(conn: sqlite3.Connection, room_id: str, noise_db: float | None, people: int | None,
-                   now: datetime, left_items: int | None = None) -> None:
+                   now: datetime, left_items: int | None = None, counted: bool = True) -> None:
+    """`counted` is False when `people` only says yes/no (1 or 0) from a presence model, not a head count."""
     get_room(conn, room_id)
     if noise_db is None and people is None:
         raise ApiError(400, "Send noise_db, people or both")
     old = conn.execute("SELECT * FROM readings WHERE room_id = ?", (room_id,)).fetchone()
     stamp = now.isoformat()
     row = dict(old) if old else {"room_id": room_id, "noise_db": None, "noise_at": None, "people": None,
-                                 "people_at": None, "empty_since": None, "left_items": None}
+                                 "people_at": None, "empty_since": None, "left_items": None, "counted": None}
     if left_items is not None:                      # items left behind, counted on the board after people leave
         row["left_items"] = left_items
     if noise_db is not None:
@@ -387,10 +392,10 @@ def record_reading(conn: sqlite3.Connection, room_id: str, noise_db: float | Non
             empty_since = row["empty_since"]  # still empty: the timer keeps running
         else:
             empty_since = stamp  # just became empty, or the sensor is back after a gap: the timer starts now
-        row.update(people=people, people_at=stamp, empty_since=empty_since)
+        row.update(people=people, people_at=stamp, empty_since=empty_since, counted=int(counted))
     conn.execute("INSERT OR REPLACE INTO readings (room_id, noise_db, noise_at, people, people_at, empty_since, "
-                 "left_items) VALUES (:room_id, :noise_db, :noise_at, :people, :people_at, :empty_since, :left_items)",
-                 row)
+                 "left_items, counted) VALUES (:room_id, :noise_db, :noise_at, :people, :people_at, :empty_since, "
+                 ":left_items, :counted)", row)
     if people:
         conn.execute("UPDATE bookings SET checked_in_at = ? WHERE room_id = ? AND status = 'active' "
                      "AND checked_in_at IS NULL AND start <= ? AND end > ?", (stamp, room_id, fmt(now), fmt(now)))
