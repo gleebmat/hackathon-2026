@@ -6,8 +6,8 @@
    ===================================================================== */
 :root {
   /* Fonts (loaded from Google Fonts in the HTML <head>) */
-  --font-body: "Plus Jakarta Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
-  --font-display: "Space Grotesk", var(--font-body);
+  --font-body: "Nunito Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-display: var(--font-body);
 
   /* Brand: two colours that make the gradient */
   --brand: #6d5dfc;
@@ -319,53 +319,51 @@ mark { background: color-mix(in srgb, var(--brand-2) 35%, transparent); color: i
 @keyframes blink { 50% { opacity: .25; } }
 
 /* ===================== Room picker: date pill + at most 3 cards ===================== */
-.picker-head { display: flex; justify-content: space-between; align-items: center; gap: 16px; flex-wrap: wrap; margin-bottom: 18px; }
-.picker-title { font-size: clamp(22px, 2.6vw, 28px); }
-
-.pill-wrap { position: relative; }
-.date-pill {
-  display: inline-flex; align-items: center; gap: 10px; padding: 10px 12px 10px 16px; border-radius: 999px;
-  border: 1.5px solid var(--border); background: var(--surface); font-weight: 650;
-  transition: border-color .2s, transform .25s var(--spring);
+/* Calendar: always visible between the map and the cards */
+.cal {
+  display: grid; grid-template-columns: minmax(0, 320px) minmax(0, 1fr); gap: 0;
+  border: 1.5px solid var(--border); border-radius: var(--radius-lg); background: var(--surface); margin-bottom: 30px;
 }
-.date-pill:hover { border-color: var(--text); }
-.date-pill:active { transform: scale(.97); }
-.date-pill.set { border-color: var(--text); }
-.date-pill-reset { display: grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; background: var(--surface-2); color: var(--muted); font-size: 12px; }
-.date-pill-reset:hover { background: var(--surface-3); color: var(--text); }
-
-.pop {
-  position: absolute; right: 0; top: calc(100% + 10px); z-index: 25; width: 330px; padding: 18px;
-  border-radius: 20px; background: var(--surface); border: 1px solid var(--border); box-shadow: var(--shadow-lg);
-  transform-origin: top right; transform: scale(.94) translateY(-4px); opacity: 0; visibility: hidden;
-  transition: transform .28s var(--spring), opacity .16s, visibility 0s .28s;
+.cal-month { padding: 18px 20px 16px; border-right: 1.5px solid var(--border); }
+.cal-time { padding: 20px 24px; display: grid; align-content: center; gap: 16px; }
+.cal-row { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.cal-row .lbl { width: 52px; }
+.cal-time.is-any .time, .cal-time.is-any .durs { opacity: .45; transition: opacity .2s; }
+.cal-time.is-any .time:hover, .cal-time.is-any .durs:hover { opacity: 1; }
+.anytime {
+  padding: 7px 14px; border-radius: 999px; border: 1.5px solid var(--border); background: none;
+  font-size: 13px; font-weight: 700; color: var(--muted); transition: all .15s;
 }
-.pop.open { transform: none; opacity: 1; visibility: visible; transition: transform .28s var(--spring), opacity .16s; }
-.month-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
-.month-head b { font: 700 16px var(--font-display); }
-.nav-sm { width: 30px; height: 30px; border-radius: 50%; border: 0; background: var(--surface-2); }
+.anytime:hover { border-color: var(--text); color: var(--text); }
+.anytime.on { border-color: var(--text); background: var(--text); color: var(--bg); }
+.picker-title { font-size: clamp(22px, 2.6vw, 28px); margin-bottom: 18px; }
+
+.month-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.month-head b { font-size: 16px; font-weight: 800; }
+.nav-sm { width: 30px; height: 30px; border-radius: 50%; border: 0; background: var(--surface-2); transition: background .15s; }
+.nav-sm:hover:not(:disabled) { background: var(--surface-3); }
 .nav-sm:disabled { opacity: .3; cursor: default; }
-.grid7 { display: grid; grid-template-columns: repeat(7, 1fr); gap: 3px; text-align: center; }
+.grid7 { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; text-align: center; }
 .grid7 .dow { font-size: 11px; font-weight: 700; color: var(--muted); padding-bottom: 4px; }
-.day { aspect-ratio: 1; border: 0; border-radius: 10px; background: none; font-weight: 600; font-variant-numeric: tabular-nums; transition: background .15s, transform .25s var(--spring); }
+.day {
+  height: 36px; border: 0; border-radius: 10px; background: none; font-weight: 700; font-variant-numeric: tabular-nums;
+  transition: background .15s, color .15s, transform .25s var(--spring);
+}
 .day:hover:not(:disabled) { background: var(--surface-2); }
 .day:disabled { color: var(--muted); opacity: .35; cursor: default; }
 .day.today { box-shadow: inset 0 0 0 1.5px var(--border); }
 .day.sel { background: var(--text); color: var(--bg); transform: scale(1.06); }
-.pop-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 16px; }
 .lbl { font-size: 13px; font-weight: 700; color: var(--muted); }
 .time { display: inline-flex; align-items: center; gap: 2px; padding: 3px; border-radius: 999px; background: var(--surface-2); }
-.time button { width: 30px; height: 30px; border-radius: 50%; border: 0; background: none; font-size: 16px; }
+.time button { width: 32px; height: 32px; border-radius: 50%; border: 0; background: none; font-size: 16px; }
 .time button:hover:not(:disabled) { background: var(--surface); }
 .time button:disabled { opacity: .3; cursor: default; }
-.time output { min-width: 64px; text-align: center; font: 700 18px var(--font-display); font-variant-numeric: tabular-nums; }
-.durs { display: flex; gap: 4px; }
-.durs button { padding: 6px 10px; border-radius: 999px; border: 1.5px solid var(--border); background: none; font-size: 13px; font-weight: 650; color: var(--muted); transition: all .15s; }
+.time output { min-width: 66px; text-align: center; font-size: 18px; font-weight: 800; font-variant-numeric: tabular-nums; }
+.durs { display: flex; gap: 4px; flex-wrap: wrap; }
+.durs button { padding: 6px 11px; border-radius: 999px; border: 1.5px solid var(--border); background: none; font-size: 13px; font-weight: 700; color: var(--muted); transition: all .15s; }
+.durs button:hover:not(:disabled) { border-color: var(--text); color: var(--text); }
 .durs button.on { border-color: var(--text); background: var(--text); color: var(--bg); }
 .durs button:disabled { opacity: .3; cursor: default; }
-.apply { width: 100%; margin-top: 18px; padding: 12px; border: 0; border-radius: 14px; background: var(--text); color: var(--bg); font-weight: 700; transition: transform .25s var(--spring); }
-.apply:active { transform: scale(.97); }
-.apply:disabled { opacity: .4; cursor: default; }
 
 .stage { display: grid; grid-template-columns: 44px minmax(0, 1fr) 44px; gap: 12px; align-items: start; }
 .arrow {
@@ -513,7 +511,7 @@ dialog::backdrop { background: rgb(10 8 30 / 45%); backdrop-filter: blur(6px); -
 .slot:not(:disabled):hover { transform: translateY(-2px); border-color: currentColor; }
 .slot.in-range { background: var(--gradient); color: var(--brand-ink); border-color: transparent; }
 .slot.in-range.start { box-shadow: 0 8px 18px -8px var(--brand); transform: scale(1.04); }
-.slot.pop { animation: slot-pop .35s var(--ease-bounce); }
+.slot.just-picked { animation: slot-pop .35s var(--ease-bounce); }
 @keyframes slot-pop { 50% { transform: scale(1.12); } }
 .slot-legend { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 12px; font-size: 12px; color: var(--muted); }
 .slot-legend span { display: inline-flex; align-items: center; gap: 6px; }
@@ -685,9 +683,8 @@ details.history .booking { opacity: .7; margin-top: 8px; }
   .picks { grid-template-columns: minmax(0, 1fr); }
   .stage { grid-template-columns: 36px minmax(0, 1fr) 36px; gap: 8px; }
   .arrow { width: 36px; height: 36px; }
-  .pill-wrap { position: static; }
-  .picker { position: relative; }
-  .pop { left: 0; right: 0; width: auto; top: 56px; transform-origin: top center; }
+  .cal { grid-template-columns: minmax(0, 1fr); }
+  .cal-month { border-right: 0; border-bottom: 1.5px solid var(--border); }
 }
 @media (max-width: 480px) {
   .slots { grid-template-columns: repeat(3, minmax(0, 1fr)); }
