@@ -50,9 +50,13 @@ Write only in your own section. Each section has a **Status** line (replace it w
 - Infineon examples we could flash in a later slot (each about 5 min to build and flash):
   - `mtb-example-psoc-edge-ml-aihub-deploy-vision`: **real-time person segmentation** from a USB camera. This is
     the basis for human presence.
-  - DEEPCRAFT Model Zoo has `Yolov8nPersonDetection` (people count), `SSDMobileNetV2`, `YoloX` and `TinyYolov2`
-    (COCO objects: backpack, laptop, bottle, phone, which covers **lost items**), and `RadarEntranceCounter`
-    (needs the BGT60 radar, not seen in this lab).
+  - The DEEPCRAFT Model Zoo has many detectors (YoloX, SSDMobileNetV1/V2, TinyYolov2, SwiftYolo,
+    Yolov8nPersonDetection), but **all of them are trained for persons only**, so they can't detect bags. Each
+    comes with a prebuilt `.hex`.
+  - **Lost items:** no ready model on the board. Options: (a) change detection: compare the empty room against a
+    reference image and report "unknown object at seat X" without a label; (b) label the object off the board,
+    using a COCO model in the backend, on a snapshot taken only when the board reports 0 persons;
+    (c) train a backpack detector in DEEPCRAFT Studio, which is too slow for this weekend.
 - Privacy design for the pitch: presence comes from people counts only. The camera checks for lost items only when
   the room is empty, everything runs on the board, and only labels leave it.
 
