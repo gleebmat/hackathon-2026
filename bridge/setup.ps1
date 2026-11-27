@@ -16,5 +16,6 @@ if (-not (Test-Path $app)) {
 
 $bash = Join-Path $tools 'modus-shell\bin\bash.exe'
 $unix = $app -replace '\\', '/'
-& $bash --login -c "cd '$unix' && make build -j8 && make program"
+$toolsUnix = $tools -replace '\\', '/'
+& $bash --login -c "export CY_TOOLS_PATHS='$toolsUnix'; cd '$unix' && make build -j8 && make program"
 Write-Host 'Flashed. Now run:  python $HOME\bridge.py COM3'
