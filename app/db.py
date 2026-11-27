@@ -1,4 +1,4 @@
-"""SQLite storage: schema, connection and seed data (bookable floor 1 rooms of building V, demo accounts)."""
+"""SQLite storage: schema, connection and seed data (the bookable rooms of the 3D campus map, demo accounts)."""
 
 import json
 import os
@@ -8,8 +8,7 @@ from pathlib import Path
 from app.auth import hash_password
 
 ROOT = Path(__file__).resolve().parent.parent
-BUILDING_JSON = ROOT / "web" / "data" / "building_v.json"
-FLOOR = 1
+CAMPUS_JSON = ROOT / "web" / "map3d" / "campus.json"
 DEFAULT_CAPACITY = 10
 
 SCHEMA = """
@@ -19,7 +18,10 @@ CREATE TABLE IF NOT EXISTS sessions (
     token TEXT PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id), created_at TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS rooms (
     id TEXT PRIMARY KEY, floor INTEGER NOT NULL, name TEXT NOT NULL, capacity INTEGER NOT NULL,
-    closed INTEGER NOT NULL DEFAULT 0, listed INTEGER NOT NULL DEFAULT 1);
+    closed INTEGER NOT NULL DEFAULT 0, listed INTEGER NOT NULL DEFAULT 1, label TEXT);
+CREATE TABLE IF NOT EXISTS ratings (
+    user_id INTEGER NOT NULL REFERENCES users(id), room_id TEXT NOT NULL REFERENCES rooms(id),
+    stars INTEGER NOT NULL CHECK (stars BETWEEN 1 AND 5), updated_at TEXT NOT NULL, PRIMARY KEY (user_id, room_id));
 CREATE TABLE IF NOT EXISTS bookings (
     id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id), room_id TEXT NOT NULL REFERENCES rooms(id),
     start TEXT NOT NULL, end TEXT NOT NULL, mode TEXT NOT NULL, seats INTEGER NOT NULL, purpose TEXT NOT NULL,
@@ -35,8 +37,8 @@ CREATE TABLE IF NOT EXISTS readings (
 """
 READINGS_COLUMNS = {"room_id", "noise_db", "noise_at", "people", "people_at", "empty_since"}
 
-# Real room numbers and names from campusplan.aau.at (bookable rooms only); capacities are made up.
-# Used until web/data/building_v.json exists.
+# Fallback when the map data is missing (the tests use it): building V floor 1, real numbers and names from
+# campusplan.aau.at, made-up capacities.
 DEFAULT_ROOMS = [
     {"id": "V.1.01", "name": "Seminarraum", "capacity": 30},
     {"id": "V.1.02", "name": "Arbeits- und Aufenthaltsraum", "capacity": 20},
@@ -68,13 +70,15 @@ def connect() -> sqlite3.Connection:
 
 
 def load_rooms() -> list[dict]:
-    if BUILDING_JSON.exists():
-        rooms = json.loads(BUILDING_JSON.read_text(encoding="utf-8"))["rooms"]
-        rooms = [r for r in rooms if r.get("floor") == FLOOR and r.get("bookable", True)]
+    """Every bookable room of the 3D map (web/map3d/campus.json), so the map, search and bookings always match."""
+    if CAMPUS_JSON.exists():
+        campus = json.loads(CAMPUS_JSON.read_text(encoding="utf-8"))
+        rooms = [r for b in campus["buildings"] for r in b["rooms"] if r.get("bookable")]
     else:
-        rooms = [{**r, "floor": FLOOR} for r in DEFAULT_ROOMS]
-    return [{"id": r["id"], "floor": FLOOR, "name": r.get("name") or r["id"],
-             "capacity": int(r.get("capacity") or DEFAULT_CAPACITY), "closed": int(bool(r.get("closed")))}
+        rooms = [{**r, "floor": 1} for r in DEFAULT_ROOMS]
+    return [{"id": r["id"], "floor": int(r["floor"]), "name": r.get("name") or r["id"],
+             "capacity": int(r.get("capacity") or DEFAULT_CAPACITY), "closed": int(bool(r.get("closed"))),
+             "label": r.get("label")}
             for r in rooms]
 
 
@@ -86,6 +90,8 @@ def upgrade(conn: sqlite3.Connection) -> None:
     """Bring a database created by an older version up to date, keeping users, sessions and bookings."""
     if "listed" not in columns(conn, "rooms"):
         conn.execute("ALTER TABLE rooms ADD COLUMN listed INTEGER NOT NULL DEFAULT 1")
+    if "label" not in columns(conn, "rooms"):
+        conn.execute("ALTER TABLE rooms ADD COLUMN label TEXT")
     if columns(conn, "readings") not in (set(), READINGS_COLUMNS):
         conn.execute("DROP TABLE readings")
     conn.execute(READINGS)
@@ -102,10 +108,10 @@ def init() -> None:
         # Rooms that left the data file stay in the database (their bookings keep a valid room) but are hidden.
         conn.execute("UPDATE rooms SET listed = 0")
         conn.executemany(
-            "INSERT INTO rooms (id, floor, name, capacity, closed, listed) "
-            "VALUES (:id, :floor, :name, :capacity, :closed, 1) "
+            "INSERT INTO rooms (id, floor, name, capacity, closed, listed, label) "
+            "VALUES (:id, :floor, :name, :capacity, :closed, 1, :label) "
             "ON CONFLICT(id) DO UPDATE SET floor=excluded.floor, name=excluded.name, capacity=excluded.capacity, "
-            "closed=excluded.closed, listed=1",
+            "closed=excluded.closed, listed=1, label=excluded.label",
             rooms,
         )
         for email, name in DEMO_USERS:

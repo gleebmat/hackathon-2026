@@ -5,9 +5,12 @@ Sensor times are compared as datetimes.
 """
 
 import os
+import random
 import sqlite3
 from datetime import date, datetime, time, timedelta
 
+# The one room wired to the PSOC Edge E84 in the Live Lab; every other room is simulated.
+BOARD_ROOM = os.environ.get("BOARD_ROOM", "Z.1.04")
 OPEN, CLOSE = time(8, 0), time(22, 0)
 SLOT = timedelta(minutes=30)
 MAX_HOURS_PER_DAY = 4.0
@@ -105,7 +108,40 @@ def booking_out(conn: sqlite3.Connection, row: sqlite3.Row, now: datetime, user_
             "hours": (end - start).total_seconds() / 3600, "mode": row["mode"], "seats": row["seats"],
             "purpose": row["purpose"], "custom_purpose": row["custom_purpose"], "status": row["status"],
             "checked_in": row["checked_in_at"] is not None,
-            "ghost_release_at": deadline.isoformat() if deadline else None, "mine": row["user_id"] == user_id}
+            "ghost_release_at": deadline.isoformat() if deadline else None, "mine": row["user_id"] == user_id,
+            "my_rating": my_rating(conn, user_id, row["room_id"]) if row["user_id"] == user_id else None}
+
+
+def my_rating(conn: sqlite3.Connection, user_id: int, room_id: str) -> int | None:
+    row = conn.execute("SELECT stars FROM ratings WHERE user_id = ? AND room_id = ?", (user_id, room_id)).fetchone()
+    return row["stars"] if row else None
+
+
+def simulating() -> bool:
+    return os.environ.get("SIMULATE", "1") != "0"
+
+
+def simulated(room: sqlite3.Row, current: list[sqlite3.Row], now: datetime) -> tuple[float, int]:
+    """Noise and people for a room without a sensor. Random but the same for every viewer: noise changes every
+    minute, walk-ins every 10 minutes. Booked rooms hold their booked people (or one fewer); about one free room
+    in twelve has one or two walk-ins."""
+    booked = sum(b["seats"] for b in current)
+    cls = loudest(current)
+    if not simulating():
+        return SIMULATED_DB[cls], booked
+    rnd = random.Random(f"{room['id']}|{now:%Y-%m-%dT%H:%M}")
+    walk_ins = random.Random(f"{room['id']}|{now:%Y-%m-%dT%H}|{now.minute // 10}")
+    if room["closed"]:
+        people = 0
+    elif current:
+        people = max(1, booked - rnd.randint(0, 1))
+    else:
+        people = walk_ins.choice([1, 2]) if walk_ins.random() < 1 / 12 else 0
+    base = SIMULATED_DB[cls] if cls else SIMULATED_DB[None] + 3 * people
+    noise = base + rnd.uniform(-3, 3)
+    if cls in (None, "quiet"):
+        noise = min(noise, 39.0)  # stays "quiet", so quiet study is never refused by chance
+    return round(noise, 1), people
 
 
 def room_state(conn: sqlite3.Connection, room: sqlite3.Row, now: datetime, live: dict) -> dict:
@@ -113,15 +149,18 @@ def room_state(conn: sqlite3.Connection, room: sqlite3.Row, now: datetime, live:
     current = current_bookings(conn, room["id"], now)
     seen = sensor(conn, room["id"], now)
     feed = live.get(room["id"])
-    is_live = bool(feed and feed.get("live"))
-    if is_live:
+    feed_live = bool(feed and feed.get("live"))
+    sim_noise, sim_people = simulated(room, current, now)
+    if feed_live:
         noise_db = feed["noise_db"]
     elif seen["noise_db"] is not None:
         noise_db = seen["noise_db"]
     else:
-        noise_db = SIMULATED_DB[loudest(current)]
+        noise_db = sim_noise
     booked = sum(b["seats"] for b in current)
-    people = seen["people"] if seen["people"] is not None else booked
+    people = seen["people"] if seen["people"] is not None else sim_people
+    board = room["id"] == BOARD_ROOM
+    is_live = board and (feed_live or seen["noise_db"] is not None or seen["people"] is not None)
     exclusive = any(b["mode"] == "full" for b in current)
     seats_free = 0 if exclusive or room["closed"] else max(0, room["capacity"] - max(booked, people))
     deadlines = [d for d in (ghost_deadline(b, seen) for b in current) if d]
@@ -137,9 +176,14 @@ def room_state(conn: sqlite3.Connection, room: sqlite3.Row, now: datetime, live:
     else:
         status = "free"
 
-    return {"id": room["id"], "floor": room["floor"], "name": room["name"], "capacity": room["capacity"],
-            "status": status, "noise_db": round(noise_db, 1), "noise_class": noise_class(noise_db),
-            "people": people, "seats_free": seats_free, "live": is_live, "sensor": seen["people"] is not None,
+    rating = conn.execute("SELECT AVG(stars) AS avg, COUNT(*) AS votes FROM ratings WHERE room_id = ?",
+                          (room["id"],)).fetchone()
+    return {"id": room["id"], "label": room["label"], "building": room["id"].split(".")[0], "floor": room["floor"],
+            "name": room["name"], "capacity": room["capacity"],
+            "rating": round(rating["avg"], 1) if rating["votes"] else None, "votes": rating["votes"],
+            "status": status, "noise_db": round(noise_db, 1),
+            "noise_class": noise_class(noise_db), "people": people, "seats_free": seats_free, "board": board,
+            "live": is_live, "sensor": seen["people"] is not None,
             "ghost_release_at": min(deadlines).isoformat() if deadlines else None,
             "bookings_now": [{"id": b["id"], "mode": b["mode"], "purpose": b["purpose"], "seats": b["seats"],
                               "end": b["end"], "shareable": b["mode"] == "partial"} for b in current]}
@@ -236,13 +280,15 @@ def _norm(s: str) -> str:
 
 
 def search_rank(room: sqlite3.Row, q: str) -> int | None:
-    """Lower is better; None means no match. '107a', 'v.1.07a' and 'V 1 07a' all find V.1.07a."""
+    """Lower is better; None means no match. '107a', 'v.1.07a' and 'V 1 07a' all find V.1.07a; '104' finds
+    Z.1.04 and V.1.04 (the building letter may be left out)."""
     nq, nid, name = _norm(q), _norm(room["id"]), room["name"].lower()
+    label = _norm(room["label"] or "")
     if not nq:
         return None
-    if nid == nq:
+    if nid == nq or label == nq:
         return 0
-    if nid.startswith(nq) or nid.removeprefix("v").startswith(nq):
+    if nid.startswith(nq) or nid[1:].startswith(nq) or (label and label.startswith(nq)):
         return 1
     if nq in nid:
         return 2
@@ -285,6 +331,38 @@ def availability(conn: sqlite3.Connection, room: sqlite3.Row, day: date, now: da
                       "shareable": bool(here) and not exclusive, "noise": loudest(here)})
         t = end
     return slots
+
+
+def free_hours(slots: list[dict]) -> float:
+    """Hours of a day that can still be booked (slots that are free or shared with seats left)."""
+    return sum(1 for s in slots if s["status"] in ("free", "partial")) / 2
+
+
+def calendar(conn: sqlite3.Connection, day: date, now: datetime, live: dict) -> dict:
+    """Every listed room's slots for one day, in one call (the picker's calendar)."""
+    rooms = {}
+    for room in listed_rooms(conn):
+        slots = availability(conn, room, day, now, live)
+        rooms[room["id"]] = {"free_hours": free_hours(slots), "slots": slots}
+    return {"date": day.isoformat(), "open": f"{OPEN:%H:%M}", "close": f"{CLOSE:%H:%M}", "rooms": rooms}
+
+
+def can_rate(conn: sqlite3.Connection, user_id: int, room_id: str, now: datetime) -> bool:
+    """Only students who actually had the room may rate it: an active booking there that has started."""
+    return conn.execute("SELECT 1 FROM bookings WHERE user_id = ? AND room_id = ? AND status = 'active' "
+                        "AND start <= ?", (user_id, room_id, fmt(now))).fetchone() is not None
+
+
+def rate_room(conn: sqlite3.Connection, user_id: int, room_id: str, stars: int, now: datetime) -> dict:
+    get_room(conn, room_id)
+    if not can_rate(conn, user_id, room_id, now):
+        raise ApiError(403, "You can rate a room after you have used it")
+    conn.execute("INSERT INTO ratings (user_id, room_id, stars, updated_at) VALUES (?, ?, ?, ?) "
+                 "ON CONFLICT(user_id, room_id) DO UPDATE SET stars = excluded.stars, updated_at = excluded.updated_at",
+                 (user_id, room_id, stars, now.isoformat()))
+    row = conn.execute("SELECT AVG(stars) AS avg, COUNT(*) AS votes FROM ratings WHERE room_id = ?",
+                       (room_id,)).fetchone()
+    return {"room_id": room_id, "rating": round(row["avg"], 1), "votes": row["votes"], "my_rating": stars}
 
 
 def record_reading(conn: sqlite3.Connection, room_id: str, noise_db: float | None, people: int | None,

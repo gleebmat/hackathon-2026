@@ -4,12 +4,13 @@ Shared instructions for every AI coding tool and teammate working in this repo.
 Hackathon project: speed matters, but don't break `main`.
 
 ## Project status (update when something important lands)
-- Project: Smart Campus Room Booking for building V (Infineon challenge). **Read `docs/PLAN.md` (spec + your role) and `docs/LOG.md` (status per agent) first.**
-- Team: Gleb = backend (`app/`), Thomas = board (`bridge/`, `detector/`), Martha = frontend (`web/`).
-- Done: board noise pipeline; backend API complete (`app/`; PLAN "API" and "Frontend flow"; run
-  `uvicorn app.main:app`, docs at `/docs`). In progress: 3D model, UI, simulation, lost items.
-- Board: noise and presence work as separate firmwares; next steps (merged firmware, direct path to the backend
-  instead of ntfy) are in PLAN, "Board (Live Lab)".
+- Project: Smart Campus Room Booking on a 3D AAU campus map (Infineon challenge). **Read `docs/PLAN.md` (spec + your role) and `docs/LOG.md` (status per agent) first; run steps are in `README.md`.**
+- Team: Gleb = backend + integration (`app/`), Thomas = board + 3D map (`bridge/`, `web/map3d/`), Martha = frontend (`web/`), Arshia = models (people count, lost items).
+- Done and integrated on `main`: UI (map, calendar picker, booking, my bookings, ratings) + 3D map + backend +
+  board bridge. Rooms come from `web/map3d/campus.json`; the board room is **Z.1.04**, every other room is
+  simulated.
+- Open: Arshia's two models (people count, lost items), the merged noise + presence firmware, and a real-board
+  run in the Live Lab (PLAN, "Board (Live Lab)").
 
 ## Docs
 - Only `docs/PLAN.md`, `docs/LOG.md` and `README.md`. No other Markdown files; log in your own section of `docs/LOG.md`.

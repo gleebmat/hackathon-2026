@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Room V · Log in</title>
+  <script>
+    try {
+      document.documentElement.dataset.theme = localStorage.getItem("roomv-theme") || "violet";
+      document.documentElement.dataset.mode = localStorage.getItem("roomv-mode") || "auto";
+    } catch {}
+  </script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;600;700&display=swap">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div class="auth">
+    <section class="auth-art">
+      <div class="brand"><span class="brand-mark">V</span><span class="brand-name">Room V</span></div>
+      <h1>Rooms across campus,<br>free when you need them.</h1>
+      <a class="credit" href="https://commons.wikimedia.org/wiki/File:Alpen-Adria_Universit%C3%A4t_Klagenfurt,_Zentraltrakt_Ost,_K%C3%A4rnten.jpg" target="_blank" rel="noopener">Photo: Naturpuur, CC BY-SA 4.0, via Wikimedia Commons</a>
+    </section>
+
+    <main class="auth-main">
+      <div class="card auth-card">
+        <h2 id="auth-title">Welcome back 👋</h2>
+        <p class="muted">Log in with your student account.</p>
+        <div class="tabs" role="tablist">
+          <button type="button" class="active" data-tab="login" role="tab">Log in</button>
+          <button type="button" data-tab="register" role="tab">Sign up</button>
+        </div>
+        <form class="form" id="auth-form" novalidate>
+          <label class="hidden" id="name-field">Name
+            <input class="text-input" id="name" type="text" autocomplete="name" maxlength="60" placeholder="What should we call you?">
+          </label>
+          <label>Student email
+            <input class="text-input" id="email" type="email" autocomplete="username" required placeholder="you@edu.aau.at">
+          </label>
+          <label>Password
+            <input class="text-input" id="password" type="password" autocomplete="current-password" required placeholder="At least 4 characters">
+          </label>
+          <div class="alert hidden" id="auth-error" role="alert"></div>
+          <button class="btn btn-primary btn-lg" id="auth-submit" type="submit">Log in</button>
+        </form>
+        <div class="demo">
+          <span class="muted small">Demo accounts (password <b>demo</b>), click to fill in:</span>
+          <div class="demo-list" id="demo-list"></div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <script type="module">
+    import * as api from "./js/api.js";
+
+    const $ = (id) => document.getElementById(id);
+    let tab = "login";
+
+    try {
+      await api.me();
+      location.replace("./");
+    } catch {}
+
+    function setTab(next) {
+      tab = next;
+      for (const b of document.querySelectorAll("[data-tab]")) b.classList.toggle("active", b.dataset.tab === tab);
+      $("name-field").classList.toggle("hidden", tab === "login");
+      $("auth-title").textContent = tab === "login" ? "Welcome back 👋" : "Join Room V ✨";
+      $("auth-submit").textContent = tab === "login" ? "Log in" : "Create account";
+      $("password").autocomplete = tab === "login" ? "current-password" : "new-password";
+      $("auth-error").classList.add("hidden");
+    }
+
+    for (const b of document.querySelectorAll("[data-tab]")) b.addEventListener("click", () => setTab(b.dataset.tab));
+
+    $("demo-list").innerHTML = [1, 2, 3, 4]
+      .map((i) => `<button type="button" class="chip" data-email="student${i}@edu.aau.at">student${i}</button>`).join("");
+    $("demo-list").addEventListener("click", (e) => {
+      const b = e.target.closest("[data-email]");
+      if (!b) return;
+      setTab("login");
+      $("email").value = b.dataset.email;
+      $("password").value = "demo";
+      $("auth-submit").focus();
+    });
+
+    $("auth-form").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const email = $("email").value.trim();
+      const password = $("password").value;
+      const btn = $("auth-submit");
+      btn.disabled = true;
+      try {
+        if (tab === "login") await api.login(email, password);
+        else await api.register(email, password, $("name").value.trim() || undefined);
+        location.replace("./");
+      } catch (err) {
+        $("auth-error").textContent = err.message;
+        $("auth-error").classList.remove("hidden");
+        btn.disabled = false;
+      }
+    });
+  </script>
+</body>
+</html>

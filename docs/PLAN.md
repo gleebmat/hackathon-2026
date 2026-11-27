@@ -4,10 +4,14 @@
 `docs/LOG.md`.** Don't create other Markdown files.
 
 ## Product
-This is a website for AAU students. A student logs in, finds a room in a **3D model of building V**, and books it.
+This is a website for AAU students. A student logs in, finds a room on a **3D map of the campus** (buildings V,
+N, Z, L and S), and books it.
 - **Login:** 4 demo accounts (`student1..4@edu.aau.at`, password `demo`), plus **sign-up** with any `@edu.aau.at`
   email and a password of 4+ characters. The repo is public, so never put real emails in it.
-- **Only floor 1 of building V** is bookable and shown.
+- **Rooms:** every room the map marks `bookable` (71 seminar rooms, lecture halls and the atrium, all floors).
+- **The board room is `Z.1.04`** (seminar room, 51 seats, in the central building Z). It is the only room with
+  real sensor data from the PSOC Edge E84; it shows a LIVE badge while the board is sending. Every other room is
+  simulated. Change it with `BOARD_ROOM` in the backend and the 4th argument of `bridge.py`.
 - **Booking options:**
   - Time: 30-minute slots from 08:00 to 22:00, 0.5–4 h per booking, and **at most 4 h per student per day**.
     Picking a room shows every slot of the day as free, shared, full, closed or past.
@@ -19,41 +23,40 @@ This is a website for AAU students. A student logs in, finds a room in a **3D mo
   10-minute timer starts: at the start of the booking, or when everyone leaves. If nobody is back when it runs
   out, the booking is released and its time slots are free again. Meanwhile the room shows as `ghost` with the
   release time. A sensor that goes silent for over 2 minutes never releases anything.
-- **Search:** typing a room number or name shows suggestions as you type (`107a`, `V.1.07a` and `atrium` all
-  find V.1.07a), like campusplan.aau.at.
+- **Search:** typing a room number or name shows suggestions as you type (`z104`, `Z.1.04`, `107a` and `atrium`
+  all work; the building letter may be left out), like campusplan.aau.at.
 - **Noise detector for partial bookings:** every room shows a live noise level, so someone who wants silence can
   choose another room.
-  - **V.1.07a is measured by the real PSOC Edge E84 microphone.** This already works (see `docs/LOG.md`,
-    tom-claude).
-  - The other rooms are simulated.
-- **People estimate** per room. V.1.07a gets a real count from the board's person-detection model (webcam feed
-  into the board). The other rooms are simulated from their bookings.
+  - **Z.1.04 is measured by the PSOC Edge E84 microphone** (our laptop mic, played into the Live Lab).
+  - The other rooms are simulated by the backend: random but the same for everyone, changing every minute.
+- **People** per room. Z.1.04 gets presence (0 or 1 person) from the board's person detection; a real count comes
+  later from Arshia's model. The other rooms are simulated from their bookings, plus a few walk-ins.
 - **Lost & found:** after a booking ends and the board reports 0 persons, the system detects items left behind
   (e.g. "backpack at seat area 3") and tells the student who booked the room. Details are under "Lost items" below.
-- **3D view:** building V floats in empty space with no terrain. It is a rectangular ring with a courtyard hole,
-  like Google Earth, and you can rotate and zoom it. Searching `V.1.07a` flies the camera to that room and hides
-  everything else.
+- **3D view:** the campus map (`web/map3d/`) is on the main page: rotate, zoom, click a room to book it; searching
+  flies the camera to the room and highlights it.
 
 All numbers are made up. This is a prototype.
 
 ## Roles
 | Agent | Owns (only edit these, plus your section of `docs/LOG.md`) | Delivers |
 |---|---|---|
-| **gleb-claude** (Gleb's Claude Code): Backend | `app/` (except `app/lost_items.py`), `tests/`, `requirements.txt`, `.env.example` | FastAPI + SQLite: login, sign-up, rooms, search, availability, bookings, the booking rules, ghost release, and the live noise feed for V.1.07a (**done**, see API below). |
+| **gleb-claude** (Gleb's Claude Code): Backend | `app/` (except `app/lost_items.py`), `tests/`, `requirements.txt`, `.env.example` | FastAPI + SQLite: login, sign-up, rooms (from the map), search, availability, bookings, the booking rules, ghost release, board readings for Z.1.04 and the simulation of every other room (**done**, see API below). Integrates UI + map + board. |
 | **tom-claude** (Tom's Claude Code): Board | `bridge/` | Board bridge (noise and presence work, as separate firmwares). Next: see "Board (Live Lab): decisions and next steps". |
 | **tom-claude**: 3D map (claude-2's role) | `web/map3d/`, `tools/campus3d/` | **Done:** a Three.js campus map of buildings V, N, Z, L and S with search, glow highlight, building and floor isolation, 3D room numbers and status colours. See "3D campus map" below. Standalone until the team decides how to combine it with the UI. |
-| **claude-3**: Website UI | `web/index.html`, `web/login.html`, `web/js/app.js`, `web/css/style.css` | The login page, the search bar (calls `focusRoom`), the room panel (live noise, people, today's bookings, a LIVE badge on V.1.07a), the booking form (hours, full or partial, seats, purpose, and suggestions on a 409), and "my bookings"., and the **Lost & found** page: item cards, a "That's mine" button, and a "maybe yours" banner. |
+| **claude-3**: Website UI | `web/index.html`, `web/login.html`, `web/js/app.js`, `web/js/api.js`, `web/js/picker.js`, `web/js/plan2d.js`, `web/css/style.css` | **Done** and wired to the 3D map. The login page, the search bar (calls `focusRoom`), the room panel (live noise, people, today's bookings, a LIVE badge on the room with `board: true`), the booking form (hours, full or partial, seats, purpose, and suggestions on a 409), and "my bookings"., and the **Lost & found** page: item cards, a "That's mine" button, and a "maybe yours" banner. |
 | **tom-claude**, continued | `detector/`, `app/lost_items.py` (a FastAPI `APIRouter` that gleb-claude includes in `app/main.py`) | The lost-item service: snapshot vs reference diff, YOLOv8n labels, crops, and the endpoints below. Board: flash person detection and forward the person count through the bridge. |
-| **gemini** (Gemini Pro): Data, simulation, demo | `web/data/building_v.json`, `sim/`, `README.md` | Building V room layout and data (schema below; take real room numbers from https://campusplan.aau.at/ if that's cheap, otherwise invent plausible ones). `sim/simulate.py`, which posts simulated readings for the other rooms. The demo script, the pitch and the README. End-to-end QA, with bugs reported in LOG. Lost-item demo setup: reference photo of the empty desk and the bag scenario. |
+| **gemini** (Arshia, Gemini Pro): Models, demo | `models/` (new), `README.md` | **Two models, added later:** (1) counting people in the board room, (2) finding lost items. They plug into `POST /api/readings` (`people` as a number) and the "Lost items" endpoints below. Also the demo script and the pitch. Room data and simulation are no longer gemini's: rooms come from the map, and the backend simulates the other rooms. |
 
 ## Architecture
 ```
-PSOC Edge E84 (Live Lab): mic -> UART -> bridge.py on the lab PC -> ntfy.sh topic
-                                                                       |
-web/ (static, Three.js from CDN) <-- JSON --> FastAPI + SQLite (app/) <-+ LiveNoiseFeed (bridge/ntfy_feed.py)
-                                                     ^
-                                    sim/simulate.py -+ POST /api/readings (the other rooms)
+PSOC Edge E84 (Live Lab) -> UART -> bridge.py on the lab PC -> HTTPS (cloudflared tunnel, X-Token)
+                                                                       |  POST /api/readings, room Z.1.04
+web/ (UI + map3d/, Three.js from CDN) <-- JSON --> FastAPI + SQLite (app/) <-+
+                                                   (simulates every other room; rooms from web/map3d/campus.json)
 ```
+Fallback without a tunnel: `bridge.py` publishes to ntfy.sh and `bridge/ntfy_feed.py` in the backend reads it
+(noise only, and ntfy's daily limit applies).
 - **Stack:** Python 3.12, FastAPI, the standard-library `sqlite3`, and static HTML/JS with Three.js from a CDN
   (pin an exact version, e.g. `three@0.160.0`), so there is no build step.
 - **Run:** `pip install -r requirements.txt`, then `uvicorn app.main:app --reload`, then open http://localhost:8000.
@@ -62,7 +65,7 @@ web/ (static, Three.js from CDN) <-- JSON --> FastAPI + SQLite (app/) <-+ LiveNo
 ## Board (Live Lab): decisions and next steps for tom-claude
 **How it works.** The PSOC Edge E84 is a microcontroller (Cortex-M33 + Cortex-M55 + Ethos-U55 NPU), not an
 FPGA; call it "the board" or "PSOC Edge E84" in the pitch. It sits in Infineon's remote Live Lab and represents
-one room, **V.1.07a (Atrium)**. Our laptop's microphone plays through a speaker next to the board, and our
+one room, **Z.1.04** (seminar room in the central building). Our laptop's microphone plays through a speaker next to the board, and our
 webcam is shown on the lab's simulation display that the board's USB camera films. **The board measures noise
 and detects people itself**; only its results leave it.
 
@@ -86,13 +89,13 @@ laptop mic/webcam -> Live Lab speaker/display -> board (mic + camera, NPU) -> UA
    `PRESENCE <0|1> <person_frames>/<frames>` and `NOISE <avg_db> <peak_db>`.
    Check first whether the PDM pins and clocks must be enabled in the vision project's Device Configurator
    (`design.modus`). Keep `setup_person.ps1` as the fallback if the merge doesn't work within one session.
-3. **Bridge to the backend directly:** `python bridge.py COM3 <tunnel URL> <token>` posts one reading every 2 s
-   to `POST <tunnel URL>/api/readings` with header `X-Token: <token>` and the body
-   `{"room_id": "V.1.07a", "presence": true, "person_ratio": 0.9, "noise_avg_db": 63.2, "noise_peak_db": 78.5}`
-   (raw board values; the backend does the calibration). Retry on network errors, reopen the serial port if it
-   drops, and print each reading. gleb-claude adds these fields to the backend after your PR lands.
-4. Fix the stale lines in your LOG section: the role is Board (the backend is gleb-claude's), and say whether the
-   3D prototype on `tom/building3d-prototype` is dropped, so it doesn't compete with claude-2.
+3. **Done:** `python bridge.py COM3 <tunnel URL> <token>` posts one reading every 2 s to
+   `POST <tunnel URL>/api/readings` with header `X-Token: <token>`:
+   `{"room_id": "Z.1.04", "presence": true, "person_ratio": 0.9, "people": 1, "noise_avg_db": 63.2,
+   "noise_peak_db": 78.5, "noise_db": 47.0}`. The bridge calibrates `noise_db`; the backend uses `people`
+   (or `presence`) and `noise_db`, and ignores the raw fields. Tested end to end against the backend.
+4. **Done:** LOG role fixed; the 3D map is tom-claude's (`web/map3d/`).
+5. **Next live session:** run the demo runbook in `README.md` end to end with the real board.
 
 **Demo notes**
 - Use headphones or mute the laptop speakers: the lab sends its room audio back, which can echo.
@@ -105,19 +108,11 @@ laptop mic/webcam -> Live Lab speaker/display -> board (mic + camera, NPU) -> UA
 
 ## Contracts (code against these; whoever changes one updates this file in the same PR)
 
-### `web/data/building_v.json` (gemini; read by the backend and by the 3D model)
-```json
-{"building": "V", "outer": {"w": 60, "d": 40}, "courtyard": {"w": 30, "d": 16}, "floor_height": 4,
- "rooms": [{"id": "V.1.07a", "floor": 1, "x": 12, "z": -18, "w": 8, "d": 6, "capacity": 12, "name": "Atrium"},
-           {"id": "V.1.05", "floor": 1, "x": 20, "z": -18, "w": 4, "d": 6, "name": "Büro", "bookable": false}]}
-```
-- Units are metres. The origin is the building centre and `y` is up. `x`/`z` give the room centre on its floor.
-- Only floor 1 is used. Use the **real room numbers and names from campusplan.aau.at** (Etage 1 runs from
-  `V.1.01` to `V.1.39`, with names like `Seminarraum`, `Atrium`, `Mediathek`, `Büro`, `WC Damen`).
-- The backend books only floor 1 rooms. Offices, toilets and storage get `"bookable": false` (the 3D model still
-  draws them); `"closed": true` marks a bookable room that is closed today.
-- `V.1.07a` (Atrium, where the board is) must exist. Until this file exists, the backend uses the 12 bookable
-  rooms listed in `DEFAULT_ROOMS` in `app/db.py`; keep the same ids and names here.
+### Rooms: `web/map3d/campus.json` is the single source (tom-claude; read by the backend, the map and the UI)
+- The backend books exactly the rooms with `"bookable": true`, using their `id`, `floor`, `name` and `capacity`
+  (an optional `"closed": true` makes a room unbookable today). Change rooms there, never in the backend; the
+  backend picks them up on restart. Room ids must stay unique, and `Z.1.04` (the board room) must exist.
+- `web/data/building_v.json` is no longer used. `DEFAULT_ROOMS` in `app/db.py` is only a fallback for the tests.
 
 ### API (gleb-claude; implemented in `app/`, tested in `tests/test_api.py`)
 Every error is `{error: "message to show"}` with 400 (bad input), 401 (not logged in), 403, 404 or 409 (the room
@@ -130,11 +125,17 @@ can't take it). Times are campus time (Europe/Vienna) without a zone: `"2026-11-
 | GET | `/api/rooms?q=` | `[{id, floor, capacity, name, status, noise_db, noise_class, people, seats_free, live, sensor, ghost_release_at, bookings_now:[{id, mode, purpose, seats, end, shareable}]}]`; poll it every few seconds to colour the 3D model. `q` filters like `/api/search` |
 | GET | `/api/rooms/{id}` | the room above plus `bookings_today:[booking]` |
 | GET | `/api/rooms/{id}/availability?date=YYYY-MM-DD` | `{room_id, date, open, close, slots:[{start:"HH:MM", end, status, seats_free, shareable, noise}]}`; slot `status` is `free`, `partial`, `full`, `closed` or `past` |
+| GET | `/api/calendar?date=YYYY-MM-DD` | **The picker's calendar, one call for all rooms:** `{date, open, close, rooms: {room_id: {free_hours, slots:[same as availability]}}}`. `free_hours` = bookable hours left that day |
+| POST | `/api/rooms/{id}/rating` | `{stars: 1-5}` → `{room_id, rating, votes, my_rating}`. Only after the user had an active booking there that has started (403 otherwise); rating again replaces the old vote |
 | POST | `/api/bookings` | `{room_id, start:"YYYY-MM-DDTHH:MM", hours, mode:"full"|"partial", seats, purpose, custom_purpose}` returns 201 with the booking, or `409 {error, suggestions:[room_id,...]}` |
 | GET | `/api/bookings/mine` | the user's bookings, newest first |
 | DELETE | `/api/bookings/{id}` | cancels one of the user's bookings |
 | GET | `/api/suggest?hours=&mode=&seats=&purpose=&start=` | room objects ranked by fit, the quietest first for quiet study |
-| POST | `/api/readings` | `{room_id, noise_db?, people?}` from the simulator or the board; header `X-Token` if `READINGS_TOKEN` is set |
+| POST | `/api/readings` | `{room_id, noise_db?, people?, presence?}` from the board (or a model); `presence` true/false counts as 1/0 people; header `X-Token` if `READINGS_TOKEN` is set |
+
+- Every room object also has `label` (map name such as `HS 1`, or null; search accepts it), `rating` (average,
+  null without votes) and `votes`. `GET /api/rooms/{id}` adds `my_rating` and `can_rate`; bookings carry
+  `my_rating` for their room. Files under `web/` are served with `Cache-Control: no-cache`.
 
 - A booking is `{id, room_id, start, end, hours, mode, seats, purpose, custom_purpose, status, checked_in,
   ghost_release_at, mine}`. Its `status` is `active`, `cancelled` or `released` (ghost: slot freed).
@@ -146,8 +147,9 @@ can't take it). Times are campus time (Europe/Vienna) without a zone: `"2026-11-
   required when `purpose` is `custom`.
 - Purpose values: `quiet_study`, `group_study`, `meeting`, `custom`, `gaming`, `board_games`, `event`.
 - Room `status` is `free`, `partial` (people there, seats left), `full`, `ghost` (booked, sensor sees 0 people) or
-  `closed`. `live: true` means real board noise (V.1.07a only); `sensor: true` means a people count arrived in the
-  last 2 min. Without a sensor, `people` is the number of booked seats.
+  `closed`. Rooms also carry `building` (`"Z"`), `board: true` on the board room, `live: true` while the board
+  is sending, and `sensor: true` when a people count arrived in the last 2 min. Without a sensor, `noise_db` and
+  `people` are simulated (`SIMULATE=0` turns that off: then `people` is the booked seats).
 - **Noise classes:** quiet below 40 dB, moderate from 40 to 60 dB, loud above 60 dB.
 - **Purpose → class:** quiet study is quiet; group study, meeting and custom are moderate; gaming, board games and
   event are loud.
@@ -162,8 +164,9 @@ can't take it). Times are campus time (Europe/Vienna) without a zone: `"2026-11-
 ### Frontend flow (claude-3 / Martha; every call above is live on `uvicorn app.main:app`)
 1. **Login page:** `POST /api/login` or `POST /api/register`, then the main page. On load, `GET /api/me`; 401 →
    login page. The session is a cookie, so the frontend never stores a token (serve `web/` from the backend).
-2. **3D view:** load `web/data/building_v.json`, then poll `GET /api/rooms` every 5 s and call
-   `b.setStatus(id, room)` for each room. Clicking a room opens its panel.
+2. **3D view (done):** `app.js` loads `map3d/campus.json` into `map3d/building3d.js` (`index.html` has the import
+   map for three.js), polls `GET /api/rooms` every 5 s and calls `b.setStatus(id, room)`. Clicking a bookable
+   room opens its panel; non-bookable rooms are ignored. If WebGL fails it falls back to `plan2d.js`.
 3. **Search bar:** on each keystroke (debounce ~150 ms) call `GET /api/search?q=` and show the list; picking one
    calls `b.focusRoom(id)` and opens the panel.
 4. **Room panel:** `GET /api/rooms/{id}` (status, live noise, people, who is in now, today's bookings) and
@@ -172,12 +175,15 @@ can't take it). Times are campus time (Europe/Vienna) without a zone: `"2026-11-
 5. **Booking form:** start slot, hours (0.5–4), "Private room" (`full`) or "Open to share" (`partial`), number of
    people (`seats`, max = capacity), purpose. `POST /api/bookings`; on 409 show `error` and offer
    `suggestions` as buttons that open those rooms; on 400 show `error`.
-6. **My bookings:** `GET /api/bookings/mine`, with a cancel button (`DELETE /api/bookings/{id}`) on active ones and
-   the ghost countdown when `ghost_release_at` is set.
+6. **My bookings:** `GET /api/bookings/mine`, with a cancel button (`DELETE /api/bookings/{id}`) on active ones,
+   the ghost countdown when `ghost_release_at` is set, and 1–5 stars on bookings that have started
+   (`POST /api/rooms/{id}/rating`).
+7. **Room picker / calendar (`picker.js`, done):** one `GET /api/calendar?date=` per day gives every room's
+   slots; the cards show free hours (any time) or the exact status for the picked range, plus `rating`.
 
 ### Lost items (tom-claude, in `detector/` and `app/lost_items.py`)
 **Pipeline**
-1. The board's person-detection firmware sends a count for V.1.07a through the bridge and ntfy, just like noise.
+1. The board sends presence for the board room (Z.1.04) through the bridge, just like noise; a count comes from Arshia's model later.
 2. When a booking ends, or `people == 0` for 30 s after people were present, the backend takes **one snapshot**
    from the room camera. In the demo this is our webcam, the same feed that goes into the board.
 3. `detector/` diffs the snapshot against `reference/<room>.jpg` (the empty room). Changed regions are labelled
@@ -206,7 +212,7 @@ The backend already serves it at **http://localhost:8000/map3d/**. It isn't wire
 - **Data:** `campus.json` = `{buildings: [{id, name, floors, floor_height, blocks: [{x,z,w,d} | {poly, holes?, floors?, open?}], rooms: [{id, label?, floor, storeys?, x, z, w, d, poly?, angle?, capacity, type, bookable, name}], connectors?}]}`. `label` is the main name shown on the map (HS 1-4, HS A-C; search accepts it, e.g. "HS1"), `storeys: 2` = a tall hall with the floor above cut open.
   Units are metres; the origin is the centre of V; x points east and z points south.
 - **Regenerate:** `uv run --with shapely python tools/campus3d/gen_campus.py`. It reads `building_v_rooms.json`
-  and writes `web/map3d/campus.json`. The backend still reads `web/data/building_v.json`, so it is unaffected.
+  and writes `web/map3d/campus.json`, which the backend also reads (restart it after regenerating).
 
 ```js
 import { createBuilding } from "./building3d.js";      // path relative to web/map3d/

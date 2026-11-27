@@ -1,3 +1,4 @@
+import json
 import sqlite3
 import threading
 from datetime import datetime, timedelta
@@ -5,7 +6,7 @@ from datetime import datetime, timedelta
 import pytest
 from fastapi.testclient import TestClient
 
-from app import clock, db, main
+from app import booking, clock, db, main
 
 NOW = datetime(2026, 11, 27, 10, 5)
 
@@ -22,7 +23,9 @@ def app_env(tmp_path, monkeypatch, time_now):
     monkeypatch.setenv("DB_PATH", str(tmp_path / "test.db"))
     monkeypatch.setenv("NOISE_FEED", "0")
     monkeypatch.delenv("READINGS_TOKEN", raising=False)
-    monkeypatch.setattr(db, "BUILDING_JSON", tmp_path / "missing.json")  # use the built-in floor 1 rooms
+    monkeypatch.setenv("SIMULATE", "0")
+    monkeypatch.setattr(db, "CAMPUS_JSON", tmp_path / "missing.json")  # use the built-in V floor 1 rooms
+    monkeypatch.setattr(booking, "BOARD_ROOM", "V.1.07a")
     with TestClient(main.app):
         yield
 
@@ -102,7 +105,7 @@ def test_search_suggestions(app_env):
     assert ids("atri") == ["V.1.07a"]
     assert "V.1.01" in ids("seminar") and ids("") == [] and ids("zzz") == []
     assert len(ids("V.1")) == 8
-    assert set(c.get("/api/search", params={"q": "V.1.0"}).json()[0]) == {"id", "name", "floor", "status",
+    assert set(c.get("/api/search", params={"q": "V.1.0"}).json()[0]) == {"id", "label", "name", "floor", "status",
                                                                           "seats_free"}
     assert [r["id"] for r in c.get("/api/rooms", params={"q": "mediathek"}).json()] == ["V.1.29"]
 
@@ -298,6 +301,111 @@ def test_readings_token(app_env, monkeypatch):
                   headers={"X-Token": "secret"}).status_code == 200
 
 
+# --- calendar and ratings ---
+
+def test_calendar_has_every_room_in_one_call(app_env):
+    a = user(1)
+    book(a, start="2026-11-27T12:00", hours=1, seats=3)
+    cal = a.get("/api/calendar").json()
+    assert cal["date"] == "2026-11-27" and set(cal["rooms"]) == {r["id"] for r in a.get("/api/rooms").json()}
+    room_cal = cal["rooms"]["V.1.07a"]
+    assert room_cal["slots"] == a.get("/api/rooms/V.1.07a/availability").json()["slots"]
+    assert room_cal["free_hours"] == 12.0  # 10:00-22:00 still bookable (shared at 12:00 still counts)
+    assert cal["rooms"]["V.1.24"]["free_hours"] == 0  # closed
+    assert a.get("/api/calendar", params={"date": "2026-11-28"}).json()["rooms"]["V.1.07a"]["free_hours"] == 14.0
+    assert a.get("/api/calendar", params={"date": "bad"}).status_code == 400
+
+
+def test_ratings_only_after_using_the_room(app_env, time_now):
+    a, b = user(1), user(2)
+    assert a.post("/api/rooms/V.1.03/rating", json={"stars": 5}).status_code == 403  # never booked
+    book(a, room="V.1.03", start="2026-11-27T11:00", hours=1)
+    assert a.post("/api/rooms/V.1.03/rating", json={"stars": 5}).status_code == 403  # not started yet
+    time_now["t"] = datetime(2026, 11, 27, 11, 0)
+    assert a.post("/api/rooms/V.1.03/rating", json={"stars": 6}).status_code == 400
+    r = a.post("/api/rooms/V.1.03/rating", json={"stars": 4})
+    assert r.status_code == 200 and r.json() == {"room_id": "V.1.03", "rating": 4.0, "votes": 1, "my_rating": 4}
+    assert a.post("/api/rooms/V.1.03/rating", json={"stars": 2}).json()["votes"] == 1  # changing it, not a 2nd vote
+    book(b, room="V.1.03", start="2026-11-27T11:00", hours=1)
+    b.post("/api/rooms/V.1.03/rating", json={"stars": 5})
+    state = room(a, "V.1.03")
+    assert state["rating"] == 3.5 and state["votes"] == 2 and state["my_rating"] == 2 and state["can_rate"]
+    assert a.get("/api/bookings/mine").json()[0]["my_rating"] == 2
+    assert room(a, "V.1.04")["rating"] is None and not room(a, "V.1.04")["can_rate"]
+    assert TestClient(main.app).post("/api/rooms/V.1.03/rating", json={"stars": 3}).status_code == 401
+
+
+def test_search_finds_map_labels(app_env):
+    conn = db.connect()
+    conn.execute("UPDATE rooms SET label = 'HS 1' WHERE id = 'V.1.01'")
+    conn.close()
+    ids = [r["id"] for r in TestClient(main.app).get("/api/search", params={"q": "hs1"}).json()]
+    assert ids == ["V.1.01"]
+
+
+def test_web_files_are_not_cached(app_env):
+    r = TestClient(main.app).get("/login.html")
+    assert r.status_code == 200 and r.headers["cache-control"] == "no-cache"
+
+
+# --- board room, campus data, simulation ---
+
+def test_board_room_presence_and_live(app_env):
+    c = TestClient(main.app)
+    board = room(c, "V.1.07a")
+    assert board["board"] and not board["live"] and board["building"] == "V"
+    assert not room(c, "V.1.03")["board"]
+    r = c.post("/api/readings", json={"room_id": "V.1.07a", "presence": True, "person_ratio": 0.9,
+                                      "noise_avg_db": 63.2, "noise_peak_db": 78.5, "noise_db": 47.0})
+    assert r.status_code == 200
+    board = room(c, "V.1.07a")
+    assert board["live"] and board["people"] == 1 and board["sensor"] and board["noise_class"] == "moderate"
+    reading(c, "V.1.03", people=2)
+    assert not room(c, "V.1.03")["live"]  # only the board room is live
+    c.post("/api/readings", json={"room_id": "V.1.07a", "presence": False})
+    assert room(c, "V.1.07a")["people"] == 0
+
+
+def test_rooms_come_from_the_campus_map(tmp_path, monkeypatch, time_now):
+    campus = {"buildings": [
+        {"id": "Z", "rooms": [
+            {"id": "Z.1.04", "floor": 1, "name": "Seminar room", "capacity": 51, "bookable": True},
+            {"id": "Z.1.90", "floor": 1, "name": "Office", "capacity": 2, "bookable": False}]},
+        {"id": "N", "rooms": [{"id": "N.2.05", "floor": 2, "name": "Seminar room", "capacity": 16,
+                               "bookable": True}]}]}
+    path = tmp_path / "campus.json"
+    path.write_text(json.dumps(campus), encoding="utf-8")
+    monkeypatch.setenv("DB_PATH", str(tmp_path / "test.db"))
+    monkeypatch.setenv("NOISE_FEED", "0")
+    monkeypatch.setattr(db, "CAMPUS_JSON", path)
+    with TestClient(main.app) as c:
+        rooms = {r["id"]: r for r in c.get("/api/rooms").json()}
+        assert set(rooms) == {"Z.1.04", "N.2.05"}
+        assert rooms["N.2.05"]["floor"] == 2 and rooms["Z.1.04"]["capacity"] == 51
+        assert rooms["Z.1.04"]["board"]  # the default board room
+        assert [r["id"] for r in c.get("/api/search", params={"q": "104"}).json()] == ["Z.1.04"]
+
+
+def test_simulation_is_stable_and_safe(app_env, monkeypatch, time_now):
+    monkeypatch.setenv("SIMULATE", "1")
+    c = TestClient(main.app)
+    first = {r["id"]: (r["noise_db"], r["people"]) for r in c.get("/api/rooms").json()}
+    assert first == {r["id"]: (r["noise_db"], r["people"]) for r in c.get("/api/rooms").json()}  # same minute
+    changed = False
+    for minute in range(1, 30):
+        time_now["t"] = NOW + timedelta(minutes=minute)
+        for r in c.get("/api/rooms").json():
+            changed |= (r["noise_db"], r["people"]) != first[r["id"]]
+            assert r["status"] != "ghost" and not r["sensor"] and not r["live"]
+            assert r["noise_class"] == "quiet" or r["bookings_now"]  # empty rooms never block quiet study
+            assert r["people"] <= r["capacity"]
+    assert changed
+    a = user(1)
+    book(a, room="V.1.03", start="2026-11-27T10:30", seats=5, purpose="group_study")
+    r = room(a, "V.1.03")
+    assert r["people"] in (4, 5) and r["seats_free"] == 24 - 5 and r["noise_class"] == "moderate"
+
+
 # --- storage ---
 
 def test_data_survives_restart(app_env):
@@ -326,7 +434,8 @@ def test_old_database_is_upgraded(tmp_path, monkeypatch, time_now):
     old.close()
     monkeypatch.setenv("DB_PATH", str(path))
     monkeypatch.setenv("NOISE_FEED", "0")
-    monkeypatch.setattr(db, "BUILDING_JSON", tmp_path / "missing.json")
+    monkeypatch.setenv("SIMULATE", "0")
+    monkeypatch.setattr(db, "CAMPUS_JSON", tmp_path / "missing.json")
     with TestClient(main.app):
         a = user(1)
         reading(a, "V.1.03", people=2)
