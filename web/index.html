@@ -12,7 +12,7 @@
   </script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;600;700&display=swap">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Nunito+Sans:opsz,wght@6..12,400..900&display=swap">
   <link rel="stylesheet" href="css/style.css">
   <script type="importmap">
     { "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
@@ -87,28 +87,25 @@
     <section class="sheet" id="room-dialog" aria-labelledby="room-title" hidden></section>
 
     <section class="picker" id="picker">
-      <div class="picker-head">
-        <h2 class="picker-title">Rooms today</h2>
-        <div class="pill-wrap">
-          <button class="date-pill" type="button" aria-haspopup="dialog" aria-expanded="false">
-            <svg class="icon"><use href="#i-cal"/></svg><span class="date-pill-text">Today · any time</span>
-            <span class="date-pill-reset hidden" role="button" aria-label="Back to today">✕</span>
-          </button>
-          <div class="pop" role="dialog" aria-label="Pick a date and time">
-            <div class="month-head">
-              <button class="nav-sm m-prev" type="button" aria-label="Previous month">‹</button>
-              <b class="m-title"></b>
-              <button class="nav-sm m-next" type="button" aria-label="Next month">›</button>
-            </div>
-            <div class="grid7 m-grid"></div>
-            <div class="pop-row"><span class="lbl">From</span>
-              <div class="time"><button type="button" class="t-dn" aria-label="Earlier">‹</button><output class="t-out"></output><button type="button" class="t-up" aria-label="Later">›</button></div>
-            </div>
-            <div class="pop-row"><span class="lbl">For</span><div class="durs"></div></div>
-            <button class="apply" type="button">Show rooms</button>
+      <div class="cal">
+        <div class="cal-month">
+          <div class="month-head">
+            <button class="nav-sm m-prev" type="button" aria-label="Previous month">‹</button>
+            <b class="m-title"></b>
+            <button class="nav-sm m-next" type="button" aria-label="Next month">›</button>
           </div>
+          <div class="grid7 m-grid"></div>
+        </div>
+        <div class="cal-time">
+          <div class="cal-row"><span class="lbl">When</span><button class="anytime" type="button">Any time</button></div>
+          <div class="cal-row"><span class="lbl">From</span>
+            <div class="time"><button type="button" class="t-dn" aria-label="Earlier">‹</button><output class="t-out"></output><button type="button" class="t-up" aria-label="Later">›</button></div>
+          </div>
+          <div class="cal-row"><span class="lbl">For</span><div class="durs"></div></div>
         </div>
       </div>
+
+      <h2 class="picker-title">Rooms today</h2>
       <div class="stage">
         <button class="arrow prev" type="button" aria-label="Previous rooms"><svg class="icon"><use href="#i-prev"/></svg></button>
         <div class="picks"></div>
