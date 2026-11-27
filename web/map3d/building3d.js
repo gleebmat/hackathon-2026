@@ -271,7 +271,7 @@ export function createBuilding(el, input, opts = {}) {
       if (k === 1) anim = null;
     }
     const pulse = 0.35 + 0.35 * Math.sin(now / 180);
-    const glow = 0.5 + 0.5 * Math.sin(now / 280);           // slow, modest pulse for the searched room
+    const glow = 0.85;                                        // the selected room glows steadily (no blinking)
     for (const r of rooms.values()) {
       r.hoverK += ((r.data.id === hovered ? 1 : 0) - r.hoverK) * 0.18;   // smooth fade in and out
       if (r.hoverK < 0.002) r.hoverK = 0;
@@ -282,8 +282,8 @@ export function createBuilding(el, input, opts = {}) {
       r.mesh.position.y = r.baseY + 0.45 * h;
     }
     if (halo) {
-      halo.scale.setScalar(1.03 + 0.07 * glow);
-      halo.material.opacity = 0.12 + 0.28 * glow;
+      halo.scale.setScalar(1.06);
+      halo.material.opacity = 0.32;
     }
     controls.update();
     renderer.render(scene, camera);
