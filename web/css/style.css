@@ -695,3 +695,8 @@ details.history .booking { opacity: .7; margin-top: 8px; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
 }
+
+.left-badge {
+  display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 999px;
+  background: #f5b642; color: #1d2430; font-size: 12px; font-weight: 600;
+}

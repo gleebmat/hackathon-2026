@@ -33,9 +33,9 @@ CREATE INDEX IF NOT EXISTS bookings_user_time ON bookings (user_id, status, star
 READINGS = """
 CREATE TABLE IF NOT EXISTS readings (
     room_id TEXT PRIMARY KEY REFERENCES rooms(id), noise_db REAL, noise_at TEXT, people INTEGER, people_at TEXT,
-    empty_since TEXT)
+    empty_since TEXT, left_items INTEGER)
 """
-READINGS_COLUMNS = {"room_id", "noise_db", "noise_at", "people", "people_at", "empty_since"}
+READINGS_COLUMNS = {"room_id", "noise_db", "noise_at", "people", "people_at", "empty_since", "left_items"}
 
 # Fallback when the map data is missing (the tests use it): building V floor 1, real numbers and names from
 # campusplan.aau.at, made-up capacities.
