@@ -2,7 +2,7 @@
 # Builds Infineon's person-segmentation example (YOLACT, runs on the NPU) with our presence-printing
 # inference_task.c, flashes the board, and downloads bridge.py. The board then prints "PRESENCE 0|1 n/m" each second.
 $ErrorActionPreference = 'Stop'
-$raw = 'https://raw.githubusercontent.com/gleebmat/hackathon-2026/tom/board-session2/bridge'
+$raw = 'https://raw.githubusercontent.com/gleebmat/hackathon-2026/main/bridge'
 $tools = Join-Path $HOME 'ModusToolbox\tools_3.9'
 $ws = Join-Path $HOME 'mtw'
 $app = Join-Path $ws 'room_person'

@@ -6,7 +6,9 @@ Write only in your own section. Each section has a **Status** line (replace it w
 ---
 
 ## tom-claude (Backend + Board)
-**Status (17:50):** the board is live and tested. Starting on the backend stubs next.
+**Status (18:55):** both board features work on the real hardware: **noise** (microphone, session 1) and **person
+presence** (camera with YOLACT on the NPU, session 2). Each needs its own firmware. A local 3D prototype of
+building V exists on branch `tom/building3d-prototype`. Next: backend stubs.
 
 **Done**
 - `docs/PLAN.md`: product, contracts and roles.
@@ -30,10 +32,19 @@ Write only in your own section. Each section has a **Status** line (replace it w
   Python 3.12 + pyserial, but no git. The board's UART is COM3. The target is `APP_KIT_PSE84_EVAL_EPC2`.
 - **Board Controls:** BTN1, BTN2, Reset, a potentiometer (0–1.8 V), and **Microphone → "Click here to Unmute"**,
   which streams our microphone to the board.
-- **Next session** (the lab may be reset). In VS Code, click into the terminal, then:
-  1. Run `iwr -useb https://raw.githubusercontent.com/gleebmat/hackathon-2026/main/bridge/setup.ps1 | iex`.
-     It creates, builds and flashes the firmware in about 5 min.
-  2. Run `python $HOME\bridge.py COM3` and keep that terminal open.
+- **Every new session starts from a fresh lab PC** (no projects, empty `mtb_shared`), and the board is back on the
+  factory firmware. Sessions end with a 4-minute warning, so plan about 10 min of setup per firmware.
+- **Runbook for a session.** In the Developer Workspace, open VS Code from the taskbar, maximise it, click into the
+  terminal, and type `cls` to check that the terminal has focus. Then type the command in 3 short chunks:
+  - **Noise:** `iwr -useb https://raw.githubusercontent.com/gleebmat/hackathon-2026/main/bridge/setup.ps1 | iex`.
+    This takes about 5 min (create, build, flash).
+  - **Presence:** `iwr -useb https://raw.githubusercontent.com/gleebmat/hackathon-2026/main/bridge/setup_person.ps1 | iex`.
+    This takes about 8 min: create about 3 min, build about 4 min (2,268 objects), flash about 1 min.
+  - Then run `python $HOME\bridge.py COM3` and keep that terminal open. The bridge handles both firmwares: noise
+    readings carry `noise_db`, presence readings carry `presence` and `person_ratio`.
+- **Untested idea for a positive presence test.** First go to Application Demos → Vision Hand Gesture → Webcam
+  Access → Enable, so the simulation display shows our webcam. Then switch to the Developer Workspace and run the
+  presence runbook. If the simulation display keeps showing the webcam, the board will see us.
 - **Gotchas:**
   - Typing into the remote PC drops characters and garbles long strings and double quotes. Type short chunks in
     single quotes.
@@ -59,9 +70,15 @@ Write only in your own section. Each section has a **Status** line (replace it w
   - Hand Gesture runs at about 54 ms per frame.
   - **Face ID** runs at about 12 ms per frame, in inference mode, with 1 of 5 users already enrolled by someone
     else. Don't enrol faces: that stores biometric data.
-- Infineon examples we could flash in a later slot (each about 5 min to build and flash):
-  - `mtb-example-psoc-edge-ml-aihub-deploy-vision`: **real-time person segmentation** from a USB camera. This is
-    the basis for human presence.
+- **Person presence on the board (session 2, tested).** I flashed Infineon's
+  `mtb-example-psoc-edge-ml-aihub-deploy-vision` (YOLACT person segmentation, running on the NPU) with our
+  `bridge/firmware/inference_task.c`.
+  - The pipeline library has no API for its results, but it lights the USER LED while it sees a person. Our task
+    samples that pin after each frame and prints `PRESENCE <0|1> <person_frames>/<frames>` once per second.
+  - Result: about **10.6 inferences per second**. The EVK display shows "YOLACT PERSON SEGMENTATION" on the camera
+    image (`docs/img/board-person-segmentation.png`). With only the static leaf picture on the simulation display
+    the board correctly published `presence: false, person_ratio: 0.0` (`docs/img/bridge-presence-output.png`).
+  - **Not yet tested:** the positive case with a person on the simulation display (we ran out of session time).
   - The DEEPCRAFT Model Zoo has many detectors (YoloX, SSDMobileNetV1/V2, TinyYolov2, SwiftYolo,
     Yolov8nPersonDetection), but **all of them are trained for persons only**, so they can't detect bags. Each
     comes with a prebuilt `.hex`.
