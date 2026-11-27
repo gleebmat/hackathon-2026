@@ -46,9 +46,11 @@ const float PERSON_THRESHOLD = 0.60;
 
 const int IMG = 96;                       // model input and camera frame: 96x96
 const int CELL = 4, GRID = IMG / CELL;    // left-item check on a 24x24 grid of 4x4-pixel cells
-const int CELL_DIFF = 25;                 // a cell changed if its mean brightness moved this much
-const int MIN_ITEM_CELLS = 2;             // smaller blobs are noise
+const int CELL_DIFF = 30;                 // a cell changed if its mean brightness moved this much
+const int MIN_ITEM_CELLS = 4;             // smaller blobs are webcam noise (JPEG artefacts)
 const float MAX_CHANGED = 0.45;           // more than 45% changed = lights switched, not items
+const int COUNT_HISTORY = 5;              // left items = median of the last 5 counts, so it doesn't jump
+const int CLEAN_FOR_REFRESH = 5;          // empty and clean this many checks in a row: refresh the snapshot
 
 I2SClass mic;
 bool camOk = false, micOk = false, modelOk = false;
@@ -60,7 +62,9 @@ tflite::MicroInterpreter* interpreter = nullptr;
 uint8_t gray[IMG * IMG];                  // current frame, grayscale
 uint8_t baseline[GRID * GRID];            // empty-room snapshot (cell means)
 bool haveBaseline = false;
-int emptyStreak = 0, leftItems = 0;
+int emptyStreak = 0, leftItems = 0, cleanStreak = 0;
+int counts[COUNT_HISTORY] = {0};
+int countIdx = 0;
 bool votes[3] = {false, false, false};
 int voteIdx = 0;
 
@@ -131,38 +135,61 @@ void cellMeans(uint8_t* dst) {
     }
 }
 
-// Items left behind: changed cells vs the empty-room snapshot, grouped into touching blobs (8 neighbours).
-// Returns -1 when most of the picture changed (lighting), so the caller takes a new snapshot instead.
+// Items left behind: cells that changed vs the empty-room snapshot, grouped into blobs. One object usually
+// shows up as several fragments (webcam JPEG noise), so every changed cell is grown by one cell first and
+// fragments that then touch count as one item. Returns -1 when most of the picture changed (lights), so the
+// caller takes a new snapshot instead.
 int countLeftItems() {
-  static uint8_t cur[GRID * GRID], mask[GRID * GRID];
+  static uint8_t cur[GRID * GRID], mask[GRID * GRID], grown[GRID * GRID];
   static uint16_t stack_[GRID * GRID];
   cellMeans(cur);
+  long shift = 0;                          // auto-exposure brightens or darkens the whole frame: ignore that
+  for (int i = 0; i < GRID * GRID; i++) shift += (int)cur[i] - (int)baseline[i];
+  shift /= GRID * GRID;
   int changed = 0;
   for (int i = 0; i < GRID * GRID; i++) {
-    mask[i] = abs((int)cur[i] - (int)baseline[i]) > CELL_DIFF;
+    mask[i] = abs((int)cur[i] - (int)baseline[i] - (int)shift) > CELL_DIFF;
     changed += mask[i];
   }
   if (changed > MAX_CHANGED * GRID * GRID) return -1;
+  for (int y = 0; y < GRID; y++)
+    for (int x = 0; x < GRID; x++) {
+      uint8_t g = 0;
+      for (int dy = -1; dy <= 1 && !g; dy++)
+        for (int dx = -1; dx <= 1 && !g; dx++) {
+          int nx = x + dx, ny = y + dy;
+          g = nx >= 0 && ny >= 0 && nx < GRID && ny < GRID && mask[ny * GRID + nx];
+        }
+      grown[y * GRID + x] = g;
+    }
   int items = 0;
   for (int i = 0; i < GRID * GRID; i++) {
-    if (!mask[i]) continue;
-    int top = 0, size = 0;
+    if (!grown[i]) continue;
+    int top = 0, size = 0;                 // size = really changed cells inside the blob
     stack_[top++] = i;
-    mask[i] = 0;
+    grown[i] = 0;
     while (top) {
       int p = stack_[--top], px = p % GRID, py = p / GRID;
-      size++;
+      size += mask[p];
       for (int dy = -1; dy <= 1; dy++)
         for (int dx = -1; dx <= 1; dx++) {
           int nx = px + dx, ny = py + dy;
-          if (nx < 0 || ny < 0 || nx >= GRID || ny >= GRID || !mask[ny * GRID + nx]) continue;
-          mask[ny * GRID + nx] = 0;
+          if (nx < 0 || ny < 0 || nx >= GRID || ny >= GRID || !grown[ny * GRID + nx]) continue;
+          grown[ny * GRID + nx] = 0;
           stack_[top++] = ny * GRID + nx;
         }
     }
     if (size >= MIN_ITEM_CELLS) items++;
   }
   return items;
+}
+
+int medianCount() {
+  int s[COUNT_HISTORY];
+  memcpy(s, counts, sizeof s);
+  for (int i = 1; i < COUNT_HISTORY; i++)
+    for (int j = i; j > 0 && s[j - 1] > s[j]; j--) { int t = s[j]; s[j] = s[j - 1]; s[j - 1] = t; }
+  return s[COUNT_HISTORY / 2];
 }
 
 // Approximate sound level: RMS of ~1/8 s of 16 kHz audio.
@@ -236,8 +263,9 @@ void loop() {
     bool present = (votes[0] + votes[1] + votes[2]) >= 2;
 
     if (present) {
-      emptyStreak = 0;
+      emptyStreak = cleanStreak = 0;
       leftItems = 0;
+      memset(counts, 0, sizeof counts);
     } else if (++emptyStreak >= 3) {
       if (!haveBaseline) {                 // first calm empty room after start: remember it
         cellMeans(baseline);
@@ -248,7 +276,14 @@ void loop() {
           cellMeans(baseline);
           k = 0;
         }
-        leftItems = k;
+        counts[countIdx++ % COUNT_HISTORY] = k;
+        leftItems = medianCount();
+        // empty and clean for a while: refresh the snapshot, so slow changes (daylight) are not items later
+        cleanStreak = k == 0 ? cleanStreak + 1 : 0;
+        if (cleanStreak >= CLEAN_FOR_REFRESH) {
+          cellMeans(baseline);
+          cleanStreak = 0;
+        }
       }
     }
     json += ",\"presence\":" + String(present ? "true" : "false");
