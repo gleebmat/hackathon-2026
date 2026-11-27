@@ -8,14 +8,15 @@
 //  - left_items: once the room is empty, the frame is compared with the empty-room snapshot; changed areas that
 //    touch each other count as one item
 // In Velxio: Camera button = your webcam, Mic button = your microphone (off = test pattern / 440 Hz tone).
-// Libraries: tflm_esp32 (Library Manager). Files: sketch.ino + person_model.h.
+// Libraries: Chirale_TensorFlowLite (Library Manager; builds TFLM from source, works on arduino-esp32 3.x).
+// Files: sketch.ino + person_model.h.
 #include <WiFi.h>
 #include <WiFiClientSecure.h>
 #include <HTTPClient.h>
 #include <ESP_I2S.h>
 #include <math.h>
 #include "esp_camera.h"
-#include <tflm_esp32.h>
+#include <Chirale_TensorFlowLite.h>
 #include "tensorflow/lite/micro/micro_interpreter.h"
 #include "tensorflow/lite/micro/micro_mutable_op_resolver.h"
 #include "tensorflow/lite/schema/schema_generated.h"
