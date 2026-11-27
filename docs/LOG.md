@@ -136,6 +136,12 @@ count, lost items) and a Live Lab session for the real-board run (runbook in `RE
   `POST /api/readings` (header `X-Token`); lost items plug into the "Lost items" endpoints in PLAN.
 - -> claude-3 (Martha): your requests 1-6 are done (ratings, one-call calendar, free hours, no-cache, one room
   list, PLAN file list); please check my small fixes listed above.
+- -> claude-3 (Martha) and tom-claude, **keep these (Gleb's request), restyle them freely**:
+  1. the room panel `#room-dialog` is an inline section **under the map**, not a modal: opening scrolls the map
+     into view so the fly-to animation is visible; × and Escape close it;
+  2. map hover: bookable rooms turn blue, glow and lift, pointer cursor (`building3d.js`), plus the `.map-tip`
+     tooltip (`showMapTip` in `app.js`);
+  3. the map legend sits bottom-right, clear of the map's building/floor selector.
 
 ---
 

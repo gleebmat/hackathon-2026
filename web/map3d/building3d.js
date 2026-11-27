@@ -12,6 +12,7 @@ const FONT_URL = "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/fonts/helv
 
 const TYPE_COLOR = { seminar: 0x2a8fb0, office: 0xd9dde3, wc: 0xa9c9e8, hall: 0xe3c99a, atrium: 0x9fd8b5, foyer: 0xf2f2f2 };
 const STATUS_COLOR = { free: 0xffffff, partial: 0xf5b642, full: 0xe0483e, ghost: 0xc9b8f2, closed: 0x9aa0a6 };
+const HOVER_COLOR = new THREE.Color(0x4f8dff);   // the room under the mouse blends towards this blue
 const HIDDEN_BY_DEFAULT = new Set(["office", "wc", "foyer"]);  // "offices" toggle
 const SLAB = 0.35;
 
@@ -199,7 +200,8 @@ export function createBuilding(el, input, opts = {}) {
       mesh.userData.roomId = r.id;
       edges(mesh, 0x334455, 0.5);
       floorGroups.get(`${bd.id}:${r.floor}`).add(mesh);
-      rooms.set(r.id, { mesh, data: r, baseColor: mat.color.getHex(), baseOpacity: mat.opacity, badge: null, loud: false, h, building: bd.id, text: null });
+      rooms.set(r.id, { mesh, data: r, baseColor: mat.color.getHex(), baseOpacity: mat.opacity, badge: null, loud: false, h, building: bd.id, text: null,
+        baseY: mesh.position.y, hoverK: 0, statusColor: mat.color.clone() });
     }
   }
 
@@ -240,7 +242,18 @@ export function createBuilding(el, input, opts = {}) {
   renderer.domElement.addEventListener("pointerup", (e) => {
     if (down && Math.hypot(e.clientX - down[0], e.clientY - down[1]) < 5) { const id = pick(e); if (id && clickCb) clickCb(id); }
   });
-  renderer.domElement.addEventListener("pointermove", (e) => hoverCb && hoverCb(pick(e), e));
+  // Hover: only bookable rooms react (blue glow + small lift, animated in the render loop) and show a pointer.
+  let hovered = null;
+  const setHover = (id, e) => {
+    const r = id && rooms.get(id);
+    const next = r && r.data.bookable ? id : null;
+    renderer.domElement.style.cursor = next ? "pointer" : "";
+    if (next !== hovered) { hovered = next; if (hoverCb) hoverCb(next, e); }
+    else if (next && hoverCb) hoverCb(next, e);   // keep the tooltip following the pointer
+  };
+  renderer.domElement.addEventListener("pointermove", (e) => setHover(down ? null : pick(e), e));
+  renderer.domElement.addEventListener("pointerleave", (e) => setHover(null, e));
+  renderer.domElement.addEventListener("pointerup", () => { down = null; });
 
   // --- resize + loop ---
   const resize = () => {
@@ -260,8 +273,13 @@ export function createBuilding(el, input, opts = {}) {
     const pulse = 0.35 + 0.35 * Math.sin(now / 180);
     const glow = 0.5 + 0.5 * Math.sin(now / 280);           // slow, modest pulse for the searched room
     for (const r of rooms.values()) {
+      r.hoverK += ((r.data.id === hovered ? 1 : 0) - r.hoverK) * 0.18;   // smooth fade in and out
+      if (r.hoverK < 0.002) r.hoverK = 0;
+      const h = r.hoverK;
+      r.mesh.material.color.copy(r.statusColor).lerp(HOVER_COLOR, 0.65 * h);
       if (r.data.id === highlight) r.mesh.material.emissive.setRGB(0.55 * glow, 0.4 * glow, 0.1 * glow);
-      else r.mesh.material.emissive.setRGB(r.loud ? pulse : 0, 0, 0);
+      else r.mesh.material.emissive.setRGB((r.loud ? pulse : 0) + 0.05 * h, 0.12 * h, 0.35 * h);
+      r.mesh.position.y = r.baseY + 0.45 * h;
     }
     if (halo) {
       halo.scale.setScalar(1.03 + 0.07 * glow);
@@ -319,7 +337,8 @@ export function createBuilding(el, input, opts = {}) {
     setStatus(id, { status, noise_class, live } = {}) {
       const r = rooms.get(id);
       if (!r) return false;
-      r.mesh.material.color.setHex(status && r.data.bookable ? STATUS_COLOR[status] ?? r.baseColor : r.baseColor);
+      r.statusColor.setHex(status && r.data.bookable ? STATUS_COLOR[status] ?? r.baseColor : r.baseColor);
+      r.mesh.material.color.copy(r.statusColor);
       textColor(r);
       r.loud = noise_class === "loud";
       if (live && !r.badge) {

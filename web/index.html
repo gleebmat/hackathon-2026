@@ -83,6 +83,9 @@
       </div>
     </section>
 
+    <!-- Room panel: opens right under the map (not as an overlay) so the zoom to the room stays visible. -->
+    <section class="sheet" id="room-dialog" aria-labelledby="room-title" hidden></section>
+
     <section class="picker" id="picker">
       <div class="picker-head">
         <h2 class="picker-title">Rooms today</h2>
@@ -115,7 +118,6 @@
     </section>
   </main>
 
-  <dialog class="sheet" id="room-dialog" aria-labelledby="room-title"></dialog>
 
   <dialog class="drawer" id="mine-drawer" aria-labelledby="mine-title">
     <div class="drawer-head">

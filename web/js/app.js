@@ -121,7 +121,30 @@ async function createView() {
   }
   // The map also draws rooms that can't be booked (offices, WCs); only bookable ones open the sheet.
   state.view.onRoomClick((id) => { if (state.rooms.some((r) => r.id === id)) openRoom(id); });
+  state.view.onRoomHover?.(showMapTip);
   for (const r of state.rooms) state.view.setStatus(r.id, r);
+}
+
+// Small tooltip that follows the pointer over a bookable room on the 3D map.
+const STATUS_VAR = { free: "--free", partial: "--shared", full: "--full", ghost: "--ghost", closed: "--muted" };
+function showMapTip(id, e) {
+  const card = $("building").parentElement;
+  let tip = card.querySelector(".map-tip");
+  if (!tip) {
+    tip = document.createElement("div");
+    tip.className = "map-tip";
+    card.append(tip);
+  }
+  const r = id && state.rooms.find((x) => x.id === id);
+  if (!r || !e) { tip.classList.remove("on"); return; }
+  tip.innerHTML = `<b>${esc(r.label || r.id)}</b>${esc(r.label ? `${r.id} · ${r.name}` : r.name)}` +
+    `<i style="background:var(${STATUS_VAR[r.status] ?? "--muted"})"></i>${STATUS[r.status] ?? esc(r.status)}` +
+    (r.status === "closed" ? "" : ` · ${r.seats_free}/${r.capacity} seats`);
+  const box = card.getBoundingClientRect();
+  const x = Math.min(e.clientX - box.left + 14, box.width - tip.offsetWidth - 8);
+  tip.style.left = `${Math.max(8, x)}px`;
+  tip.style.top = `${Math.max(8, e.clientY - box.top - tip.offsetHeight - 12)}px`;
+  tip.classList.add("on");
 }
 
 // ---------- My bookings ----------
@@ -285,7 +308,14 @@ async function openRoom(id, opts) {
       </div>
       <div class="sheet-col" id="sh-form"></div>
     </div>`;
-  if (!dlg.open) dlg.showModal();
+  if (dlg.hidden) {
+    dlg.hidden = false;
+    dlg.classList.remove("closing");
+    dlg.classList.add("opening");
+    setTimeout(() => dlg.classList.remove("opening"), 500);
+  }
+  // Bring the map into view so the fly-to animation is seen; the panel sits right under it.
+  document.querySelector(".map-card").scrollIntoView({ behavior: "smooth", block: "start" });
   renderDates();
   await loadSheetData();
 }
@@ -319,14 +349,14 @@ async function loadSheetData() {
 
 function closeSheet() {
   const dlg = $("room-dialog");
-  if (!dlg.open) return;
+  if (dlg.hidden || dlg.classList.contains("closing")) return;
   dlg.classList.add("closing");
   setTimeout(() => {
     dlg.classList.remove("closing");
-    dlg.close();
+    dlg.hidden = true;
     state.sheet = null;
     state.view?.showAll();
-  }, 190);
+  }, 220);
 }
 
 // Slot rules (mirror app/booking.py so the form only offers what the backend accepts).
@@ -394,7 +424,7 @@ function renderSheetHead() {
   const live = r.live ? `<span class="live-badge">LIVE</span>` : "";
   $("sh-head").innerHTML = `
     <div>
-      <div class="sheet-title"><h2 id="room-title">${esc(r.id)}</h2><span class="muted">${esc(r.name)}</span></div>
+      <div class="sheet-title"><h2 id="room-title">${esc(r.label || r.id)}</h2><span class="muted">${esc(r.label ? `${r.id} · ${r.name}` : r.name)}</span></div>
       <div class="sheet-meta">
         <span class="pill ${esc(r.status)}">${STATUS[r.status] ?? esc(r.status)}</span>${live}
         <span class="meta"><svg class="icon"><use href="#i-users"/></svg>${r.people} here · ${r.capacity} max</span>
@@ -554,9 +584,10 @@ async function submitBooking(btn) {
 
 function wireSheet() {
   const dlg = $("room-dialog");
-  dlg.addEventListener("cancel", (e) => { e.preventDefault(); closeSheet(); });
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && !dlg.hidden && !$("mine-drawer").open) closeSheet();
+  });
   dlg.addEventListener("click", (e) => {
-    if (e.target === dlg) return closeSheet();
     const sh = state.sheet;
     if (!sh) return;
     const t = e.target.closest("button");
