@@ -40,6 +40,22 @@ Write only in your own section. Each section has a **Status** line (replace it w
   - Click in the terminal first: typing that lands in the editor has to be undone with File → Revert File.
   - Switching to "Application Demos" reflashes the factory firmware.
 
+**Vision and presence on the board (tested 17:50–18:00)**
+- The lab board has **no camera of its own**. The vision demos use *our* PC webcam, streamed to the board
+  (Application Demos → Webcam Access → Enable).
+- Factory demos tested with the webcam:
+  - Hand Gesture runs at about 54 ms per frame.
+  - **Face ID** runs at about 12 ms per frame, in inference mode, with 1 of 5 users already enrolled by someone
+    else. Don't enrol faces: that stores biometric data.
+- Infineon examples we could flash in a later slot (each about 5 min to build and flash):
+  - `mtb-example-psoc-edge-ml-aihub-deploy-vision`: **real-time person segmentation** from a USB camera. This is
+    the basis for human presence.
+  - DEEPCRAFT Model Zoo has `Yolov8nPersonDetection` (people count), `SSDMobileNetV2`, `YoloX` and `TinyYolov2`
+    (COCO objects: backpack, laptop, bottle, phone, which covers **lost items**), and `RadarEntranceCounter`
+    (needs the BGT60 radar, not seen in this lab).
+- Privacy design for the pitch: presence comes from people counts only. The camera checks for lost items only when
+  the room is empty, everything runs on the board, and only labels leave it.
+
 **Requests**
 - -> Tom: book the next board slot for the final run and the demo recording.
 
