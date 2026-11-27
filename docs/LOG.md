@@ -126,37 +126,54 @@ building V exists on branch `tom/building3d-prototype`. Next: backend stubs.
 ---
 
 ## claude-3 (Website UI)
-**Status (18:30):** the dashboard layout runs on its own with mock data (branch `claude-3/ui-layout`). Next:
-booking form, login, my bookings, lost & found.
+**Status (19:30):** the full frontend runs on the real backend (branch `claude-3/ui-layout`): login and sign-up,
+search with suggestions, building view, booking sheet, my bookings. Tested in the browser. Next: lost & found
+page (waits for `app/lost_items.py`), then the 3D model once claude-2 pushes it.
 
-**Done**
-- `web/index.html`, `web/css/style.css`, `web/js/app.js`: dashboard with search bar, overview stats, building
-  view, room panel (noise, people, today's bookings, LIVE badge on V.1.07a) and room list. Polls every 5 s.
-- `web/js/api.js`: the only place that calls the backend. `?data=mock` or `?data=api` forces a source;
-  otherwise it uses the API when `GET /api/rooms` answers, else the mock. A badge in the top bar shows which.
-- `web/js/mock-data.js`: 24 made-up rooms and bookings, shaped exactly like the PLAN contracts. Delete it once the
-  backend and `building_v.json` are live.
-- Building view: loads `web/js/building3d.js` if it exists; otherwise a clickable 2D floor-plan placeholder with
-  the same module API (`setStatus`, `focusRoom`, `showAll`, `setFloor`, `onRoomClick`).
-- Tested in the browser at desktop and phone width: search (`1.07a`, unknown id), room selection, floor filter,
-  live updates.
+**Run it**
+`pip install -r requirements.txt`, `uvicorn app.main:app --reload`, open http://localhost:8000 and log in as
+`student1@edu.aau.at` / `demo`. The backend serves the files without cache headers, so after pulling new frontend
+code press **Ctrl+Shift+R** (hard reload).
 
-**Run without the backend**
-`python -m http.server 5500 --directory web`, then open http://localhost:5500. The 404s in the console for
-`/api/rooms`, `data/building_v.json` and `js/building3d.js` are the fallbacks and are expected.
+**Files** (all in `web/`; mock data is gone, everything is live from the API)
+- `login.html`: log in and sign up (`/api/login`, `/api/register`), demo-account chips.
+- `index.html` + `js/app.js`: building view on top, live room cards with filters (free, open to join, quiet),
+  search with suggestions (`/api/search`, 150 ms debounce, arrow keys, `/` shortcut), booking sheet, my bookings
+  drawer, profile menu, polling `/api/rooms` and `/api/bookings/mine` every 5 s.
+- `js/api.js`: the only file that calls the backend; errors carry `{error, suggestions}`.
+- `js/plan2d.js`: 2D floor plan with the 3D module API, used while `js/building3d.js` doesn't exist. Until
+  `data/building_v.json` exists it lays the API rooms out in a ring around the courtyard.
+- `css/style.css`: the **THEME block at the top** holds every colour, font, radius and animation speed. Presets
+  violet / ocean / sunset / mint and light / dark / auto are switchable in the profile menu (saved per browser).
+
+**Booking sheet** (clicking a room on the plan, a card, or a search result)
+- 15 days (today + 14), 30-min slots 08:00–22:00 from `/availability`; past slots hidden. Tap a start, then an end.
+- The form mirrors `app/booking.py`, so it only offers what the backend accepts: durations capped by free
+  consecutive slots and by the 4 h/day limit (own bookings counted); "Private room" only when no one else booked
+  that time; seats capped by capacity (private) or the lowest `seats_free` (shared); events force private; quiet
+  vs loud purposes disabled when they would clash; own bookings shown as "yours", other rooms at that time as
+  "booked". The backend still decides: 400/409 errors are shown, 409 suggestions open that room with the same
+  time and settings.
+- My bookings: grouped per day with hours used out of 4, "Now" tag, ghost countdown, "+ Add time" (opens the room
+  at the booking's end time), two-tap cancel, history of past/cancelled/released.
+
+**Tested (19:00–19:30, backend on a scratch DB with `NOISE_FEED=0`)**: login redirect, search `semi` / `107a`,
+open from plan, card and search; book shared 3 people; join student2's shared room (max 4 seats, private
+disabled); 409 "too noisy for quiet study" → suggestion → booked; add time up to exactly 4 h, then add disabled;
+cancel; ghost countdown after `people: 0`; theme and dark mode; phone width. `pytest tests bridge`: 36 passed
+(backend untouched).
 
 **Decisions**
-- Status colours follow the 3D model (free white, partial amber, full red, loud pulses red); LIVE is purple.
-- V.1.07a with `live: false` shows "SENSOR OFFLINE" instead of LIVE.
-- Times use the 24-hour clock.
+- Times from the API are campus time without a zone; the UI reads them as the browser's local time (fine in
+  Klagenfurt).
+- The UI is English, 24-hour clock. Fonts: Plus Jakarta Sans and Space Grotesk from Google Fonts.
 
 **Requests**
-- -> tom-claude: please add `web/js/api.js` and `web/js/mock-data.js` to claude-3's files in PLAN.md.
-- -> tom-claude: the UI assumes these `purpose` values: `quiet_study`, `group_study`, `gaming`, `meeting`,
-  `board_games`, `event`, `custom`. Please confirm or put the exact list in PLAN.md.
-- -> claude-2: `createBuilding(el, buildingJson)` is called with the container already sized (min 300 px high).
-  `onRoomClick` and `focusRoom` drive the room panel.
-
+- -> gleb-claude: please add `web/js/api.js` and `web/js/plan2d.js` to claude-3's files in PLAN.md.
+- -> claude-2: `createBuilding(el, buildingJson)` gets `data/building_v.json`, or the generated ring layout until it
+  exists; `setStatus(id, room)` receives the full room object from `/api/rooms` (uses `status`, `noise_class`,
+  `live`); `onRoomClick` opens the booking sheet, `focusRoom`/`showAll` run when it opens and closes.
+- -> gemini: once `building_v.json` lands, the plan uses its geometry automatically.
 ---
 
 ## gemini (Data, simulation, demo)
