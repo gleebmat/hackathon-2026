@@ -230,11 +230,13 @@ def zm(px, py):
 
 
 def build_s():
-    """South wing: straight west part, fan-shaped main lecture hall, and an east part that curves to the north-east."""
+    """Südtrakt: one long wing on a single large arc (west end -> past HS A -> east end, fitted to the plan),
+    with the fan-shaped HS A attached on the south side."""
     floors = (0, 1, 2)
-    s = build_wing("S", "Südtrakt", [(75, 672, 390, 768)], [(172, 688, 200, 720), (258, 690, 340, 765)], floors, 3.8,
-                   source="Traced from campusplan.aau.at (Südtrakt, floor 1); room numbers approximate.")
-    n = {f: 1 + sum(r["floor"] == f for r in s["rooms"]) for f in floors}
+    s = {"id": "S", "name": "Südtrakt", "floors": list(floors), "floor_height": 3.8, "blocks": [], "rooms": [],
+         "source": "Traced from campusplan.aau.at (Südtrakt, floor 1); the wing is simplified to one arc; "
+                   "room numbers approximate."}
+    n = {f: 1 for f in floors}
 
     def add(floor, poly, kind, name, angle, w, d):
         cx = sum(p[0] for p in poly) / len(poly)
@@ -247,7 +249,7 @@ def build_s():
                            "type": kind, "bookable": kind == "seminar", "name": name})
         n[floor] += 1
 
-    # fan-shaped main lecture hall (outline from the plan), 2 storeys tall, one room
+    # fan-shaped HS A (outline from the plan), 2 storeys tall, one room
     fan = [zm(425, 690), zm(527, 688), zm(548, 800)] + \
           [zm(476 + 72 * math.cos(a), 800 + 16 * math.sin(a)) for a in [i * math.pi / 8 for i in range(1, 8)]] + \
           [zm(402, 800)]
@@ -255,34 +257,38 @@ def build_s():
     xs, zs = [p[0] for p in fan], [p[1] for p in fan]
     add(0, fan, "seminar", "Main lecture hall", 0.0, max(xs) - min(xs), max(zs) - min(zs))
 
-    # curved east part: quadratic Bezier centre line, rooms on both sides of a central corridor
-    p0, p1, p2 = [zm(*p) for p in ((545, 700), (775, 682.5), (1005, 612))]
+    # the wing's centre line: a circle through three points of the plan (fits within ~1-2 m everywhere)
+    (ax, az), (bx, bz), (cx, cz) = zm(75, 716), zm(476, 716), zm(1005, 612)
+    d2 = 2 * (ax * (bz - cz) + bx * (cz - az) + cx * (az - bz))
+    ox = ((ax**2 + az**2) * (bz - cz) + (bx**2 + bz**2) * (cz - az) + (cx**2 + cz**2) * (az - bz)) / d2
+    oz = ((ax**2 + az**2) * (cx - bx) + (bx**2 + bz**2) * (ax - cx) + (cx**2 + cz**2) * (bx - ax)) / d2
+    radius = math.hypot(ax - ox, az - oz)
+    a0, a1 = math.atan2(az - oz, ax - ox), math.atan2(cz - oz, cx - ox)
+    length = abs(a1 - a0) * radius
+    steps = max(8, round(length / 5.0))                 # ~5 m per room along the wing
     half = 48 * S
-    steps = 18
-    centre, normal = [], []
-    for i in range(steps + 1):
-        t = i / steps
-        cx = (1 - t) ** 2 * p0[0] + 2 * (1 - t) * t * p1[0] + t * t * p2[0]
-        cz = (1 - t) ** 2 * p0[1] + 2 * (1 - t) * t * p1[1] + t * t * p2[1]
-        tx = 2 * (1 - t) * (p1[0] - p0[0]) + 2 * t * (p2[0] - p1[0])
-        tz = 2 * (1 - t) * (p1[1] - p0[1]) + 2 * t * (p2[1] - p1[1])
-        ln = math.hypot(tx, tz)
-        centre.append((cx, cz))
-        normal.append((-tz / ln, tx / ln))        # points to the south side
-    off = lambda i, o: (centre[i][0] + normal[i][0] * o, centre[i][1] + normal[i][1] * o)
-    s["blocks"].append({"poly": [list(off(i, -half)) for i in range(steps + 1)] +
-                                [list(off(i, half)) for i in range(steps, -1, -1)]})
-    teal = [z_rect(*t) for t in [(580, 655, 685, 740), (735, 637, 785, 670), (748, 682, 797, 715)]]
+    sign = 1 if oz < az else -1                          # +normal points away from the centre = south side
+    def at(i, o):
+        a = a0 + (a1 - a0) * i / steps
+        r = radius + sign * o
+        return (ox + r * math.cos(a), oz + r * math.sin(a))
+    s["blocks"].append({"poly": [list(at(i, -half)) for i in range(steps + 1)] +
+                                [list(at(i, half)) for i in range(steps, -1, -1)]})
+
+    teal = [z_rect(*t) for t in [(172, 688, 200, 720), (258, 690, 340, 765), (580, 655, 685, 740),
+                                 (735, 637, 785, 670), (748, 682, 797, 715)]]
     in_teal = lambda p: next((k for k, (tx, tz, tw, td) in enumerate(teal)
                               if abs(p[0] - tx) < tw / 2 and abs(p[1] - tz) < td / 2), None)
     bands = {"north": (-half, -half + 2 * half * 0.38), "south": (half - 2 * half * 0.42, half)}
     for floor in floors:
-        cells = {}   # (band, i) -> teal index or None
+        cells = {}
         for band, (o0, o1) in bands.items():
             for i in range(steps):
-                mid = off(i, (o0 + o1) / 2)
-                mid = ((mid[0] + off(i + 1, (o0 + o1) / 2)[0]) / 2, (mid[1] + off(i + 1, (o0 + o1) / 2)[1]) / 2)
-                cells[band, i] = in_teal(mid)
+                cells[band, i] = in_teal(at(i + 0.5, (o0 + o1) / 2))
+        full = {k for k in set(cells.values()) if k is not None and
+                any(cells["north", i] == k and cells["south", i] == k for i in range(steps))}
+        if floor != 1:                                   # big full-depth halls exist on floor 1 only
+            cells = {key: (None if k in full else k) for key, k in cells.items()}
         done = set()
         for band, (o0, o1) in bands.items():
             i = 0
@@ -295,15 +301,15 @@ def build_s():
                     i = j
                     continue
                 lo, hi = o0, o1
-                if k is not None and all(cells["north", m] == k and cells["south", m] == k for m in range(i, j)):
-                    lo, hi = -half, half                        # one hall spanning the whole depth
+                if k is not None and floor == 1 and k in full:
+                    lo, hi = -half, half                 # one hall across the whole depth
                     done.update(("south", m) for m in range(i, j))
-                poly = [off(i, lo), off(j, lo), off(j, hi), off(i, hi)]
-                (ax, az), (bx, bz) = centre[i], centre[j]
-                length, angle = math.hypot(bx - ax, bz - az), math.atan2(bz - az, bx - ax)
+                poly = [at(i, lo), at(j, lo), at(j, hi), at(i, hi)]
+                (px, pz), (qx, qz) = at(i, 0), at(j, 0)
+                seg, angle = math.hypot(qx - px, qz - pz), math.atan2(qz - pz, qx - px)
                 kind = "seminar" if k is not None else "office"
-                name = ("Lecture hall" if (hi - lo) * length > 60 else "Seminar room") if k is not None else "Office"
-                add(floor, poly, kind, name, angle, length, hi - lo)
+                name = ("Lecture hall" if (hi - lo) * seg > 60 else "Seminar room") if k is not None else "Office"
+                add(floor, poly, kind, name, angle, seg, hi - lo)
                 i = j
     return s
 
