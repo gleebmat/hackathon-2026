@@ -128,9 +128,9 @@ building V exists on branch `tom/building3d-prototype`. Next: backend stubs.
 ---
 
 ## claude-3 (Website UI)
-**Status (21:40):** the main page is now a minimal tool: campus map on top, a date/time picker and at most 3 room
-cards below (branch `claude-3/ui-layout`, PR #10). Booking sheet, my bookings and login work on the real backend.
-Tested in the browser, also with the 3D map from PR #13. Next: ratings once the backend has them, lost & found.
+**Status (22:10):** the main page is a minimal tool, top to bottom: the 3D campus map (merged #13, loads on the
+page), a calendar, and at most 3 room cards (branch `claude-3/ui-layout`, PR #10). Booking sheet, my bookings and
+login work on the real backend; tested in the browser. Next: ratings once the backend has them, lost & found.
 
 **Run it**
 `pip install -r requirements.txt`, `uvicorn app.main:app --reload`, open http://localhost:8000 and log in as
@@ -140,18 +140,19 @@ code press **Ctrl+Shift+R** (hard reload).
 **Files** (all in `web/`)
 - `index.html` + `js/app.js`: top bar (search with suggestions, my bookings, profile menu), the map, the picker,
   the booking sheet and the my-bookings drawer. Polls `/api/rooms` and `/api/bookings/mine` every 5 s.
-- `js/picker.js`: the date pill opens a small calendar (today + 14 days, a start time in 30-min steps, 30 min to
-  4 h). Without a time, each card says how many hours are still bookable that day; with one, it shows Free /
+- `js/picker.js`: an always-visible calendar under the map (today + 14 days; "any time" or a start time in 30-min
+  steps plus 30 min to 4 h). The cards update on every change. Without a time, each card says how many hours are still bookable that day; with one, it shows Free /
   Shared · n people (seats left) / Not available for exactly that range. Free rooms first; full and closed rooms
   dimmed at the end. 3 cards per page with arrows (1 on phones). Hover (tap on phones) shows noise and, once the
   backend has it, the rating. Clicking a card opens the booking sheet with that date and time already selected.
   Slots come from `/availability` for every room (12 calls, reloaded every 30 s and after each booking).
-- `js/plan2d.js`: 2D floor plan, only used until `web/map3d/` (PR #13) is merged. With PR #13 the page loads
-  `map3d/building3d.js` and `map3d/campus.json` automatically (tested with a local copy of the branch).
+- The map is tom-claude's `web/map3d/` (`building3d.js` + `campus.json`), with its built-in building/floor
+  selector. `js/plan2d.js` is only a fallback if the map can't load.
 - `js/api.js`: the only file that calls the backend.
 - `login.html`: log in / sign up next to a photo of the AAU central wing (Naturpuur, CC BY-SA 4.0, Wikimedia
   Commons, credited on the page; loaded from Wikimedia, not stored in the repo).
-- `css/style.css`: the THEME block at the top holds every colour, font, radius and animation curve.
+- `css/style.css`: the THEME block at the top holds every colour, font, radius and animation curve. One font:
+  Nunito Sans.
 
 **Decisions**
 - Minimal on purpose: no stats, filters or card grid on the main page; the map is the hook, the cards are the tool.
