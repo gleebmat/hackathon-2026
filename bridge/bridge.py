@@ -9,7 +9,7 @@ Understands every firmware we use (it just parses whatever lines arrive):
 - presence firmware (bridge/firmware/inference_task.c): "PRESENCE <0|1> <person_frames>/<frames>" once per second
 - a future merged firmware: "NOISE <avg_db> <peak_db>" lines (taken as-is)
 
-Every INTERVAL seconds it sends one reading for V.1.07a:
+Every INTERVAL seconds it sends one reading for ROOM (the board room, default Z.1.04; optional 4th argument):
     {"room_id", "presence", "person_ratio", "noise_avg_db", "noise_peak_db"}   raw board values (PLAN contract)
     + "people" (0/1) and "noise_db" (calibrated, quiet ~35 dB)                   fields the backend reads today
 Network errors are retried on the next interval; the serial port is reopened if it drops.
@@ -27,7 +27,7 @@ import serial
 PORT = sys.argv[1] if len(sys.argv) > 1 else "COM3"
 URL = sys.argv[2].rstrip("/") if len(sys.argv) > 2 else None
 TOKEN = sys.argv[3] if len(sys.argv) > 3 else ""
-ROOM = "V.1.07a"
+ROOM = sys.argv[4] if len(sys.argv) > 4 else "Z.1.04"  # must match BOARD_ROOM in the backend
 INTERVAL = 2 if URL else 5          # ntfy.sh allows ~250 messages/day, so the fallback is slower
 NTFY_TOPIC = "aau-hack26-roomv-v107a"
 
