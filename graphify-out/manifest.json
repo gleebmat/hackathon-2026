@@ -54,15 +54,15 @@
     "semantic_hash": ""
   },
   "docs/LOG.md": {
-    "mtime": 1795810880.3088102,
-    "seen": 1795810891.6716843,
-    "ast_hash": "6352d2f9447e08263725c3c1d6b71403",
+    "mtime": 1795811914.1017966,
+    "seen": 1795811918.0921426,
+    "ast_hash": "fc5b59559d6b66d75110b344fa0d0257",
     "semantic_hash": ""
   },
   "docs/PLAN.md": {
-    "mtime": 1795810422.4418018,
-    "seen": 1795810891.6716864,
-    "ast_hash": "b0c969c85ee8d6e7d0971b17891d0166",
+    "mtime": 1795811869.422969,
+    "seen": 1795811918.092144,
+    "ast_hash": "dc82581eabba989d42a0975697c661a8",
     "semantic_hash": ""
   },
   "app/__init__.py": {
@@ -132,9 +132,9 @@
     "semantic_hash": ""
   },
   "web/js/app.js": {
-    "mtime": 1795810560.435498,
-    "seen": 1795810891.6716657,
-    "ast_hash": "a7bb8f64a01d2995653c6d09b0bc6c22",
+    "mtime": 1795811728.030296,
+    "seen": 1795811918.0921285,
+    "ast_hash": "69c211c3f8113bb47077d5036ca782ec",
     "semantic_hash": ""
   },
   "web/js/plan2d.js": {
@@ -144,15 +144,15 @@
     "semantic_hash": ""
   },
   "web/index.html": {
-    "mtime": 1795810766.8931627,
-    "seen": 1795810891.6716905,
-    "ast_hash": "2ab80d3436846cf724d3cfb828a7ad90",
+    "mtime": 1795811793.2309773,
+    "seen": 1795811918.0921469,
+    "ast_hash": "acd72c51b6992544a04e5fc00b23c84e",
     "semantic_hash": ""
   },
   "web/login.html": {
-    "mtime": 1795810804.5776346,
-    "seen": 1795810891.6716926,
-    "ast_hash": "5dfacb8cc2cde6588902fcc9b57c2c8e",
+    "mtime": 1795811793.231981,
+    "seen": 1795811918.0921483,
+    "ast_hash": "6a6dfe0c5d2a04f67ad1f69a6bb5b552",
     "semantic_hash": ""
   },
   "docs/img/board-person-segmentation.png": {
@@ -168,9 +168,51 @@
     "semantic_hash": ""
   },
   "web/js/picker.js": {
-    "mtime": 1795810766.9950185,
-    "seen": 1795810891.671669,
-    "ast_hash": "c5d698a3958985117d58b9a92092a26b",
+    "mtime": 1795811766.307519,
+    "seen": 1795811918.09213,
+    "ast_hash": "1272565e2481561370f23c7e93b0ce40",
+    "semantic_hash": ""
+  },
+  "tools/campus3d/building_v_rooms.json": {
+    "mtime": 1795811869.4239535,
+    "seen": 1795811918.0921192,
+    "ast_hash": "64afa28d1c43e15af4350fcd565461c5",
+    "semantic_hash": ""
+  },
+  "tools/campus3d/gen_building_v.py": {
+    "mtime": 1795811869.424955,
+    "seen": 1795811918.0921216,
+    "ast_hash": "f4e134352a2895fdc475b7813580b1ab",
+    "semantic_hash": ""
+  },
+  "tools/campus3d/gen_campus.py": {
+    "mtime": 1795811869.424955,
+    "seen": 1795811918.092123,
+    "ast_hash": "36c3fe60abce3d882f5b702c42dd07ff",
+    "semantic_hash": ""
+  },
+  "tools/campus3d/resolve_overlaps.py": {
+    "mtime": 1795811869.4259584,
+    "seen": 1795811918.0921247,
+    "ast_hash": "aecfab28ba3ae38d4c3b68ff9c7c46b7",
+    "semantic_hash": ""
+  },
+  "web/map3d/building3d.js": {
+    "mtime": 1795811869.4259584,
+    "seen": 1795811918.0921333,
+    "ast_hash": "f479220381c046e7efb22f92249bcc0a",
+    "semantic_hash": ""
+  },
+  "web/map3d/campus.json": {
+    "mtime": 1795811869.4279938,
+    "seen": 1795811918.0921347,
+    "ast_hash": "bf8f268c407444044f88389bd9d30b0c",
+    "semantic_hash": ""
+  },
+  "web/map3d/index.html": {
+    "mtime": 1795811869.4279938,
+    "seen": 1795811918.0921495,
+    "ast_hash": "7fd35504b82a5a1668b4757ccb722d5b",
     "semantic_hash": ""
   }
 }
