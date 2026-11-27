@@ -1,4 +1,4 @@
-// Room picker under the map: a date/time pill with a small calendar, and at most 3 room cards
+// Room picker under the map: an always-visible calendar (day, start time, duration), then at most 3 room cards
 // with arrows. Without a picked time, a card says whether the room has free time left that day;
 // with one, it shows the exact status for that range. Data: /api/rooms (live state) and
 // /api/rooms/{id}/availability (30-min slots), per docs/PLAN.md.
@@ -33,7 +33,7 @@ export function createPicker(root, { onOpen, onError }) {
   const $ = (sel) => root.querySelector(sel);
   const state = {
     date: todayKey(), start: null, hours: 1, page: 0,
-    rooms: [], slots: {}, draft: null, month: null, loadedFor: null,
+    rooms: [], slots: {}, month: null, loadedFor: null,
   };
   const perPage = () => (matchMedia("(max-width: 760px)").matches ? 1 : 3);
   const touch = matchMedia("(hover: none)").matches;
@@ -163,38 +163,31 @@ export function createPicker(root, { onOpen, onError }) {
 
   function renderHeading() {
     const day = dayName(state.date);
-    const set = state.start !== null || state.date !== todayKey();
-    $(".date-pill").classList.toggle("set", set);
-    $(".date-pill-text").textContent = state.start === null ? `${capital(day)} · any time` : `${capital(day)} · ${rangeText()}`;
-    $(".date-pill-reset").classList.toggle("hidden", !set);
     $(".picker-title").textContent = state.start === null
       ? (state.date === todayKey() ? "Rooms today" : `Rooms on ${day}`)
       : `Rooms ${state.date === todayKey() ? "today" : `on ${day}`}, ${rangeText()}`;
   }
 
-  // ---------- Calendar popover ----------
+  // ---------- Calendar (always visible, between the map and the cards) ----------
+
+  function minStart(key) {
+    return key === todayKey() ? Math.max(0, currentSlot()) : 0;
+  }
 
   function defaultStart(key) {
-    if (key !== todayKey()) return 12;
-    return Math.min(SLOTS - 1, Math.max(0, currentSlot() + 1));
+    return key === todayKey() ? Math.min(SLOTS - 1, minStart(key) + 1) : 12;
   }
 
-  function openPop() {
-    state.draft = { date: state.date, start: state.start ?? defaultStart(state.date), hours: state.hours };
-    state.month = new Date(`${state.draft.date}T12:00`);
-    state.month.setDate(1);
-    drawPop();
-    $(".pop").classList.add("open");
-    $(".date-pill").setAttribute("aria-expanded", "true");
+  function fitTime(next) {
+    if (next.start === null) return next;
+    const min = minStart(next.date);
+    if (min >= SLOTS) return { ...next, start: null };
+    const start = Math.min(Math.max(next.start, min), SLOTS - 1);
+    const fits = DURATIONS.filter((h) => start + h * 2 <= SLOTS);
+    return { ...next, start, hours: fits.includes(next.hours) ? next.hours : fits.at(-1) };
   }
 
-  function closePop() {
-    $(".pop").classList.remove("open");
-    $(".date-pill").setAttribute("aria-expanded", "false");
-  }
-
-  function drawPop() {
-    const d = state.draft;
+  function drawCalendar() {
     const m = state.month;
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -210,28 +203,28 @@ export function createPicker(root, { onOpen, onError }) {
       const dt = new Date(m.getFullYear(), m.getMonth(), i);
       const key = dateKey(dt);
       const ok = dt >= today && dt <= last;
-      html += `<button type="button" class="day ${key === todayKey() ? "today" : ""} ${key === d.date ? "sel" : ""}" data-day="${key}" ${ok ? "" : "disabled"}>${i}</button>`;
+      html += `<button type="button" class="day ${key === todayKey() ? "today" : ""} ${key === state.date ? "sel" : ""}" data-day="${key}" ${ok ? "" : "disabled"}>${i}</button>`;
     }
     $(".m-grid").innerHTML = html;
-    const min = d.date === todayKey() ? Math.max(0, currentSlot()) : 0;
-    d.start = Math.min(Math.max(d.start, min), SLOTS - 1);
-    if (d.start + d.hours * 2 > SLOTS) d.hours = DURATIONS.filter((h) => d.start + h * 2 <= SLOTS).at(-1);
-    const dayOver = d.date === todayKey() && currentSlot() >= SLOTS;
-    $(".t-out").textContent = dayOver ? "closed" : slotTime(d.start);
-    $(".t-dn").disabled = d.start <= min || dayOver;
-    $(".t-up").disabled = d.start >= SLOTS - 1 || dayOver;
-    $(".durs").innerHTML = DURATIONS.map((h) => `<button type="button" class="${h === d.hours ? "on" : ""}" data-h="${h}"
-      ${d.start + h * 2 > SLOTS || dayOver ? "disabled" : ""}>${h === 0.5 ? "30m" : `${h}h`}</button>`).join("");
-    $(".apply").disabled = dayOver;
+
+    const any = state.start === null;
+    const dayOver = minStart(state.date) >= SLOTS;
+    const shown = any ? defaultStart(state.date) : state.start;
+    $(".anytime").classList.toggle("on", any);
+    $(".cal-time").classList.toggle("is-any", any);
+    $(".t-out").textContent = dayOver ? "closed" : slotTime(Math.min(shown, SLOTS - 1));
+    $(".t-dn").disabled = dayOver || (!any && state.start <= minStart(state.date));
+    $(".t-up").disabled = dayOver || (!any && state.start >= SLOTS - 1);
+    $(".durs").innerHTML = DURATIONS.map((h) => `<button type="button" class="${!any && h === state.hours ? "on" : ""}" data-h="${h}"
+      ${dayOver || shown + h * 2 > SLOTS ? "disabled" : ""}>${h === 0.5 ? "30m" : `${h}h`}</button>`).join("");
   }
 
-  // ---------- Events ----------
-
   async function choose(next, direction) {
-    const dateChanged = next.date !== state.date;
-    Object.assign(state, next, { page: 0 });
+    const fitted = fitTime({ date: state.date, start: state.start, hours: state.hours, ...next });
+    const dateChanged = fitted.date !== state.date;
+    Object.assign(state, fitted, { page: 0 });
+    drawCalendar();
     if (dateChanged) render();
-    else renderHeading();
     if (dateChanged || state.loadedFor !== state.date) {
       try {
         await loadSlots();
@@ -242,33 +235,25 @@ export function createPicker(root, { onOpen, onError }) {
     render(direction);
   }
 
-  $(".date-pill").addEventListener("click", (e) => {
-    if (e.target.closest(".date-pill-reset")) {
-      e.stopPropagation();
-      closePop();
-      return choose({ date: todayKey(), start: null }, "right");
-    }
-    if ($(".pop").classList.contains("open")) closePop();
-    else openPop();
-  });
-  $(".pop").addEventListener("click", (e) => {
-    const d = state.draft;
+  $(".cal").addEventListener("click", (e) => {
     const t = e.target.closest("button");
     if (!t || t.disabled) return;
-    if (t.dataset.day) d.date = t.dataset.day;
-    else if (t.classList.contains("m-prev")) state.month.setMonth(state.month.getMonth() - 1);
-    else if (t.classList.contains("m-next")) state.month.setMonth(state.month.getMonth() + 1);
-    else if (t.classList.contains("t-dn")) d.start--;
-    else if (t.classList.contains("t-up")) d.start++;
-    else if (t.dataset.h) d.hours = Number(t.dataset.h);
-    else if (t.classList.contains("apply")) {
-      closePop();
-      return choose({ date: d.date, start: d.start, hours: d.hours }, "left");
+    const from = state.start ?? defaultStart(state.date);
+    if (t.dataset.day) {
+      if (t.dataset.day !== state.date) choose({ date: t.dataset.day }, t.dataset.day > state.date ? "left" : "right");
+    } else if (t.classList.contains("m-prev") || t.classList.contains("m-next")) {
+      state.month.setMonth(state.month.getMonth() + (t.classList.contains("m-next") ? 1 : -1));
+      drawCalendar();
+    } else if (t.classList.contains("anytime")) {
+      choose({ start: null });
+    } else if (t.classList.contains("t-dn")) {
+      choose({ start: state.start === null ? from : from - 1 });
+    } else if (t.classList.contains("t-up")) {
+      choose({ start: state.start === null ? from : from + 1 });
+    } else if (t.dataset.h) {
+      choose({ start: from, hours: Number(t.dataset.h) });
     }
-    drawPop();
   });
-  document.addEventListener("click", (e) => { if (!e.target.closest(".pill-wrap")) closePop(); });
-  document.addEventListener("keydown", (e) => { if (e.key === "Escape") closePop(); });
   $(".prev").addEventListener("click", () => { state.page--; render("right"); });
   $(".next").addEventListener("click", () => { state.page++; render("left"); });
   $(".picks").addEventListener("click", (e) => {
@@ -284,6 +269,9 @@ export function createPicker(root, { onOpen, onError }) {
       : { date: state.date, time: slotTime(state.start), hours: state.hours });
   });
   addEventListener("resize", () => render());
+  state.month = new Date();
+  state.month.setDate(1);
+  drawCalendar();
 
   return {
     /** New live room list from /api/rooms (every few seconds): redraw cards without animation. */
