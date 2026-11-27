@@ -1,4 +1,4 @@
-"""SQLite storage: schema, connection and seed data (bookable floor 1 rooms of building V, demo accounts)."""
+"""SQLite storage: schema, connection and seed data (the bookable rooms of the 3D campus map, demo accounts)."""
 
 import json
 import os
@@ -8,8 +8,7 @@ from pathlib import Path
 from app.auth import hash_password
 
 ROOT = Path(__file__).resolve().parent.parent
-BUILDING_JSON = ROOT / "web" / "data" / "building_v.json"
-FLOOR = 1
+CAMPUS_JSON = ROOT / "web" / "map3d" / "campus.json"
 DEFAULT_CAPACITY = 10
 
 SCHEMA = """
@@ -35,8 +34,8 @@ CREATE TABLE IF NOT EXISTS readings (
 """
 READINGS_COLUMNS = {"room_id", "noise_db", "noise_at", "people", "people_at", "empty_since"}
 
-# Real room numbers and names from campusplan.aau.at (bookable rooms only); capacities are made up.
-# Used until web/data/building_v.json exists.
+# Fallback when the map data is missing (the tests use it): building V floor 1, real numbers and names from
+# campusplan.aau.at, made-up capacities.
 DEFAULT_ROOMS = [
     {"id": "V.1.01", "name": "Seminarraum", "capacity": 30},
     {"id": "V.1.02", "name": "Arbeits- und Aufenthaltsraum", "capacity": 20},
@@ -68,12 +67,13 @@ def connect() -> sqlite3.Connection:
 
 
 def load_rooms() -> list[dict]:
-    if BUILDING_JSON.exists():
-        rooms = json.loads(BUILDING_JSON.read_text(encoding="utf-8"))["rooms"]
-        rooms = [r for r in rooms if r.get("floor") == FLOOR and r.get("bookable", True)]
+    """Every bookable room of the 3D map (web/map3d/campus.json), so the map, search and bookings always match."""
+    if CAMPUS_JSON.exists():
+        campus = json.loads(CAMPUS_JSON.read_text(encoding="utf-8"))
+        rooms = [r for b in campus["buildings"] for r in b["rooms"] if r.get("bookable")]
     else:
-        rooms = [{**r, "floor": FLOOR} for r in DEFAULT_ROOMS]
-    return [{"id": r["id"], "floor": FLOOR, "name": r.get("name") or r["id"],
+        rooms = [{**r, "floor": 1} for r in DEFAULT_ROOMS]
+    return [{"id": r["id"], "floor": int(r["floor"]), "name": r.get("name") or r["id"],
              "capacity": int(r.get("capacity") or DEFAULT_CAPACITY), "closed": int(bool(r.get("closed")))}
             for r in rooms]
 

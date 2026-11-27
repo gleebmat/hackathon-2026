@@ -265,7 +265,7 @@ mark { background: color-mix(in srgb, var(--brand-2) 35%, transparent); color: i
 .stat span { font-size: 12px; color: var(--muted); }
 
 .building {
-  position: relative; margin-top: 16px; min-height: 360px; border-radius: var(--radius);
+  position: relative; margin-top: 16px; min-height: 360px; height: min(64vh, 620px); border-radius: var(--radius);
   background:
     radial-gradient(circle at 1px 1px, color-mix(in srgb, var(--muted) 22%, transparent) 1px, transparent 0) 0 0 / 22px 22px,
     var(--surface-2);

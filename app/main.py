@@ -26,7 +26,7 @@ async def lifespan(_app: FastAPI):
     global feed
     db.init()
     if os.environ.get("NOISE_FEED", "1") != "0":
-        feed = LiveNoiseFeed()
+        feed = LiveNoiseFeed(room_id=booking.BOARD_ROOM)  # fallback path: bridge.py without a backend URL
         feed.start()
     yield
 
@@ -246,9 +246,12 @@ def suggest(conn: Conn, mode: Mode, hours: float = Query(ge=0.5, le=booking.MAX_
 # --- sensors ---
 
 class Reading(BaseModel):
+    """From bridge/bridge.py (the board) or a simulator. Raw board fields (noise_avg_db, person_ratio, ...) are
+    accepted and ignored: the bridge already sends the calibrated noise_db."""
     room_id: str = Field(max_length=20)
     noise_db: float | None = Field(None, ge=0, le=150, allow_inf_nan=False)
     people: int | None = Field(None, ge=0, le=1000)
+    presence: bool | None = None
 
 
 @app.post("/api/readings")
@@ -256,7 +259,8 @@ def post_reading(body: Reading, conn: Conn, x_token: str | None = Header(None)):
     expected = os.environ.get("READINGS_TOKEN")
     if expected and x_token != expected:
         raise ApiError(403, "Bad sensor token")
-    booking.record_reading(conn, body.room_id, body.noise_db, body.people, clock.now())
+    people = body.people if body.people is not None else (None if body.presence is None else int(body.presence))
+    booking.record_reading(conn, body.room_id, body.noise_db, people, clock.now())
     return {"ok": True}
 
 

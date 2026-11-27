@@ -5,9 +5,12 @@ Sensor times are compared as datetimes.
 """
 
 import os
+import random
 import sqlite3
 from datetime import date, datetime, time, timedelta
 
+# The one room wired to the PSOC Edge E84 in the Live Lab; every other room is simulated.
+BOARD_ROOM = os.environ.get("BOARD_ROOM", "Z.1.04")
 OPEN, CLOSE = time(8, 0), time(22, 0)
 SLOT = timedelta(minutes=30)
 MAX_HOURS_PER_DAY = 4.0
@@ -108,20 +111,50 @@ def booking_out(conn: sqlite3.Connection, row: sqlite3.Row, now: datetime, user_
             "ghost_release_at": deadline.isoformat() if deadline else None, "mine": row["user_id"] == user_id}
 
 
+def simulating() -> bool:
+    return os.environ.get("SIMULATE", "1") != "0"
+
+
+def simulated(room: sqlite3.Row, current: list[sqlite3.Row], now: datetime) -> tuple[float, int]:
+    """Noise and people for a room without a sensor. Random but the same for every viewer: noise changes every
+    minute, walk-ins every 10 minutes. Booked rooms hold their booked people (or one fewer); about one free room
+    in twelve has one or two walk-ins."""
+    booked = sum(b["seats"] for b in current)
+    cls = loudest(current)
+    if not simulating():
+        return SIMULATED_DB[cls], booked
+    rnd = random.Random(f"{room['id']}|{now:%Y-%m-%dT%H:%M}")
+    walk_ins = random.Random(f"{room['id']}|{now:%Y-%m-%dT%H}|{now.minute // 10}")
+    if room["closed"]:
+        people = 0
+    elif current:
+        people = max(1, booked - rnd.randint(0, 1))
+    else:
+        people = walk_ins.choice([1, 2]) if walk_ins.random() < 1 / 12 else 0
+    base = SIMULATED_DB[cls] if cls else SIMULATED_DB[None] + 3 * people
+    noise = base + rnd.uniform(-3, 3)
+    if cls in (None, "quiet"):
+        noise = min(noise, 39.0)  # stays "quiet", so quiet study is never refused by chance
+    return round(noise, 1), people
+
+
 def room_state(conn: sqlite3.Connection, room: sqlite3.Row, now: datetime, live: dict) -> dict:
     """What the room looks like right now: status, noise, people, free seats and current bookings."""
     current = current_bookings(conn, room["id"], now)
     seen = sensor(conn, room["id"], now)
     feed = live.get(room["id"])
-    is_live = bool(feed and feed.get("live"))
-    if is_live:
+    feed_live = bool(feed and feed.get("live"))
+    sim_noise, sim_people = simulated(room, current, now)
+    if feed_live:
         noise_db = feed["noise_db"]
     elif seen["noise_db"] is not None:
         noise_db = seen["noise_db"]
     else:
-        noise_db = SIMULATED_DB[loudest(current)]
+        noise_db = sim_noise
     booked = sum(b["seats"] for b in current)
-    people = seen["people"] if seen["people"] is not None else booked
+    people = seen["people"] if seen["people"] is not None else sim_people
+    board = room["id"] == BOARD_ROOM
+    is_live = board and (feed_live or seen["noise_db"] is not None or seen["people"] is not None)
     exclusive = any(b["mode"] == "full" for b in current)
     seats_free = 0 if exclusive or room["closed"] else max(0, room["capacity"] - max(booked, people))
     deadlines = [d for d in (ghost_deadline(b, seen) for b in current) if d]
@@ -137,9 +170,10 @@ def room_state(conn: sqlite3.Connection, room: sqlite3.Row, now: datetime, live:
     else:
         status = "free"
 
-    return {"id": room["id"], "floor": room["floor"], "name": room["name"], "capacity": room["capacity"],
-            "status": status, "noise_db": round(noise_db, 1), "noise_class": noise_class(noise_db),
-            "people": people, "seats_free": seats_free, "live": is_live, "sensor": seen["people"] is not None,
+    return {"id": room["id"], "building": room["id"].split(".")[0], "floor": room["floor"], "name": room["name"],
+            "capacity": room["capacity"], "status": status, "noise_db": round(noise_db, 1),
+            "noise_class": noise_class(noise_db), "people": people, "seats_free": seats_free, "board": board,
+            "live": is_live, "sensor": seen["people"] is not None,
             "ghost_release_at": min(deadlines).isoformat() if deadlines else None,
             "bookings_now": [{"id": b["id"], "mode": b["mode"], "purpose": b["purpose"], "seats": b["seats"],
                               "end": b["end"], "shareable": b["mode"] == "partial"} for b in current]}
@@ -236,13 +270,14 @@ def _norm(s: str) -> str:
 
 
 def search_rank(room: sqlite3.Row, q: str) -> int | None:
-    """Lower is better; None means no match. '107a', 'v.1.07a' and 'V 1 07a' all find V.1.07a."""
+    """Lower is better; None means no match. '107a', 'v.1.07a' and 'V 1 07a' all find V.1.07a; '104' finds
+    Z.1.04 and V.1.04 (the building letter may be left out)."""
     nq, nid, name = _norm(q), _norm(room["id"]), room["name"].lower()
     if not nq:
         return None
     if nid == nq:
         return 0
-    if nid.startswith(nq) or nid.removeprefix("v").startswith(nq):
+    if nid.startswith(nq) or nid[1:].startswith(nq):
         return 1
     if nq in nid:
         return 2

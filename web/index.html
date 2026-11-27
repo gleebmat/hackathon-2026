@@ -10,6 +10,10 @@
       document.documentElement.dataset.mode = localStorage.getItem("roomv-mode") || "auto";
     } catch {}
   </script>
+  <script type="importmap">
+    { "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+                   "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/" } }
+  </script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;600;700&display=swap">
@@ -72,8 +76,8 @@
     <section class="card hero">
       <div class="hero-head">
         <div>
-          <h1 class="hero-title">Building V, <span class="gradient-text">floor 1</span></h1>
-          <p class="muted">Click a room to see when it's free, or search for one above.</p>
+          <h1 class="hero-title">AAU campus, <span class="gradient-text">live</span></h1>
+          <p class="muted">Drag to rotate, scroll to zoom, click a room to see when it's free, or search for one above.</p>
         </div>
         <div class="stats" id="stats"></div>
       </div>

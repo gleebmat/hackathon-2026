@@ -1,13 +1,13 @@
-// Room V main page: building view, live room cards, search, booking sheet and "My bookings".
-// Data: api.js (docs/PLAN.md, "Frontend flow"). Building view: claude-2's building3d.js when it
-// exists, otherwise the 2D plan in plan2d.js (same module API).
+// Campus main page: 3D map, live room cards, search, booking sheet and "My bookings".
+// Data: api.js (docs/PLAN.md, "Frontend flow"). Building view: the 3D campus map in ../map3d/building3d.js,
+// or the 2D plan in plan2d.js (same module API) if WebGL or the map can't load.
 import * as api from "./api.js";
 import { createPlan, layoutBuilding } from "./plan2d.js";
 
 const POLL_MS = 5000;
 const DAY_LIMIT = 4;
 const HORIZON_DAYS = 14;
-const LIVE_ROOM = "V.1.07a";
+const boardRoom = () => state.rooms.find((r) => r.board);
 const STATUS = { free: "Free", partial: "Shared", full: "Full", ghost: "Ghost booking", closed: "Closed" };
 const PURPOSES = [
   { id: "quiet_study", label: "Quiet study", emoji: "📚", noise: "quiet" },
@@ -99,12 +99,12 @@ function renderStats() {
   const free = open.filter((r) => r.status === "free").length;
   const join = open.filter((r) => r.status === "partial" && r.seats_free > 0).length;
   const seats = open.reduce((sum, r) => sum + r.seats_free, 0);
-  const live = state.rooms.find((r) => r.id === LIVE_ROOM);
+  const live = boardRoom();
   $("stats").innerHTML = [
     [free, "rooms free"],
     [join, "open to join"],
     [seats, "seats free"],
-    live ? [`${Math.round(live.noise_db)} dB`, `${LIVE_ROOM} ${live.live ? "· live" : ""}`] : null,
+    live ? [`${Math.round(live.noise_db)} dB`, `${live.id} ${live.live ? "· live" : ""}`] : null,
   ].filter(Boolean).map(([v, l]) => `<div class="stat"><b>${esc(v)}</b><span>${esc(l)}</span></div>`).join("");
 }
 
@@ -159,15 +159,17 @@ async function refreshRooms() {
 
 async function createView() {
   const el = $("building");
-  const data = (await api.building()) || layoutBuilding(state.rooms);
   try {
-    const { createBuilding } = await import("./building3d.js");
+    const data = await api.building();
+    if (!data) throw new Error("no map data");
+    const { createBuilding } = await import("../map3d/building3d.js");
     state.view = createBuilding(el, data);
   } catch {
-    state.view = createPlan(el, data);
+    el.replaceChildren();
+    state.view = createPlan(el, layoutBuilding(state.rooms));
   }
-  state.view.setFloor?.(1);
-  state.view.onRoomClick((id) => openRoom(id));
+  // The map also draws rooms that can't be booked (offices, WCs); only bookable ones open the sheet.
+  state.view.onRoomClick((id) => { if (state.rooms.some((r) => r.id === id)) openRoom(id); });
   for (const r of state.rooms) state.view.setStatus(r.id, r);
 }
 

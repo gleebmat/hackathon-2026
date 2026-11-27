@@ -108,31 +108,30 @@ reopens the serial port when it drops. Without a URL it falls back to ntfy. Test
 
 ---
 
-## gleb-claude (Backend)
-**Status:** backend complete and merged to `main`; 27 API tests + 9 bridge tests pass
-(`python -m pytest tests bridge`).
+## gleb-claude (Backend + integration)
+**Status:** UI + 3D map + board bridge + backend are integrated on `main` and tested end to end in the browser;
+43 API/bridge tests pass (`python -m pytest tests bridge`). Waiting for Arshia's two models (people count, lost
+items) and a Live Lab session for the real-board run (runbook in `README.md`).
 
 **Done**
-- `app/`: FastAPI + SQLite. Login, sign-up, search-as-you-type, rooms (real floor 1 numbers and names from
-  campusplan), per-room availability, bookings with every rule in PLAN (4 h/day cap, private or open to share,
-  seats up to capacity, quiet vs loud, events full), cancel, suggestions on 409, sensor readings, ghost release
-  after 10 min empty, live board noise for V.1.07a from `bridge/ntfy_feed.py`.
-- Storage: each request is one `BEGIN IMMEDIATE` transaction committed before the response, so concurrent
-  bookings can't overbook (tested with 10 parallel requests). WAL mode. Old database files upgrade on start.
-- Run: `pip install -r requirements.txt`, then `uvicorn app.main:app --reload`; API docs at `/docs`. Serves `web/`
-  at `/` once it exists.
+- `app/`: FastAPI + SQLite. Login, sign-up, search-as-you-type, availability, bookings with every rule in PLAN
+  (4 h/day cap, private or open to share, seats up to capacity, quiet vs loud, events private), cancel,
+  suggestions on 409, ghost release after 10 min empty (`GHOST_RELEASE_MIN`), concurrency-safe storage.
+- Integration: rooms come from `web/map3d/campus.json` (all 71 bookable rooms); the UI shows the 3D map
+  (`app.js` loads `../map3d/building3d.js`); the board room is **Z.1.04** (`BOARD_ROOM`, bridge 4th argument),
+  which turns LIVE while the bridge posts; `presence` maps to `people` 0/1; every other room is simulated
+  (stable per minute, never ghost, empty rooms stay quiet; `SIMULATE=0` turns it off). `pyserial` added to
+  requirements for the bridge tests.
+- Browser test (fresh DB, token, 1-min ghost timer): login, map, search `z104`, book 21:00 shared, board reading
+  with token (403 without) -> LIVE, then presence false -> ghost -> released after 1 min.
 
 **Requests**
-- -> tom-claude: the backend is ours now (PLAN roles updated), so please don't build `app/`. Lost items go in
-  `app/lost_items.py` as an `APIRouter`; tell me and I'll include it. **Board next steps are in PLAN, "Board
-  (Live Lab): decisions and next steps"**: test presence = 1, merge noise + presence into one firmware, and
-  post directly to the backend through a tunnel instead of ntfy (its 250 messages/day run out in ~20 min).
-  I'll add the new reading fields to the backend once your PR lands.
-- -> gemini: `sim/simulate.py` should post `{room_id, noise_db, people}` to `POST /api/readings`; leave some
-  booked rooms at `people: 0` to demo ghost bookings. Only floor 1 rooms are used.
-- -> claude-3 / Martha: follow "Frontend flow" in PLAN. Every endpoint works now: run the backend and build
-  against it (open http://localhost:8000/docs to try calls).
-- -> gemini: use the real floor 1 rooms from campusplan in `building_v.json` (PLAN, schema notes).
+- -> tom-claude: `bridge.py` now defaults to room `Z.1.04` (4th argument to override). Next session: run the
+  README runbook with the real board and confirm presence = 1 and the noise levels.
+- -> gemini (Arshia): your people-count model posts `{"room_id": "Z.1.04", "people": <n>}` to
+  `POST /api/readings` (header `X-Token`); lost items plug into the "Lost items" endpoints in PLAN.
+- -> claude-3 (Martha): your UI is merged and wired to the 3D map; check the hero text and `.building` height I
+  changed in `index.html` and `style.css`.
 
 ---
 

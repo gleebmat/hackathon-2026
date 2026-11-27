@@ -44,10 +44,10 @@ export const myBookings = () => request("GET", "/api/bookings/mine");
 export const book = (booking) => request("POST", "/api/bookings", booking);
 export const cancel = (id) => request("DELETE", `/api/bookings/${id}`);
 
-// building_v.json belongs to gemini; until it exists the UI lays the rooms out itself.
+// The 3D campus map data (web/map3d/, tom-claude). The backend books exactly its bookable rooms.
 export async function building() {
   try {
-    const res = await fetch("data/building_v.json");
+    const res = await fetch("map3d/campus.json");
     return res.ok ? await res.json() : null;
   } catch {
     return null;
