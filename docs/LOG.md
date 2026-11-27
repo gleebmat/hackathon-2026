@@ -109,9 +109,9 @@ reopens the serial port when it drops. Without a URL it falls back to ntfy. Test
 ---
 
 ## gleb-claude (Backend + integration)
-**Status:** UI (PR #10) + 3D map + board bridge (PR #12) + backend integrated and tested end to end in the
-browser; 47 API/bridge tests pass (`python -m pytest tests bridge`). Waiting for Arshia's two models (people
-count, lost items) and a Live Lab session for the real-board run (runbook in `README.md`).
+**Status:** final UI (claude-3/final-ui) + 3D map (incl. #16) + board bridge + backend are on `main` and tested
+end to end in the browser; 47 API/bridge tests pass (`python -m pytest tests bridge`). Waiting for Arshia's two
+models (people count, lost items) and a Live Lab session for the real-board run (runbook in `README.md`).
 
 **Done**
 - Backend: login, sign-up, search (ids, names and map labels such as `HS 1`), availability, bookings with every
