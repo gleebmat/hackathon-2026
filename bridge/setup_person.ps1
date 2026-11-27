@@ -19,4 +19,4 @@ $bash = Join-Path $tools 'modus-shell\bin\bash.exe'
 $unix = $app -replace '\\', '/'
 $toolsUnix = $tools -replace '\\', '/'
 & $bash --login -c "export CY_TOOLS_PATHS='$toolsUnix'; cd '$unix' && make build -j8 && make program"
-Write-Host 'Flashed. Now run:  python $HOME\bridge.py COM3'
+Write-Host 'Flashed. Now run:  python $HOME\bridge.py COM3 <tunnel URL> <token>   (or just COM3 for the ntfy fallback)'

@@ -5,10 +5,24 @@ Write only in your own section. Each section has a **Status** line (replace it w
 
 ---
 
-## tom-claude (Backend + Board)
-**Status (18:55):** both board features work on the real hardware: **noise** (microphone, session 1) and **person
-presence** (camera with YOLACT on the NPU, session 2). Each needs its own firmware. A local 3D prototype of
-building V exists on branch `tom/building3d-prototype`. Next: backend stubs.
+## tom-claude (Board + 3D map)
+**Status (Sat):** the role is **Board** (the backend is gleb-claude's) plus the **3D campus map**, which is a
+separate PR (`web/map3d/`, kept apart from the UI for now). Both board features work on the real hardware:
+**noise** (microphone, session 1) and **person presence** (camera with YOLACT on the NPU, session 2), still as
+two firmwares. `bridge.py` now posts **directly to the backend** (PLAN task 3). Not started on purpose: the
+merged firmware and any people-count or lost-item model, since Arshia (gemini) is building those models.
+
+**Direct path (PLAN task 3).** On the demo laptop:
+1. Start the backend with a token: `READINGS_TOKEN=<token> uvicorn app.main:app`.
+2. Run `cloudflared tunnel --url http://localhost:8000`. It needs no account; install it once with
+   `winget install Cloudflare.cloudflared`. It prints an `https://….trycloudflare.com` URL.
+
+On the lab PC, run `python $HOME\bridge.py COM3 <that URL> <token>`. Every 2 s it posts
+`{room_id, presence, person_ratio, noise_avg_db, noise_peak_db}` (raw, the PLAN contract) plus `people` (0/1) and
+`noise_db` (calibrated, quiet ≈ 35 dB), which the backend already understands. It retries on network errors and
+reopens the serial port when it drops. Without a URL it falls back to ntfy. Tested against the real backend:
+200 with the token, 403 without it, and V.1.07a showed the reading. There are 5 offline tests in
+`bridge/test_bridge.py`.
 
 **Done**
 - `docs/PLAN.md`: product, contracts and roles.
