@@ -159,7 +159,7 @@ def rooms(conn: Conn, q: str | None = Query(None, max_length=50)):
 @app.get("/api/search")
 def search(conn: Conn, q: str = Query("", max_length=50), limit: int = Query(8, ge=1, le=50)):
     live, now = live_data(), clock.now()
-    return [{key: state[key] for key in ("id", "name", "floor", "status", "seats_free")}
+    return [{key: state[key] for key in ("id", "label", "name", "floor", "status", "seats_free")}
             for state in (booking.room_state(conn, r, now, live) for r in booking.search(conn, q)[:limit])]
 
 
@@ -171,7 +171,9 @@ def room_detail(room_id: str, request: Request, conn: Conn):
     today = conn.execute("SELECT * FROM bookings WHERE room_id = ? AND status = 'active' AND substr(start, 1, 10) = ? "
                          "ORDER BY start", (room_id, now.date().isoformat())).fetchall()
     return {**booking.room_state(conn, room, now, live_data()),
-            "bookings_today": [booking.booking_out(conn, b, now, user and user["id"]) for b in today]}
+            "bookings_today": [booking.booking_out(conn, b, now, user and user["id"]) for b in today],
+            "my_rating": booking.my_rating(conn, user["id"], room_id) if user else None,
+            "can_rate": bool(user) and booking.can_rate(conn, user["id"], room_id, now)}
 
 
 @app.get("/api/rooms/{room_id}/availability")
@@ -181,6 +183,21 @@ def room_availability(room_id: str, conn: Conn, day: date | None = Query(None, a
     day = day or now.date()
     return {"room_id": room_id, "date": day.isoformat(), "open": f"{booking.OPEN:%H:%M}",
             "close": f"{booking.CLOSE:%H:%M}", "slots": booking.availability(conn, room, day, now, live_data())}
+
+
+@app.get("/api/calendar")
+def calendar(conn: Conn, day: date | None = Query(None, alias="date")):
+    now = clock.now()
+    return booking.calendar(conn, day or now.date(), now, live_data())
+
+
+class RatingRequest(BaseModel):
+    stars: int = Field(ge=1, le=5)
+
+
+@app.post("/api/rooms/{room_id}/rating")
+def rate_room(room_id: str, body: RatingRequest, user: User, conn: Conn):
+    return booking.rate_room(conn, user["id"], room_id, body.stars, clock.now())
 
 
 # --- bookings ---
@@ -264,5 +281,14 @@ def post_reading(body: Reading, conn: Conn, x_token: str | None = Header(None)):
     return {"ok": True}
 
 
+class NoCacheStatic(StaticFiles):
+    """Browsers revalidate every file, so nobody runs stale JS after a pull (unchanged files still get a 304)."""
+
+    async def get_response(self, path, scope):
+        response = await super().get_response(path, scope)
+        response.headers["Cache-Control"] = "no-cache"
+        return response
+
+
 if WEB_DIR.is_dir():
-    app.mount("/", StaticFiles(directory=WEB_DIR, html=True), name="web")
+    app.mount("/", NoCacheStatic(directory=WEB_DIR, html=True), name="web")

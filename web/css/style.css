@@ -599,6 +599,13 @@ dialog::backdrop { background: rgb(10 8 30 / 45%); backdrop-filter: blur(6px); -
 .tag.now { background: var(--gradient); color: var(--brand-ink); }
 .booking-top .tag { align-self: flex-start; }
 .booking-actions { display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap; }
+.rate-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.stars-input { display: inline-flex; }
+.stars-input .star { border: 0; background: none; padding: 2px 3px; font-size: 20px; line-height: 1; cursor: pointer;
+  color: var(--border); transition: color .15s, transform .15s; }
+.stars-input .star.on, .stars-input:hover .star { color: #f5b642; }
+.stars-input .star:hover ~ .star { color: var(--border); }
+.stars-input .star:active { transform: scale(.85); }
 .ghost-alert { padding: 9px 12px; border-radius: var(--radius-sm); background: var(--ghost-soft); color: var(--ghost); font-size: 13px; font-weight: 600; }
 details.history summary { cursor: pointer; font-weight: 700; color: var(--muted); padding: 6px 0; }
 details.history .booking { opacity: .7; margin-top: 8px; }

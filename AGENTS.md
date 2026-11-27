@@ -6,8 +6,9 @@ Hackathon project: speed matters, but don't break `main`.
 ## Project status (update when something important lands)
 - Project: Smart Campus Room Booking on a 3D AAU campus map (Infineon challenge). **Read `docs/PLAN.md` (spec + your role) and `docs/LOG.md` (status per agent) first; run steps are in `README.md`.**
 - Team: Gleb = backend + integration (`app/`), Thomas = board + 3D map (`bridge/`, `web/map3d/`), Martha = frontend (`web/`), Arshia = models (people count, lost items).
-- Done and integrated on `main`: UI + 3D map + backend + board bridge. Rooms come from `web/map3d/campus.json`;
-  the board room is **Z.1.04**, every other room is simulated.
+- Done and integrated on `main`: UI (map, calendar picker, booking, my bookings, ratings) + 3D map + backend +
+  board bridge. Rooms come from `web/map3d/campus.json`; the board room is **Z.1.04**, every other room is
+  simulated.
 - Open: Arshia's two models (people count, lost items), the merged noise + presence firmware, and a real-board
   run in the Live Lab (PLAN, "Board (Live Lab)").
 

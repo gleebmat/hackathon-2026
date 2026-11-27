@@ -109,29 +109,33 @@ reopens the serial port when it drops. Without a URL it falls back to ntfy. Test
 ---
 
 ## gleb-claude (Backend + integration)
-**Status:** UI + 3D map + board bridge + backend are integrated on `main` and tested end to end in the browser;
-43 API/bridge tests pass (`python -m pytest tests bridge`). Waiting for Arshia's two models (people count, lost
-items) and a Live Lab session for the real-board run (runbook in `README.md`).
+**Status:** UI (PR #10) + 3D map + board bridge (PR #12) + backend integrated and tested end to end in the
+browser; 47 API/bridge tests pass (`python -m pytest tests bridge`). Waiting for Arshia's two models (people
+count, lost items) and a Live Lab session for the real-board run (runbook in `README.md`).
 
 **Done**
-- `app/`: FastAPI + SQLite. Login, sign-up, search-as-you-type, availability, bookings with every rule in PLAN
-  (4 h/day cap, private or open to share, seats up to capacity, quiet vs loud, events private), cancel,
-  suggestions on 409, ghost release after 10 min empty (`GHOST_RELEASE_MIN`), concurrency-safe storage.
-- Integration: rooms come from `web/map3d/campus.json` (all 71 bookable rooms); the UI shows the 3D map
-  (`app.js` loads `../map3d/building3d.js`); the board room is **Z.1.04** (`BOARD_ROOM`, bridge 4th argument),
-  which turns LIVE while the bridge posts; `presence` maps to `people` 0/1; every other room is simulated
-  (stable per minute, never ghost, empty rooms stay quiet; `SIMULATE=0` turns it off). `pyserial` added to
-  requirements for the bridge tests.
-- Browser test (fresh DB, token, 1-min ghost timer): login, map, search `z104`, book 21:00 shared, board reading
-  with token (403 without) -> LIVE, then presence false -> ghost -> released after 1 min.
+- Backend: login, sign-up, search (ids, names and map labels such as `HS 1`), availability, bookings with every
+  rule in PLAN, cancel, suggestions on 409, ghost release (`GHOST_RELEASE_MIN`), concurrency-safe storage.
+- Calendar for the picker: `GET /api/calendar?date=` returns every room's slots and `free_hours` in one call
+  (was one `/availability` call per room). Ratings: `POST /api/rooms/{id}/rating`, `rating`/`votes` on rooms.
+  `Cache-Control: no-cache` on `web/`.
+- Integration: rooms come from `web/map3d/campus.json`; board room **Z.1.04** (`BOARD_ROOM`, bridge 4th
+  argument) turns LIVE while the bridge posts; `presence` counts as 0/1 people; other rooms simulated.
+- UI fixes (claude-3's files, small): the calendar closed on every day/duration click without applying it
+  (`picker.js`, outside-click check now uses `composedPath()`); `picker.js` uses `/api/calendar`; star rating in
+  My bookings; clicks on non-bookable map rooms ignored; login headline says campus instead of building V.
+- Browser test (fresh DB): sign-up (gmail refused), calendar to Sat 10:00-12:00 (one `/api/calendar` call),
+  book private from a card, 409 + suggestions for a second student, sharing up to capacity (51), 4 h/day limit,
+  `HS1` search, board reading -> LIVE, rating 4 stars, cancel (two taps), ghost countdown then released after
+  1 min, logout.
 
 **Requests**
-- -> tom-claude: `bridge.py` now defaults to room `Z.1.04` (4th argument to override). Next session: run the
-  README runbook with the real board and confirm presence = 1 and the noise levels.
+- -> tom-claude: (1) the map zooms on mouse wheel, so the page can't scroll past it (claude-3's request);
+  (2) next Live Lab session: run the README runbook with the real board.
 - -> gemini (Arshia): your people-count model posts `{"room_id": "Z.1.04", "people": <n>}` to
   `POST /api/readings` (header `X-Token`); lost items plug into the "Lost items" endpoints in PLAN.
-- -> claude-3 (Martha): your UI is merged and wired to the 3D map; check the hero text and `.building` height I
-  changed in `index.html` and `style.css`.
+- -> claude-3 (Martha): your requests 1-6 are done (ratings, one-call calendar, free hours, no-cache, one room
+  list, PLAN file list); please check my small fixes listed above.
 
 ---
 

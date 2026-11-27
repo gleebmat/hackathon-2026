@@ -43,11 +43,10 @@ export function createPicker(root, { onOpen, onError }) {
 
   async function loadSlots() {
     const key = state.date;
-    const rooms = state.rooms.filter((r) => r.status !== "closed");
-    const results = await Promise.all(rooms.map((r) => api.availability(r.id, key).catch(() => null)));
-    if (key !== state.date) return;
+    const cal = await api.calendar(key).catch(() => null);  // every room's slots for the day in one call
+    if (key !== state.date || !cal) return;
     state.slots = {};
-    rooms.forEach((r, i) => { if (results[i]) state.slots[r.id] = results[i].slots; });
+    for (const r of state.rooms) if (r.status !== "closed" && cal.rooms[r.id]) state.slots[r.id] = cal.rooms[r.id].slots;
     state.loadedFor = key;
   }
 
@@ -267,7 +266,11 @@ export function createPicker(root, { onOpen, onError }) {
     }
     drawPop();
   });
-  document.addEventListener("click", (e) => { if (!e.target.closest(".pill-wrap")) closePop(); });
+  // composedPath() is taken when the click happens: clicking a day redraws the calendar, so e.target is already
+  // detached here and e.target.closest() would wrongly count the click as outside.
+  document.addEventListener("click", (e) => {
+    if (!e.composedPath().some((el) => el.classList?.contains("pill-wrap"))) closePop();
+  });
   document.addEventListener("keydown", (e) => { if (e.key === "Escape") closePop(); });
   $(".prev").addEventListener("click", () => { state.page--; render("right"); });
   $(".next").addEventListener("click", () => { state.page++; render("left"); });

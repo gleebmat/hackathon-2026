@@ -21,7 +21,7 @@ const PURPOSES = [
 ];
 const PURPOSE = Object.fromEntries(PURPOSES.map((p) => [p.id, p]));
 
-const state = { user: null, rooms: [], mine: [], view: null, picker: null, sheet: null };
+const state = { user: null, rooms: [], mine: [], view: null, picker: null, sheet: null, myRatings: {} };
 const $ = (id) => document.getElementById(id);
 
 // ---------- Small helpers ----------
@@ -119,7 +119,8 @@ async function createView() {
   } catch {
     state.view = createPlan(el, (await api.building()) || layoutBuilding(state.rooms));
   }
-  state.view.onRoomClick((id) => openRoom(id));
+  // The map also draws rooms that can't be booked (offices, WCs); only bookable ones open the sheet.
+  state.view.onRoomClick((id) => { if (state.rooms.some((r) => r.id === id)) openRoom(id); });
   for (const r of state.rooms) state.view.setStatus(r.id, r);
 }
 
@@ -176,8 +177,31 @@ function bookingCard(b, { actions = true } = {}) {
       <span class="tag">${b.seats} ${b.seats === 1 ? "person" : "people"}</span>
       <span class="tag">${hoursText(b.hours)}</span>
     </div>
-    ${ghost}${buttons}
+    ${ghost}${buttons}${rateRow(b)}
   </article>`;
+}
+
+// Once a booking has started, its room can be rated (the backend checks the same rule).
+function rateRow(b) {
+  if (b.status !== "active" || b.start > nowKey()) return "";
+  const mine = state.myRatings[b.room_id] ?? b.my_rating ?? 0;
+  const stars = [1, 2, 3, 4, 5].map((n) => `<button type="button" class="star ${n <= mine ? "on" : ""}" data-action="rate"
+    data-room="${esc(b.room_id)}" data-stars="${n}" aria-label="${n} star${n > 1 ? "s" : ""}">★</button>`).join("");
+  return `<div class="rate-row"><span class="muted small">${mine ? "Your rating" : "Rate this room"}</span><span class="stars-input">${stars}</span></div>`;
+}
+
+async function rateRoom(btn) {
+  const room = btn.dataset.room, stars = Number(btn.dataset.stars);
+  try {
+    await api.rate(room, stars);
+    state.myRatings[room] = stars;
+    toast(`Thanks! You rated ${room} ${stars}★`);
+    renderMine();
+    await refreshRooms();
+    state.picker.refresh();
+  } catch (err) {
+    if (!handleAuth(err)) toast(err.message, { error: true });
+  }
 }
 
 function renderMine() {
@@ -708,6 +732,7 @@ function wirePage() {
     const t = e.target.closest("button[data-action]");
     if (!t || t.disabled) return;
     if (t.dataset.action === "cancel") return cancelBooking(t);
+    if (t.dataset.action === "rate") return rateRoom(t);
     if (t.dataset.action === "find") { closeDrawer(); setTimeout(() => $("search-input").focus(), 220); return; }
     if (t.dataset.action === "add") {
       const b = state.mine.find((x) => x.id === Number(t.dataset.id));

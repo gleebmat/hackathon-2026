@@ -105,7 +105,7 @@ def test_search_suggestions(app_env):
     assert ids("atri") == ["V.1.07a"]
     assert "V.1.01" in ids("seminar") and ids("") == [] and ids("zzz") == []
     assert len(ids("V.1")) == 8
-    assert set(c.get("/api/search", params={"q": "V.1.0"}).json()[0]) == {"id", "name", "floor", "status",
+    assert set(c.get("/api/search", params={"q": "V.1.0"}).json()[0]) == {"id", "label", "name", "floor", "status",
                                                                           "seats_free"}
     assert [r["id"] for r in c.get("/api/rooms", params={"q": "mediathek"}).json()] == ["V.1.29"]
 
@@ -299,6 +299,53 @@ def test_readings_token(app_env, monkeypatch):
     assert c.post("/api/readings", json={"room_id": "V.1.03", "people": 1}).status_code == 403
     assert c.post("/api/readings", json={"room_id": "V.1.03", "people": 1},
                   headers={"X-Token": "secret"}).status_code == 200
+
+
+# --- calendar and ratings ---
+
+def test_calendar_has_every_room_in_one_call(app_env):
+    a = user(1)
+    book(a, start="2026-11-27T12:00", hours=1, seats=3)
+    cal = a.get("/api/calendar").json()
+    assert cal["date"] == "2026-11-27" and set(cal["rooms"]) == {r["id"] for r in a.get("/api/rooms").json()}
+    room_cal = cal["rooms"]["V.1.07a"]
+    assert room_cal["slots"] == a.get("/api/rooms/V.1.07a/availability").json()["slots"]
+    assert room_cal["free_hours"] == 12.0  # 10:00-22:00 still bookable (shared at 12:00 still counts)
+    assert cal["rooms"]["V.1.24"]["free_hours"] == 0  # closed
+    assert a.get("/api/calendar", params={"date": "2026-11-28"}).json()["rooms"]["V.1.07a"]["free_hours"] == 14.0
+    assert a.get("/api/calendar", params={"date": "bad"}).status_code == 400
+
+
+def test_ratings_only_after_using_the_room(app_env, time_now):
+    a, b = user(1), user(2)
+    assert a.post("/api/rooms/V.1.03/rating", json={"stars": 5}).status_code == 403  # never booked
+    book(a, room="V.1.03", start="2026-11-27T11:00", hours=1)
+    assert a.post("/api/rooms/V.1.03/rating", json={"stars": 5}).status_code == 403  # not started yet
+    time_now["t"] = datetime(2026, 11, 27, 11, 0)
+    assert a.post("/api/rooms/V.1.03/rating", json={"stars": 6}).status_code == 400
+    r = a.post("/api/rooms/V.1.03/rating", json={"stars": 4})
+    assert r.status_code == 200 and r.json() == {"room_id": "V.1.03", "rating": 4.0, "votes": 1, "my_rating": 4}
+    assert a.post("/api/rooms/V.1.03/rating", json={"stars": 2}).json()["votes"] == 1  # changing it, not a 2nd vote
+    book(b, room="V.1.03", start="2026-11-27T11:00", hours=1)
+    b.post("/api/rooms/V.1.03/rating", json={"stars": 5})
+    state = room(a, "V.1.03")
+    assert state["rating"] == 3.5 and state["votes"] == 2 and state["my_rating"] == 2 and state["can_rate"]
+    assert a.get("/api/bookings/mine").json()[0]["my_rating"] == 2
+    assert room(a, "V.1.04")["rating"] is None and not room(a, "V.1.04")["can_rate"]
+    assert TestClient(main.app).post("/api/rooms/V.1.03/rating", json={"stars": 3}).status_code == 401
+
+
+def test_search_finds_map_labels(app_env):
+    conn = db.connect()
+    conn.execute("UPDATE rooms SET label = 'HS 1' WHERE id = 'V.1.01'")
+    conn.close()
+    ids = [r["id"] for r in TestClient(main.app).get("/api/search", params={"q": "hs1"}).json()]
+    assert ids == ["V.1.01"]
+
+
+def test_web_files_are_not_cached(app_env):
+    r = TestClient(main.app).get("/login.html")
+    assert r.status_code == 200 and r.headers["cache-control"] == "no-cache"
 
 
 # --- board room, campus data, simulation ---

@@ -44,7 +44,7 @@ All numbers are made up. This is a prototype.
 | **gleb-claude** (Gleb's Claude Code): Backend | `app/` (except `app/lost_items.py`), `tests/`, `requirements.txt`, `.env.example` | FastAPI + SQLite: login, sign-up, rooms (from the map), search, availability, bookings, the booking rules, ghost release, board readings for Z.1.04 and the simulation of every other room (**done**, see API below). Integrates UI + map + board. |
 | **tom-claude** (Tom's Claude Code): Board | `bridge/` | Board bridge (noise and presence work, as separate firmwares). Next: see "Board (Live Lab): decisions and next steps". |
 | **tom-claude**: 3D map (claude-2's role) | `web/map3d/`, `tools/campus3d/` | **Done:** a Three.js campus map of buildings V, N, Z, L and S with search, glow highlight, building and floor isolation, 3D room numbers and status colours. See "3D campus map" below. Standalone until the team decides how to combine it with the UI. |
-| **claude-3**: Website UI | `web/index.html`, `web/login.html`, `web/js/app.js`, `web/js/api.js`, `web/js/plan2d.js`, `web/css/style.css` | **Done** and wired to the 3D map. The login page, the search bar (calls `focusRoom`), the room panel (live noise, people, today's bookings, a LIVE badge on the room with `board: true`), the booking form (hours, full or partial, seats, purpose, and suggestions on a 409), and "my bookings"., and the **Lost & found** page: item cards, a "That's mine" button, and a "maybe yours" banner. |
+| **claude-3**: Website UI | `web/index.html`, `web/login.html`, `web/js/app.js`, `web/js/api.js`, `web/js/picker.js`, `web/js/plan2d.js`, `web/css/style.css` | **Done** and wired to the 3D map. The login page, the search bar (calls `focusRoom`), the room panel (live noise, people, today's bookings, a LIVE badge on the room with `board: true`), the booking form (hours, full or partial, seats, purpose, and suggestions on a 409), and "my bookings"., and the **Lost & found** page: item cards, a "That's mine" button, and a "maybe yours" banner. |
 | **tom-claude**, continued | `detector/`, `app/lost_items.py` (a FastAPI `APIRouter` that gleb-claude includes in `app/main.py`) | The lost-item service: snapshot vs reference diff, YOLOv8n labels, crops, and the endpoints below. Board: flash person detection and forward the person count through the bridge. |
 | **gemini** (Arshia, Gemini Pro): Models, demo | `models/` (new), `README.md` | **Two models, added later:** (1) counting people in the board room, (2) finding lost items. They plug into `POST /api/readings` (`people` as a number) and the "Lost items" endpoints below. Also the demo script and the pitch. Room data and simulation are no longer gemini's: rooms come from the map, and the backend simulates the other rooms. |
 
@@ -125,11 +125,17 @@ can't take it). Times are campus time (Europe/Vienna) without a zone: `"2026-11-
 | GET | `/api/rooms?q=` | `[{id, floor, capacity, name, status, noise_db, noise_class, people, seats_free, live, sensor, ghost_release_at, bookings_now:[{id, mode, purpose, seats, end, shareable}]}]`; poll it every few seconds to colour the 3D model. `q` filters like `/api/search` |
 | GET | `/api/rooms/{id}` | the room above plus `bookings_today:[booking]` |
 | GET | `/api/rooms/{id}/availability?date=YYYY-MM-DD` | `{room_id, date, open, close, slots:[{start:"HH:MM", end, status, seats_free, shareable, noise}]}`; slot `status` is `free`, `partial`, `full`, `closed` or `past` |
+| GET | `/api/calendar?date=YYYY-MM-DD` | **The picker's calendar, one call for all rooms:** `{date, open, close, rooms: {room_id: {free_hours, slots:[same as availability]}}}`. `free_hours` = bookable hours left that day |
+| POST | `/api/rooms/{id}/rating` | `{stars: 1-5}` → `{room_id, rating, votes, my_rating}`. Only after the user had an active booking there that has started (403 otherwise); rating again replaces the old vote |
 | POST | `/api/bookings` | `{room_id, start:"YYYY-MM-DDTHH:MM", hours, mode:"full"|"partial", seats, purpose, custom_purpose}` returns 201 with the booking, or `409 {error, suggestions:[room_id,...]}` |
 | GET | `/api/bookings/mine` | the user's bookings, newest first |
 | DELETE | `/api/bookings/{id}` | cancels one of the user's bookings |
 | GET | `/api/suggest?hours=&mode=&seats=&purpose=&start=` | room objects ranked by fit, the quietest first for quiet study |
-| POST | `/api/readings` | `{room_id, noise_db?, people?}` from the simulator or the board; header `X-Token` if `READINGS_TOKEN` is set |
+| POST | `/api/readings` | `{room_id, noise_db?, people?, presence?}` from the board (or a model); `presence` true/false counts as 1/0 people; header `X-Token` if `READINGS_TOKEN` is set |
+
+- Every room object also has `label` (map name such as `HS 1`, or null; search accepts it), `rating` (average,
+  null without votes) and `votes`. `GET /api/rooms/{id}` adds `my_rating` and `can_rate`; bookings carry
+  `my_rating` for their room. Files under `web/` are served with `Cache-Control: no-cache`.
 
 - A booking is `{id, room_id, start, end, hours, mode, seats, purpose, custom_purpose, status, checked_in,
   ghost_release_at, mine}`. Its `status` is `active`, `cancelled` or `released` (ghost: slot freed).
@@ -169,8 +175,11 @@ can't take it). Times are campus time (Europe/Vienna) without a zone: `"2026-11-
 5. **Booking form:** start slot, hours (0.5–4), "Private room" (`full`) or "Open to share" (`partial`), number of
    people (`seats`, max = capacity), purpose. `POST /api/bookings`; on 409 show `error` and offer
    `suggestions` as buttons that open those rooms; on 400 show `error`.
-6. **My bookings:** `GET /api/bookings/mine`, with a cancel button (`DELETE /api/bookings/{id}`) on active ones and
-   the ghost countdown when `ghost_release_at` is set.
+6. **My bookings:** `GET /api/bookings/mine`, with a cancel button (`DELETE /api/bookings/{id}`) on active ones,
+   the ghost countdown when `ghost_release_at` is set, and 1–5 stars on bookings that have started
+   (`POST /api/rooms/{id}/rating`).
+7. **Room picker / calendar (`picker.js`, done):** one `GET /api/calendar?date=` per day gives every room's
+   slots; the cards show free hours (any time) or the exact status for the picked range, plus `rating`.
 
 ### Lost items (tom-claude, in `detector/` and `app/lost_items.py`)
 **Pipeline**

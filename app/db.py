@@ -18,7 +18,10 @@ CREATE TABLE IF NOT EXISTS sessions (
     token TEXT PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id), created_at TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS rooms (
     id TEXT PRIMARY KEY, floor INTEGER NOT NULL, name TEXT NOT NULL, capacity INTEGER NOT NULL,
-    closed INTEGER NOT NULL DEFAULT 0, listed INTEGER NOT NULL DEFAULT 1);
+    closed INTEGER NOT NULL DEFAULT 0, listed INTEGER NOT NULL DEFAULT 1, label TEXT);
+CREATE TABLE IF NOT EXISTS ratings (
+    user_id INTEGER NOT NULL REFERENCES users(id), room_id TEXT NOT NULL REFERENCES rooms(id),
+    stars INTEGER NOT NULL CHECK (stars BETWEEN 1 AND 5), updated_at TEXT NOT NULL, PRIMARY KEY (user_id, room_id));
 CREATE TABLE IF NOT EXISTS bookings (
     id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id), room_id TEXT NOT NULL REFERENCES rooms(id),
     start TEXT NOT NULL, end TEXT NOT NULL, mode TEXT NOT NULL, seats INTEGER NOT NULL, purpose TEXT NOT NULL,
@@ -74,7 +77,8 @@ def load_rooms() -> list[dict]:
     else:
         rooms = [{**r, "floor": 1} for r in DEFAULT_ROOMS]
     return [{"id": r["id"], "floor": int(r["floor"]), "name": r.get("name") or r["id"],
-             "capacity": int(r.get("capacity") or DEFAULT_CAPACITY), "closed": int(bool(r.get("closed")))}
+             "capacity": int(r.get("capacity") or DEFAULT_CAPACITY), "closed": int(bool(r.get("closed"))),
+             "label": r.get("label")}
             for r in rooms]
 
 
@@ -86,6 +90,8 @@ def upgrade(conn: sqlite3.Connection) -> None:
     """Bring a database created by an older version up to date, keeping users, sessions and bookings."""
     if "listed" not in columns(conn, "rooms"):
         conn.execute("ALTER TABLE rooms ADD COLUMN listed INTEGER NOT NULL DEFAULT 1")
+    if "label" not in columns(conn, "rooms"):
+        conn.execute("ALTER TABLE rooms ADD COLUMN label TEXT")
     if columns(conn, "readings") not in (set(), READINGS_COLUMNS):
         conn.execute("DROP TABLE readings")
     conn.execute(READINGS)
@@ -102,10 +108,10 @@ def init() -> None:
         # Rooms that left the data file stay in the database (their bookings keep a valid room) but are hidden.
         conn.execute("UPDATE rooms SET listed = 0")
         conn.executemany(
-            "INSERT INTO rooms (id, floor, name, capacity, closed, listed) "
-            "VALUES (:id, :floor, :name, :capacity, :closed, 1) "
+            "INSERT INTO rooms (id, floor, name, capacity, closed, listed, label) "
+            "VALUES (:id, :floor, :name, :capacity, :closed, 1, :label) "
             "ON CONFLICT(id) DO UPDATE SET floor=excluded.floor, name=excluded.name, capacity=excluded.capacity, "
-            "closed=excluded.closed, listed=1",
+            "closed=excluded.closed, listed=1, label=excluded.label",
             rooms,
         )
         for email, name in DEMO_USERS:
