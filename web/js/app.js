@@ -1,13 +1,14 @@
-// Room V main page: building view, live room cards, search, booking sheet and "My bookings".
-// Data: api.js (docs/PLAN.md, "Frontend flow"). Building view: claude-2's building3d.js when it
-// exists, otherwise the 2D plan in plan2d.js (same module API).
+// Room V main page: campus map, room picker (picker.js), search, booking sheet and "My bookings".
+// Data: api.js (docs/PLAN.md, "Frontend flow"). Map: tom-claude's web/map3d/ when it is merged,
+// otherwise the 2D plan in plan2d.js (same module API).
 import * as api from "./api.js";
+import { createPicker } from "./picker.js";
 import { createPlan, layoutBuilding } from "./plan2d.js";
 
 const POLL_MS = 5000;
+const SLOT_REFRESH_TICKS = 6;   // the picker reloads every room's slots every 30 s
 const DAY_LIMIT = 4;
 const HORIZON_DAYS = 14;
-const LIVE_ROOM = "V.1.07a";
 const STATUS = { free: "Free", partial: "Shared", full: "Full", ghost: "Ghost booking", closed: "Closed" };
 const PURPOSES = [
   { id: "quiet_study", label: "Quiet study", emoji: "📚", noise: "quiet" },
@@ -20,7 +21,7 @@ const PURPOSES = [
 ];
 const PURPOSE = Object.fromEntries(PURPOSES.map((p) => [p.id, p]));
 
-const state = { user: null, rooms: [], mine: [], view: null, filter: "all", sheet: null, gridDrawn: false };
+const state = { user: null, rooms: [], mine: [], view: null, picker: null, sheet: null };
 const $ = (id) => document.getElementById(id);
 
 // ---------- Small helpers ----------
@@ -92,81 +93,32 @@ function confetti(fromEl) {
   }
 }
 
-// ---------- Rooms overview ----------
-
-function renderStats() {
-  const open = state.rooms.filter((r) => r.status !== "closed");
-  const free = open.filter((r) => r.status === "free").length;
-  const join = open.filter((r) => r.status === "partial" && r.seats_free > 0).length;
-  const seats = open.reduce((sum, r) => sum + r.seats_free, 0);
-  const live = state.rooms.find((r) => r.id === LIVE_ROOM);
-  $("stats").innerHTML = [
-    [free, "rooms free"],
-    [join, "open to join"],
-    [seats, "seats free"],
-    live ? [`${Math.round(live.noise_db)} dB`, `${LIVE_ROOM} ${live.live ? "· live" : ""}`] : null,
-  ].filter(Boolean).map(([v, l]) => `<div class="stat"><b>${esc(v)}</b><span>${esc(l)}</span></div>`).join("");
-}
-
-function roomMatches(r) {
-  if (state.filter === "free") return r.status === "free";
-  if (state.filter === "share") return r.status === "partial" && r.seats_free > 0;
-  if (state.filter === "quiet") return r.noise_class === "quiet" && r.status !== "closed";
-  return true;
-}
-
-function renderGrid() {
-  const grid = $("room-grid");
-  const rooms = state.rooms.filter(roomMatches);
-  grid.innerHTML = rooms.map((r, i) => {
-    const noisePct = Math.min(100, Math.max(5, ((r.noise_db - 30) / 60) * 100));
-    const peoplePct = Math.min(100, (r.people / r.capacity) * 100);
-    const live = r.live ? `<span class="live-badge">LIVE</span>` : "";
-    const foot = r.status === "ghost" && r.ghost_release_at
-      ? `<span class="ghost-note">👻 Nobody here · frees up at ${hm(r.ghost_release_at)}</span>`
-      : r.status === "closed" ? `<span class="muted small">Closed today</span>`
-      : `<span class="muted small">${r.seats_free} of ${r.capacity} seats free</span>`;
-    return `<button type="button" class="room-card ${esc(r.status)}" data-room="${esc(r.id)}" style="--i:${i}">
-      <div class="room-card-head">
-        <div><div class="rid">${esc(r.id)}</div><div class="rname">${esc(r.name)}</div></div>
-        <div style="display:grid;gap:6px;justify-items:end"><span class="pill ${esc(r.status)}">${STATUS[r.status] ?? esc(r.status)}</span>${live}</div>
-      </div>
-      <div class="facts">
-        <div class="fact"><span>Noise</span><b>${Math.round(r.noise_db)} dB</b> <span style="display:inline" class="small">${esc(r.noise_class)}</span>
-          <div class="bar"><i class="${esc(r.noise_class)}" style="width:${noisePct}%"></i></div></div>
-        <div class="fact"><span>People</span><b>${r.people}/${r.capacity}</b>
-          <div class="bar"><i style="width:${peoplePct}%"></i></div></div>
-      </div>
-      ${foot}
-      <span class="go"><svg class="icon"><use href="#i-arrow"/></svg></span>
-    </button>`;
-  }).join("") || `<div class="empty">No rooms match this filter right now.</div>`;
-  if (state.gridDrawn) for (const c of grid.children) c.style.animation = "none";
-  state.gridDrawn = true;
-}
+// ---------- Live rooms, map and picker ----------
 
 async function refreshRooms() {
   try {
     state.rooms = await api.rooms();
-    renderStats();
-    renderGrid();
-    for (const r of state.rooms) state.view?.setStatus(r.id, r);
-    $("updated").textContent = `Live · updated ${new Date().toLocaleTimeString("en-GB")}`;
   } catch (err) {
-    if (!handleAuth(err)) $("updated").textContent = err.message;
+    if (!handleAuth(err)) toast(err.message, { error: true });
+    return;
   }
+  for (const r of state.rooms) state.view?.setStatus(r.id, r);
+  state.picker.setRooms(state.rooms);
 }
 
+// The 3D campus map (web/map3d/, tom-claude) when it is there, otherwise the 2D floor plan.
 async function createView() {
   const el = $("building");
-  const data = (await api.building()) || layoutBuilding(state.rooms);
   try {
-    const { createBuilding } = await import("./building3d.js");
-    state.view = createBuilding(el, data);
+    const [{ createBuilding }, campus] = await Promise.all([
+      import("../map3d/building3d.js"),
+      fetch("map3d/campus.json").then((r) => { if (!r.ok) throw new Error("no campus.json"); return r.json(); }),
+    ]);
+    state.view = createBuilding(el, campus);
+    el.classList.add("is-3d");
   } catch {
-    state.view = createPlan(el, data);
+    state.view = createPlan(el, (await api.building()) || layoutBuilding(state.rooms));
   }
-  state.view.setFloor?.(1);
   state.view.onRoomClick((id) => openRoom(id));
   for (const r of state.rooms) state.view.setStatus(r.id, r);
 }
@@ -266,6 +218,7 @@ async function cancelBooking(btn) {
     await api.cancel(Number(btn.dataset.id));
     toast("Booking cancelled");
     await Promise.all([refreshMine(), refreshRooms()]);
+    state.picker.refresh();
     if (state.sheet) loadSheetData();
   } catch (err) {
     if (!handleAuth(err)) toast(err.message, { error: true });
@@ -564,6 +517,7 @@ async function submitBooking(btn) {
     closeSheet();
     refreshMine();
     refreshRooms();
+    state.picker.refresh();
   } catch (err) {
     if (handleAuth(err)) return;
     sh.busy = false;
@@ -742,18 +696,6 @@ function wireMenu() {
 // ---------- Start ----------
 
 function wirePage() {
-  $("room-grid").addEventListener("click", (e) => {
-    const card = e.target.closest("[data-room]");
-    if (card) openRoom(card.dataset.room);
-  });
-  $("filters").addEventListener("click", (e) => {
-    const b = e.target.closest("[data-filter]");
-    if (!b) return;
-    state.filter = b.dataset.filter;
-    for (const c of $("filters").children) c.classList.toggle("active", c === b);
-    state.gridDrawn = false;
-    renderGrid();
-  });
   $("mine-btn").addEventListener("click", openDrawer);
   const drawer = $("mine-drawer");
   const closeDrawer = () => {
@@ -789,11 +731,17 @@ async function main() {
   wireSearch();
   wireSheet();
   wirePage();
+  state.picker = createPicker($("picker"), {
+    onOpen: (id, opts) => openRoom(id, opts),
+    onError: (err) => { if (!handleAuth(err)) toast(err.message, { error: true }); },
+  });
   await Promise.all([refreshRooms(), refreshMine()]);
   await createView();
+  let tick = 0;
   setInterval(async () => {
     await Promise.all([refreshRooms(), refreshMine()]);
     if (state.sheet && !state.sheet.busy) loadSheetData();
+    if (++tick % SLOT_REFRESH_TICKS === 0) state.picker.refresh();
   }, POLL_MS);
 }
 

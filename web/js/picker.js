@@ -1,0 +1,312 @@
+// Room picker under the map: a date/time pill with a small calendar, and at most 3 room cards
+// with arrows. Without a picked time, a card says whether the room has free time left that day;
+// with one, it shows the exact status for that range. Data: /api/rooms (live state) and
+// /api/rooms/{id}/availability (30-min slots), per docs/PLAN.md.
+import * as api from "./api.js";
+
+const OPEN_HOUR = 8;
+const SLOTS = 28;
+const HORIZON_DAYS = 14;
+const DURATIONS = [0.5, 1, 2, 3, 4];
+const NOISE = ["quiet", "moderate", "loud"];
+const RANK = { free: 0, partial: 1, full: 5, closed: 9 };
+
+const pad = (n) => String(n).padStart(2, "0");
+const dateKey = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+const slotTime = (i) => `${pad(OPEN_HOUR + Math.floor(i / 2))}:${i % 2 ? "30" : "00"}`;
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
+const todayKey = () => dateKey(new Date());
+
+function currentSlot() {
+  const now = new Date();
+  return (now.getHours() - OPEN_HOUR) * 2 + (now.getMinutes() >= 30 ? 1 : 0);
+}
+
+function dayName(key) {
+  if (key === todayKey()) return "today";
+  return new Date(`${key}T12:00`).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" });
+}
+
+const capital = (s) => s[0].toUpperCase() + s.slice(1);
+
+export function createPicker(root, { onOpen, onError }) {
+  const $ = (sel) => root.querySelector(sel);
+  const state = {
+    date: todayKey(), start: null, hours: 1, page: 0,
+    rooms: [], slots: {}, draft: null, month: null, loadedFor: null,
+  };
+  const perPage = () => (matchMedia("(max-width: 760px)").matches ? 1 : 3);
+  const touch = matchMedia("(hover: none)").matches;
+  const rangeText = () => `${slotTime(state.start)}–${slotTime(state.start + state.hours * 2)}`;
+
+  // ---------- Data ----------
+
+  async function loadSlots() {
+    const key = state.date;
+    const rooms = state.rooms.filter((r) => r.status !== "closed");
+    const results = await Promise.all(rooms.map((r) => api.availability(r.id, key).catch(() => null)));
+    if (key !== state.date) return;
+    state.slots = {};
+    rooms.forEach((r, i) => { if (results[i]) state.slots[r.id] = results[i].slots; });
+    state.loadedFor = key;
+  }
+
+  function expected(slots) {
+    const worst = slots.map((s) => s.noise).filter(Boolean).sort((a, b) => NOISE.indexOf(b) - NOISE.indexOf(a))[0];
+    return { cls: worst || "quiet", text: `${capital(worst || "quiet")} expected` };
+  }
+
+  function cardState(room) {
+    const slots = state.slots[room.id];
+    if (room.status === "closed" || !slots) return { kind: "closed", main: "Closed", sub: `Closed ${dayName(state.date)}`, noise: null };
+    const isToday = state.date === todayKey();
+    const live = { cls: room.noise_class, text: `${Math.round(room.noise_db)} dB now`, live: room.live };
+
+    if (state.start === null) {
+      const open = slots.filter((s) => s.status === "free" || s.status === "partial");
+      const hours = open.length / 2;
+      const noise = isToday ? live : expected(open);
+      if (!hours) return { kind: "full", main: "Booked out", sub: `No free time left ${dayName(state.date)}`, noise, hours };
+      return { kind: "free", main: isToday ? "Free time today" : "Free time", sub: `${hours} h still bookable`, noise, hours };
+    }
+
+    const range = slots.slice(state.start, state.start + state.hours * 2);
+    const now = currentSlot();
+    const includesNow = isToday && state.start <= now && now < state.start + state.hours * 2;
+    const noise = includesNow ? live : expected(range);
+    if (range.length < state.hours * 2 || range.some((s) => !["free", "partial"].includes(s.status))) {
+      return { kind: "full", main: "Not available", sub: rangeText(), noise };
+    }
+    const left = Math.min(...range.map((s) => s.seats_free));
+    const people = room.capacity - left;
+    if (people > 0) {
+      return { kind: "partial", main: `Shared · ${people} ${people === 1 ? "person" : "people"}`, sub: `${left} seats left`, noise, people };
+    }
+    return { kind: "free", main: "Free", sub: `All ${room.capacity} seats`, noise };
+  }
+
+  function sortedCards() {
+    return state.rooms.map((room) => ({ room, st: cardState(room) })).sort((a, b) =>
+      RANK[a.st.kind] - RANK[b.st.kind]
+      || (b.st.hours ?? 0) - (a.st.hours ?? 0)
+      || (a.st.people ?? 0) - (b.st.people ?? 0)
+      || (b.room.rating ?? 0) - (a.room.rating ?? 0)
+      || a.room.id.localeCompare(b.room.id));
+  }
+
+  // ---------- Rendering ----------
+
+  function cardHtml({ room, st }) {
+    const rating = room.rating != null
+      ? `<div class="line"><span>Rating</span><span class="stars"><s style="--p:${(room.rating / 5) * 100}%">★★★★★</s>${room.rating.toFixed(1)}${room.votes ? ` <small>(${room.votes})</small>` : ""}</span></div>`
+      : "";
+    const noise = st.noise
+      ? `<div class="line"><span>Noise</span><span class="noise ${esc(st.noise.cls)}"><span class="bars"><b></b><b></b><b></b></span>${esc(st.noise.text)}${st.noise.live ? ` <em class="live">LIVE</em>` : ""}</span></div>`
+      : "";
+    const action = st.kind === "closed" ? "" : `<span class="book">${st.kind === "full" ? "See other times" : "Book"}</span>`;
+    return `<button type="button" class="pick ${st.kind === "full" || st.kind === "closed" ? "dim" : ""}" data-room="${esc(room.id)}">
+      <div class="pick-top"><div class="pick-id">${esc(room.id)}</div><div class="pick-name">${esc(room.name)}</div></div>
+      <div class="pick-status"><div class="st-main ${st.kind}"><i></i>${esc(st.main)}</div><div class="st-sub">${esc(st.sub)}</div></div>
+      <div class="pick-drawer"><div><div class="pick-drawer-in">${rating}${noise}${action}</div></div></div>
+    </button>`;
+  }
+
+  function render(direction) {
+    if (state.loadedFor !== state.date) {
+      $(".picks").className = "picks";
+      $(".picks").innerHTML = `<div class="skeleton"></div>`.repeat(perPage());
+      renderHeading();
+      return;
+    }
+    const list = sortedCards();
+    const n = perPage();
+    const pages = Math.max(1, Math.ceil(list.length / n));
+    state.page = Math.min(state.page, pages - 1);
+    const cards = $(".picks");
+    const open = cards.querySelector(".pick.open")?.dataset.room;
+    const draw = () => {
+      const html = list.slice(state.page * n, state.page * n + n).map(cardHtml);
+      const current = [...cards.children];
+      const sameRooms = !direction && current.length === html.length
+        && html.every((h, i) => h.includes(`data-room="${current[i].dataset.room}"`));
+      if (sameRooms) {
+        // Live refresh: swap only the cards whose content changed, so an open card stays open.
+        html.forEach((h, i) => {
+          if (current[i].dataset.html !== h) {
+            const tmp = document.createElement("div");
+            tmp.innerHTML = h;
+            const fresh = tmp.firstElementChild;
+            fresh.dataset.html = h;
+            if (current[i].classList.contains("open")) fresh.classList.add("open");
+            current[i].replaceWith(fresh);
+          }
+        });
+      } else {
+        cards.className = `picks${direction ? ` in-${direction}` : ""}`;
+        cards.innerHTML = html.join("");
+        [...cards.children].forEach((c, i) => { c.dataset.html = html[i]; });
+        if (open) cards.querySelector(`[data-room="${CSS.escape(open)}"]`)?.classList.add("open");
+        if (direction) setTimeout(() => { cards.className = "picks"; }, 650);
+      }
+      $(".prev").disabled = state.page === 0;
+      $(".next").disabled = state.page >= pages - 1;
+      $(".dots").innerHTML = Array.from({ length: pages }, (_, i) => `<i class="${i === state.page ? "on" : ""}"></i>`).join("");
+    };
+    if (direction && cards.children.length) {
+      cards.className = `picks out-${direction}`;
+      setTimeout(draw, 190);
+    } else {
+      draw();
+    }
+    renderHeading();
+  }
+
+  function renderHeading() {
+    const day = dayName(state.date);
+    const set = state.start !== null || state.date !== todayKey();
+    $(".date-pill").classList.toggle("set", set);
+    $(".date-pill-text").textContent = state.start === null ? `${capital(day)} · any time` : `${capital(day)} · ${rangeText()}`;
+    $(".date-pill-reset").classList.toggle("hidden", !set);
+    $(".picker-title").textContent = state.start === null
+      ? (state.date === todayKey() ? "Rooms today" : `Rooms on ${day}`)
+      : `Rooms ${state.date === todayKey() ? "today" : `on ${day}`}, ${rangeText()}`;
+  }
+
+  // ---------- Calendar popover ----------
+
+  function defaultStart(key) {
+    if (key !== todayKey()) return 12;
+    return Math.min(SLOTS - 1, Math.max(0, currentSlot() + 1));
+  }
+
+  function openPop() {
+    state.draft = { date: state.date, start: state.start ?? defaultStart(state.date), hours: state.hours };
+    state.month = new Date(`${state.draft.date}T12:00`);
+    state.month.setDate(1);
+    drawPop();
+    $(".pop").classList.add("open");
+    $(".date-pill").setAttribute("aria-expanded", "true");
+  }
+
+  function closePop() {
+    $(".pop").classList.remove("open");
+    $(".date-pill").setAttribute("aria-expanded", "false");
+  }
+
+  function drawPop() {
+    const d = state.draft;
+    const m = state.month;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const last = new Date(today);
+    last.setDate(last.getDate() + HORIZON_DAYS);
+    $(".m-title").textContent = m.toLocaleDateString("en-GB", { month: "long", year: "numeric" });
+    $(".m-prev").disabled = m <= new Date(today.getFullYear(), today.getMonth(), 1);
+    $(".m-next").disabled = new Date(m.getFullYear(), m.getMonth() + 1, 1) > last;
+    const lead = (new Date(m.getFullYear(), m.getMonth(), 1).getDay() + 6) % 7;
+    const days = new Date(m.getFullYear(), m.getMonth() + 1, 0).getDate();
+    let html = ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"].map((x) => `<span class="dow">${x}</span>`).join("") + "<span></span>".repeat(lead);
+    for (let i = 1; i <= days; i++) {
+      const dt = new Date(m.getFullYear(), m.getMonth(), i);
+      const key = dateKey(dt);
+      const ok = dt >= today && dt <= last;
+      html += `<button type="button" class="day ${key === todayKey() ? "today" : ""} ${key === d.date ? "sel" : ""}" data-day="${key}" ${ok ? "" : "disabled"}>${i}</button>`;
+    }
+    $(".m-grid").innerHTML = html;
+    const min = d.date === todayKey() ? Math.max(0, currentSlot()) : 0;
+    d.start = Math.min(Math.max(d.start, min), SLOTS - 1);
+    if (d.start + d.hours * 2 > SLOTS) d.hours = DURATIONS.filter((h) => d.start + h * 2 <= SLOTS).at(-1);
+    const dayOver = d.date === todayKey() && currentSlot() >= SLOTS;
+    $(".t-out").textContent = dayOver ? "closed" : slotTime(d.start);
+    $(".t-dn").disabled = d.start <= min || dayOver;
+    $(".t-up").disabled = d.start >= SLOTS - 1 || dayOver;
+    $(".durs").innerHTML = DURATIONS.map((h) => `<button type="button" class="${h === d.hours ? "on" : ""}" data-h="${h}"
+      ${d.start + h * 2 > SLOTS || dayOver ? "disabled" : ""}>${h === 0.5 ? "30m" : `${h}h`}</button>`).join("");
+    $(".apply").disabled = dayOver;
+  }
+
+  // ---------- Events ----------
+
+  async function choose(next, direction) {
+    const dateChanged = next.date !== state.date;
+    Object.assign(state, next, { page: 0 });
+    if (dateChanged) render();
+    else renderHeading();
+    if (dateChanged || state.loadedFor !== state.date) {
+      try {
+        await loadSlots();
+      } catch (err) {
+        onError(err);
+      }
+    }
+    render(direction);
+  }
+
+  $(".date-pill").addEventListener("click", (e) => {
+    if (e.target.closest(".date-pill-reset")) {
+      e.stopPropagation();
+      closePop();
+      return choose({ date: todayKey(), start: null }, "right");
+    }
+    if ($(".pop").classList.contains("open")) closePop();
+    else openPop();
+  });
+  $(".pop").addEventListener("click", (e) => {
+    const d = state.draft;
+    const t = e.target.closest("button");
+    if (!t || t.disabled) return;
+    if (t.dataset.day) d.date = t.dataset.day;
+    else if (t.classList.contains("m-prev")) state.month.setMonth(state.month.getMonth() - 1);
+    else if (t.classList.contains("m-next")) state.month.setMonth(state.month.getMonth() + 1);
+    else if (t.classList.contains("t-dn")) d.start--;
+    else if (t.classList.contains("t-up")) d.start++;
+    else if (t.dataset.h) d.hours = Number(t.dataset.h);
+    else if (t.classList.contains("apply")) {
+      closePop();
+      return choose({ date: d.date, start: d.start, hours: d.hours }, "left");
+    }
+    drawPop();
+  });
+  document.addEventListener("click", (e) => { if (!e.target.closest(".pill-wrap")) closePop(); });
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape") closePop(); });
+  $(".prev").addEventListener("click", () => { state.page--; render("right"); });
+  $(".next").addEventListener("click", () => { state.page++; render("left"); });
+  $(".picks").addEventListener("click", (e) => {
+    const card = e.target.closest(".pick");
+    if (!card) return;
+    if (touch && !card.classList.contains("open")) {
+      for (const c of root.querySelectorAll(".pick.open")) c.classList.remove("open");
+      card.classList.add("open");
+      return;
+    }
+    onOpen(card.dataset.room, state.start === null
+      ? { date: state.date }
+      : { date: state.date, time: slotTime(state.start), hours: state.hours });
+  });
+  addEventListener("resize", () => render());
+
+  return {
+    /** New live room list from /api/rooms (every few seconds): redraw cards without animation. */
+    async setRooms(rooms) {
+      const first = !state.rooms.length;
+      state.rooms = rooms;
+      if (first || state.loadedFor !== state.date) {
+        try {
+          await loadSlots();
+        } catch (err) {
+          onError(err);
+        }
+      }
+      render();
+    },
+    /** Reload slots (after a booking or cancel) and redraw. */
+    async refresh() {
+      try {
+        await loadSlots();
+      } catch (err) {
+        onError(err);
+      }
+      render();
+    },
+  };
+}
