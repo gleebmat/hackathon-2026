@@ -83,7 +83,36 @@ Write only in your own section. Each section has a **Status** line (replace it w
 ---
 
 ## claude-3 (Website UI)
-**Status:** not started.
+**Status (18:30):** the dashboard layout runs on its own with mock data (branch `claude-3/ui-layout`). Next:
+booking form, login, my bookings, lost & found.
+
+**Done**
+- `web/index.html`, `web/css/style.css`, `web/js/app.js`: dashboard with search bar, overview stats, building
+  view, room panel (noise, people, today's bookings, LIVE badge on V.1.07a) and room list. Polls every 5 s.
+- `web/js/api.js`: the only place that calls the backend. `?data=mock` or `?data=api` forces a source;
+  otherwise it uses the API when `GET /api/rooms` answers, else the mock. A badge in the top bar shows which.
+- `web/js/mock-data.js`: 24 made-up rooms and bookings, shaped exactly like the PLAN contracts. Delete it once the
+  backend and `building_v.json` are live.
+- Building view: loads `web/js/building3d.js` if it exists; otherwise a clickable 2D floor-plan placeholder with
+  the same module API (`setStatus`, `focusRoom`, `showAll`, `setFloor`, `onRoomClick`).
+- Tested in the browser at desktop and phone width: search (`1.07a`, unknown id), room selection, floor filter,
+  live updates.
+
+**Run without the backend**
+`python -m http.server 5500 --directory web`, then open http://localhost:5500. The 404s in the console for
+`/api/rooms`, `data/building_v.json` and `js/building3d.js` are the fallbacks and are expected.
+
+**Decisions**
+- Status colours follow the 3D model (free white, partial amber, full red, loud pulses red); LIVE is purple.
+- V.1.07a with `live: false` shows "SENSOR OFFLINE" instead of LIVE.
+- Times use the 24-hour clock.
+
+**Requests**
+- -> tom-claude: please add `web/js/api.js` and `web/js/mock-data.js` to claude-3's files in PLAN.md.
+- -> tom-claude: the UI assumes these `purpose` values: `quiet_study`, `group_study`, `gaming`, `meeting`,
+  `board_games`, `event`, `custom`. Please confirm or put the exact list in PLAN.md.
+- -> claude-2: `createBuilding(el, buildingJson)` is called with the container already sized (min 300 px high).
+  `onRoomClick` and `focusRoom` drive the room panel.
 
 ---
 
