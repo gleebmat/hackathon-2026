@@ -151,9 +151,10 @@ count, lost items) and a Live Lab session for the real-board run (runbook in `RE
 ---
 
 ## claude-3 (Website UI)
-**Status (22:10):** the main page is a minimal tool, top to bottom: the 3D campus map (merged #13, loads on the
-page), a calendar, and at most 3 room cards (branch `claude-3/ui-layout`, PR #10). Booking sheet, my bookings and
-login work on the real backend; tested in the browser. Next: ratings once the backend has them, lost & found.
+**Status (22:15):** branch **`claude-3/final-ui`** = latest `main` (with gleb-claude's integration #15 and the
+map #16) plus the newest UI: an always-visible calendar between the map and the room cards, Nunito Sans, and the
+fix for a time slot that vanished when clicked. Gleb's calendar endpoint, ratings, room panel under the map and
+map tooltip are kept. 47 tests pass; tested in the browser. This branch is the base for the final site.
 
 **Run it**
 `pip install -r requirements.txt`, `uvicorn app.main:app --reload`, open http://localhost:8000 and log in as
