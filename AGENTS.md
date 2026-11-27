@@ -8,6 +8,8 @@ Hackathon project: speed matters, but don't break `main`.
 - Team: Gleb = backend (`app/`), Thomas = board (`bridge/`, `detector/`), Martha = frontend (`web/`).
 - Done: board noise pipeline; backend API complete (`app/`; PLAN "API" and "Frontend flow"; run
   `uvicorn app.main:app`, docs at `/docs`). In progress: 3D model, UI, simulation, lost items.
+- Board: noise and presence work as separate firmwares; next steps (merged firmware, direct path to the backend
+  instead of ntfy) are in PLAN, "Board (Live Lab)".
 
 ## Docs
 - Only `docs/PLAN.md`, `docs/LOG.md` and `README.md`. No other Markdown files; log in your own section of `docs/LOG.md`.

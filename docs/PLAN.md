@@ -40,7 +40,7 @@ All numbers are made up. This is a prototype.
 | Agent | Owns (only edit these, plus your section of `docs/LOG.md`) | Delivers |
 |---|---|---|
 | **gleb-claude** (Gleb's Claude Code): Backend | `app/` (except `app/lost_items.py`), `tests/`, `requirements.txt`, `.env.example` | FastAPI + SQLite: login, sign-up, rooms, search, availability, bookings, the booking rules, ghost release, and the live noise feed for V.1.07a (**done**, see API below). |
-| **tom-claude** (Tom's Claude Code): Board | `bridge/` | Board bridge (**done**). Forwards the board's noise and person count to the backend. |
+| **tom-claude** (Tom's Claude Code): Board | `bridge/` | Board bridge (noise and presence work, as separate firmwares). Next: see "Board (Live Lab): decisions and next steps". |
 | **claude-2**: 3D model | `web/js/building3d.js` | The Three.js building that floats in empty space, rotate and zoom, `focusRoom` with the others hidden, `showAll`, floor filter, status and noise colours. Use the module API below. |
 | **claude-3**: Website UI | `web/index.html`, `web/login.html`, `web/js/app.js`, `web/css/style.css` | The login page, the search bar (calls `focusRoom`), the room panel (live noise, people, today's bookings, a LIVE badge on V.1.07a), the booking form (hours, full or partial, seats, purpose, and suggestions on a 409), and "my bookings"., and the **Lost & found** page: item cards, a "That's mine" button, and a "maybe yours" banner. |
 | **tom-claude**, continued | `detector/`, `app/lost_items.py` (a FastAPI `APIRouter` that gleb-claude includes in `app/main.py`) | The lost-item service: snapshot vs reference diff, YOLOv8n labels, crops, and the endpoints below. Board: flash person detection and forward the person count through the bridge. |
@@ -58,6 +58,50 @@ web/ (static, Three.js from CDN) <-- JSON --> FastAPI + SQLite (app/) <-+ LiveNo
   (pin an exact version, e.g. `three@0.160.0`), so there is no build step.
 - **Run:** `pip install -r requirements.txt`, then `uvicorn app.main:app --reload`, then open http://localhost:8000.
   The backend serves `web/` at `/`.
+
+## Board (Live Lab): decisions and next steps for tom-claude
+**How it works.** The PSOC Edge E84 is a microcontroller (Cortex-M33 + Cortex-M55 + Ethos-U55 NPU), not an
+FPGA; call it "the board" or "PSOC Edge E84" in the pitch. It sits in Infineon's remote Live Lab and represents
+one room, **V.1.07a (Atrium)**. Our laptop's microphone plays through a speaker next to the board, and our
+webcam is shown on the lab's simulation display that the board's USB camera films. **The board measures noise
+and detects people itself**; only its results leave it.
+
+**Target data path (decided):**
+```
+laptop mic/webcam -> Live Lab speaker/display -> board (mic + camera, NPU) -> UART -> bridge.py on the lab PC
+  -> HTTPS POST <tunnel URL>/api/readings (header X-Token) -> backend on the demo laptop (cloudflared tunnel)
+```
+- **Why not ntfy:** ntfy.sh allows 250 messages per day per IP. At one reading every 5 s that is used up in
+  about 20 minutes, and the lab PC may share its IP with other teams. Keep ntfy only until the direct path works.
+- **Why noise and presence aren't both live yet:** the chip runs one firmware at a time, and we use two separate
+  Infineon examples. The hardware can do both; it needs **one merged firmware**.
+
+**Tasks for tom-claude, in this order**
+1. **Test the positive presence case first** (never tested): with the current presence firmware, put a person
+   on the simulation display (Webcam Access → Enable) and confirm `PRESENCE 1`. Also confirm the USER LED is not
+   lit for any other reason (a blinking heartbeat would give false positives). Record the result in LOG.
+2. **Merged firmware:** start from `mtb-example-psoc-edge-ml-aihub-deploy-vision` (our `inference_task.c`) and
+   add the PDM microphone capture from `mtb-example-psoc-edge-pdm-pcm` as a second FreeRTOS task. Print once per
+   second, next to the presence line:
+   `PRESENCE <0|1> <person_frames>/<frames>` and `NOISE <avg_db> <peak_db>`.
+   Check first whether the PDM pins and clocks must be enabled in the vision project's Device Configurator
+   (`design.modus`). Keep `setup_person.ps1` as the fallback if the merge doesn't work within one session.
+3. **Bridge to the backend directly:** `python bridge.py COM3 <tunnel URL> <token>` posts one reading every 2 s
+   to `POST <tunnel URL>/api/readings` with header `X-Token: <token>` and the body
+   `{"room_id": "V.1.07a", "presence": true, "person_ratio": 0.9, "noise_avg_db": 63.2, "noise_peak_db": 78.5}`
+   (raw board values; the backend does the calibration). Retry on network errors, reopen the serial port if it
+   drops, and print each reading. gleb-claude adds these fields to the backend after your PR lands.
+4. Fix the stale lines in your LOG section: the role is Board (the backend is gleb-claude's), and say whether the
+   3D prototype on `tom/building3d-prototype` is dropped, so it doesn't compete with claude-2.
+
+**Demo notes**
+- Use headphones or mute the laptop speakers: the lab sends its room audio back, which can echo.
+- Keep loud phases short (under about a minute): the noise floor is learned from the last 3 minutes.
+- Start the backend with `GHOST_RELEASE_MIN=1` for the demo, so a ghost booking is released within the pitch.
+- Pitch wording: presence and noise are computed on the board, and only a yes/no and a level leave it. Don't
+  claim a people count or on-board lost-item detection until those exist.
+- **People count and lost items:** Arshia (gemini) is looking for a model that counts people and finds items;
+  that comes later. The backend already accepts `people` as a number.
 
 ## Contracts (code against these; whoever changes one updates this file in the same PR)
 
