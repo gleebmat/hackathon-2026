@@ -1,7 +1,7 @@
 # Run on the Live Lab PC:  iwr -useb <raw url of this file> | iex
 # Creates Infineon's PDM microphone example, builds it, flashes the board, and downloads bridge.py.
 $ErrorActionPreference = 'Stop'
-$raw = 'https://raw.githubusercontent.com/gleebmat/hackathon-2026/tom/board/bridge'
+$raw = 'https://raw.githubusercontent.com/gleebmat/hackathon-2026/main/bridge'
 $tools = Join-Path $HOME 'ModusToolbox\tools_3.9'
 $ws = Join-Path $HOME 'mtw'
 $app = Join-Path $ws 'room_noise'
