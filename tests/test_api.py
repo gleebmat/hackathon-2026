@@ -22,6 +22,7 @@ def time_now(monkeypatch):
 def app_env(tmp_path, monkeypatch, time_now):
     monkeypatch.setenv("DB_PATH", str(tmp_path / "test.db"))
     monkeypatch.setenv("NOISE_FEED", "0")
+    monkeypatch.setenv("MQTT_FEED", "0")
     monkeypatch.delenv("READINGS_TOKEN", raising=False)
     monkeypatch.setenv("SIMULATE", "0")
     monkeypatch.setattr(db, "CAMPUS_JSON", tmp_path / "missing.json")  # use the built-in V floor 1 rooms
@@ -389,6 +390,7 @@ def test_rooms_come_from_the_campus_map(tmp_path, monkeypatch, time_now):
     path.write_text(json.dumps(campus), encoding="utf-8")
     monkeypatch.setenv("DB_PATH", str(tmp_path / "test.db"))
     monkeypatch.setenv("NOISE_FEED", "0")
+    monkeypatch.setenv("MQTT_FEED", "0")
     monkeypatch.setattr(db, "CAMPUS_JSON", path)
     with TestClient(main.app) as c:
         rooms = {r["id"]: r for r in c.get("/api/rooms").json()}
@@ -446,6 +448,7 @@ def test_old_database_is_upgraded(tmp_path, monkeypatch, time_now):
     old.close()
     monkeypatch.setenv("DB_PATH", str(path))
     monkeypatch.setenv("NOISE_FEED", "0")
+    monkeypatch.setenv("MQTT_FEED", "0")
     monkeypatch.setenv("SIMULATE", "0")
     monkeypatch.setattr(db, "CAMPUS_JSON", tmp_path / "missing.json")
     with TestClient(main.app):
@@ -493,3 +496,13 @@ def test_booked_vs_present(app_env):
     a.post("/api/readings", json={"room_id": "V.1.03", "presence": False})
     r = room(a, "V.1.03")
     assert r["present"] == 0 and r["status"] == "ghost"
+
+
+def test_mqtt_reading_is_stored_like_http(app_env):
+    assert main.mqtt_reading({"room_id": "V.1.07a", "presence": True, "noise_db": 47.5, "person_score": 0.9,
+                              "left_items": 1})
+    r = room(TestClient(main.app), "V.1.07a")
+    assert (r["present"], r["counted"], r["noise_db"], r["left_items"], r["live"]) == (1, False, 47.5, 1, True)
+    assert not main.mqtt_reading({"room_id": "V.9.99", "presence": True})   # unknown room
+    assert not main.mqtt_reading({"room_id": "V.1.07a", "people": -3})      # invalid
+    assert not main.mqtt_reading({"room_id": "V.1.07a"})                    # nothing measured

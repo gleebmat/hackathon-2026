@@ -422,8 +422,10 @@ function fixSelection() {
 function renderSheetHead() {
   const r = state.sheet.room;
   const live = r.live ? `<span class="live-badge">LIVE</span>` : "";
+  // The board reliably sees *that* something stayed behind, not exactly how many things (tested in Velxio), so
+  // the badge says yes/no instead of showing a count that may be wrong.
   const left = r.left_items > 0
-    ? `<span class="left-badge" title="Counted by the board after people left">🎒 ${r.left_items} item${r.left_items === 1 ? "" : "s"} left behind</span>` : "";
+    ? `<span class="left-badge" title="Spotted by the room's camera after everyone left">🎒 Something left behind</span>` : "";
   $("sh-head").innerHTML = `
     <div>
       <div class="sheet-title"><h2 id="room-title">${esc(r.label || r.id)}</h2><span class="muted">${esc(r.label ? `${r.id} · ${r.name}` : r.name)}</span></div>

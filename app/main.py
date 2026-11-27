@@ -10,9 +10,9 @@ from fastapi import Depends, FastAPI, Header, Query, Request, Response
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 
-from app import auth, booking, clock, db
+from app import auth, booking, clock, db, mqtt_feed
 from app.booking import ApiError
 from bridge.ntfy_feed import LiveNoiseFeed
 
@@ -28,7 +28,11 @@ async def lifespan(_app: FastAPI):
     if os.environ.get("NOISE_FEED", "1") != "0":
         feed = LiveNoiseFeed(room_id=booking.BOARD_ROOM)  # fallback path: bridge.py without a backend URL
         feed.start()
+    mqtt_client = mqtt_feed.start(mqtt_reading) if os.environ.get("MQTT_FEED", "1") != "0" else None
     yield
+    if mqtt_client:
+        mqtt_client.loop_stop()
+        mqtt_client.disconnect()
 
 
 app = FastAPI(title="Campus room booking", lifespan=lifespan)
@@ -272,15 +276,42 @@ class Reading(BaseModel):
     left_items: int | None = Field(None, ge=0, le=100)   # items left behind, counted on the board
 
 
+def save_reading(conn: sqlite3.Connection, body: Reading) -> None:
+    people = body.people if body.people is not None else (None if body.presence is None else int(body.presence))
+    booking.record_reading(conn, body.room_id, body.noise_db, people, clock.now(), body.left_items,
+                           counted=body.people is not None)
+
+
 @app.post("/api/readings")
 def post_reading(body: Reading, conn: Conn, x_token: str | None = Header(None)):
     expected = os.environ.get("READINGS_TOKEN")
     if expected and x_token != expected:
         raise ApiError(403, "Bad sensor token")
-    people = body.people if body.people is not None else (None if body.presence is None else int(body.presence))
-    booking.record_reading(conn, body.room_id, body.noise_db, people, clock.now(), body.left_items,
-                           counted=body.people is not None)
+    save_reading(conn, body)
     return {"ok": True}
+
+
+def mqtt_reading(payload: dict) -> bool:
+    """A reading that arrived over MQTT (app/mqtt_feed.py): same validation and storage as POST /api/readings.
+    Returns False when it was rejected (bad fields, unknown room)."""
+    try:
+        body = Reading(**payload)
+    except ValidationError:
+        return False
+    conn = db.connect()
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        try:
+            save_reading(conn, body)
+        except BaseException:
+            conn.execute("ROLLBACK")
+            raise
+        conn.execute("COMMIT")
+        return True
+    except ApiError:
+        return False
+    finally:
+        conn.close()
 
 
 class NoCacheStatic(StaticFiles):

@@ -109,39 +109,31 @@ reopens the serial port when it drops. Without a URL it falls back to ntfy. Test
 ---
 
 ## gleb-claude (Backend + integration)
-**Status:** final UI (claude-3/final-ui) + 3D map (incl. #16) + board bridge + backend are on `main` and tested
-end to end in the browser; 47 API/bridge tests pass (`python -m pytest tests bridge`). Waiting for Arshia's two
-models (people count, lost items) and a Live Lab session for the real-board run (runbook in `README.md`).
+**Status (28 Nov):** the team switched from the Infineon Live Lab to a **XIAO ESP32S3 Sense simulated in Velxio**.
+Firmware (`firmware/xiao_sense/`) runs Arshia's person model on the board and publishes readings over MQTT; the
+backend subscribes (`app/mqtt_feed.py`). Tested end to end with a webcam: presence, real mic noise, ghost release
+and left items (yes/no) reach the website. 50 tests pass. Runbook: `README.md`.
 
 **Done**
-- Backend: login, sign-up, search (ids, names and map labels such as `HS 1`), availability, bookings with every
-  rule in PLAN, cancel, suggestions on 409, ghost release (`GHOST_RELEASE_MIN`), concurrency-safe storage.
-- Calendar for the picker: `GET /api/calendar?date=` returns every room's slots and `free_hours` in one call
-  (was one `/availability` call per room). Ratings: `POST /api/rooms/{id}/rating`, `rating`/`votes` on rooms.
-  `Cache-Control: no-cache` on `web/`.
-- Integration: rooms come from `web/map3d/campus.json`; board room **Z.1.04** (`BOARD_ROOM`, bridge 4th
-  argument) turns LIVE while the bridge posts; `presence` counts as 0/1 people; other rooms simulated.
-- UI fixes (claude-3's files, small): the calendar closed on every day/duration click without applying it
-  (`picker.js`, outside-click check now uses `composedPath()`); `picker.js` uses `/api/calendar`; star rating in
-  My bookings; clicks on non-bookable map rooms ignored; login headline says campus instead of building V.
-- Browser test (fresh DB): sign-up (gmail refused), calendar to Sat 10:00-12:00 (one `/api/calendar` call),
-  book private from a card, 409 + suggestions for a second student, sharing up to capacity (51), 4 h/day limit,
-  `HS1` search, board reading -> LIVE, rating 4 stars, cancel (two taps), ghost countdown then released after
-  1 min, logout.
+- Backend: login, sign-up, search, calendar, ratings, availability, bookings and all rules, ghost release,
+  booked-vs-present (`booked`, `present`, `counted`), readings over HTTP and MQTT, concurrency-safe storage.
+- Board: XIAO firmware (camera 96x96 RGB565 -> TFLM person model via `Chirale_TensorFlowLite`, PDM noise,
+  left-item diff with exposure compensation and median of 5, MQTT via `PubSubClient`).
+- UI: map hover/selection, room panel under the map, ghost colour + legend, "Booked for N · Someone is here",
+  "🎒 Something left behind".
+- Repo: only `main`; Arshia's models in `models/`.
+
+**Findings (Velxio)**
+- `tflm_esp32` is precompiled for ESP-IDF 4 and refused by Velxio's arduino-esp32 3.x; `Chirale_TensorFlowLite`
+  builds from source and works.
+- The simulated board's HTTPS handshake to a Cloudflare quick tunnel fails (`-30592`); MQTT over TCP works.
+- Camera frame buffers must be in DRAM in the simulator; the model arena (101 KB) fits.
+- Left-item count drifts (1-3 for one object); detecting "something left" is reliable.
 
 **Requests**
-- -> tom-claude: (1) the map zooms on mouse wheel, so the page can't scroll past it (claude-3's request);
-  (2) next Live Lab session: run the README runbook with the real board.
-- -> gemini (Arshia): your people-count model posts `{"room_id": "Z.1.04", "people": <n>}` to
-  `POST /api/readings` (header `X-Token`); lost items plug into the "Lost items" endpoints in PLAN.
-- -> claude-3 (Martha): your requests 1-6 are done (ratings, one-call calendar, free hours, no-cache, one room
-  list, PLAN file list); please check my small fixes listed above.
-- -> claude-3 (Martha) and tom-claude, **keep these (Gleb's request), restyle them freely**:
-  1. the room panel `#room-dialog` is an inline section **under the map**, not a modal: opening scrolls the map
-     into view so the fly-to animation is visible; × and Escape close it;
-  2. map hover: bookable rooms turn blue, glow and lift, pointer cursor (`building3d.js`), plus the `.map-tip`
-     tooltip (`showMapTip` in `app.js`);
-  3. the map legend sits bottom-right, clear of the map's building/floor selector.
+- -> tom-claude (board): take over `firmware/xiao_sense/`; next: a real people count, then a physical board test.
+- -> gemini (Arshia): a counting model small enough for the ESP32-S3 (it would set `people`, `counted: true`).
+- -> claude-3 (Martha): new UI strings for booked vs present and left items are in `app.js`; restyle freely.
 
 ---
 

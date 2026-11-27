@@ -1,7 +1,8 @@
 # hackathon-2026
 
 Smart campus room booking for AAU (Infineon challenge): a 3D campus map, live room status, booking with
-sharing rules, and one room (`Z.1.04`) wired to a real PSOC Edge E84 board in Infineon's Live Lab.
+sharing rules, and one room (`Z.1.04`) wired to a XIAO ESP32S3 Sense board (camera + microphone, person
+model on the board), simulated in Velxio.
 Spec and API: `docs/PLAN.md`. Status per teammate: `docs/LOG.md`.
 
 ## Setup
@@ -21,28 +22,25 @@ uvicorn app.main:app --reload
 Open http://localhost:8000 and log in as `student1@edu.aau.at` / `demo` (also `student2..4`).
 API docs: http://localhost:8000/docs. The map alone: http://localhost:8000/map3d/. Tests: `python -m pytest tests bridge`.
 
-## Demo with the real board (runbook)
+## Demo with the board (XIAO ESP32S3 Sense in Velxio)
 
-1. **Demo laptop, terminal 1** (PowerShell): start the backend with a sensor token and a 1-minute ghost timer.
+1. **Backend** (PowerShell, in this repo): start it with a 1-minute ghost timer. It subscribes to the board's
+   MQTT readings by itself (public broker `broker.hivemq.com`, topic `aau-hack26/rooms/+/readings`).
    ```powershell
-   $env:READINGS_TOKEN = 'pick-a-token'; $env:GHOST_RELEASE_MIN = '1'; uvicorn app.main:app
+   $env:GHOST_RELEASE_MIN = '1'; uvicorn app.main:app
    ```
-2. **Demo laptop, terminal 2:** open a public tunnel (install once: `winget install Cloudflare.cloudflared`).
-   ```powershell
-   cloudflared tunnel --url http://localhost:8000
-   ```
-   It prints an `https://….trycloudflare.com` URL.
-3. **Live Lab:** in Application Demos, enable Webcam Access and unmute the microphone (our laptop's camera and mic
-   feed the board). Then in the Developer Workspace, flash the firmware and start the bridge (details: `docs/LOG.md`,
-   tom-claude, "Runbook"):
-   ```powershell
-   iwr -useb https://raw.githubusercontent.com/gleebmat/hackathon-2026/main/bridge/setup_person.ps1 | iex
-   python $HOME\bridge.py COM3 <tunnel URL> <token>
-   ```
-4. **Show it:** search `z104` on the site. Z.1.04 shows LIVE, its noise and whether someone is there. Book it,
-   then step out of the webcam: the room turns into a ghost booking and is released after 1 minute.
+2. **Velxio** (https://velxio.dev/editor, Chrome): new project, board **XIAO ESP32S3 Sense**.
+   - Files: paste `firmware/xiao_sense/sketch.ino` into `sketch.ino`; add a file `person_model.h` with the content of
+     `firmware/xiao_sense/person_model.h`.
+   - Libraries (Library Manager): `Chirale_TensorFlowLite` and `PubSubClient`.
+   - Under the board click **Camera** and **Mic** (allow them in Chrome), then **Run**. The first compile takes a few
+     minutes. The serial monitor shows `MODEL OK`, `WIFI OK` and one `MQTT ... -> sent` line every 2 s.
+3. **Show it:** open http://localhost:8000, search `z104`. Z.1.04 shows LIVE, its noise, "Booked for N · Someone is
+   here". Book it, then step out of the webcam: the room turns into a ghost booking (violet on the map) and is
+   released after 1 minute. Leave an object in view when you go: the panel shows "🎒 Something left behind".
 
-Tips: use headphones (the lab sends its audio back), keep loud moments short, and every other room is simulated.
+Tips: keep the camera view empty for ~20 s after Run, so the board takes a clean empty-room snapshot. Every other
+room is simulated. The old Infineon Live Lab path (`bridge/`) still works as a fallback, see `docs/LOG.md`.
 
 ## Graphify (code knowledge graph, saves AI tokens)
 
