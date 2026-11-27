@@ -62,3 +62,10 @@ def test_other_rooms_ignored():
 
 def test_classes():
     assert [noise_class(x) for x in (35, 45, 70)] == ["quiet", "moderate", "loud"]
+
+
+def test_zero_bar_readings_ignored():
+    feed, _ = replay(QUIET)
+    before = feed.latest(now=1060)["raw_db"]
+    feed.ingest({"room_id": "V.1.07a", "noise_db": 30.0, "peak_db": 30.0}, received_at=1060)
+    assert feed.latest(now=1060)["raw_db"] == before

@@ -47,7 +47,10 @@ def main() -> None:
         bars += [line.count("-") for line in lines if line.strip() == "" or set(line.strip()) <= {"-"}]
         if time.monotonic() - last >= INTERVAL:
             last = time.monotonic()
-            if not bars:
+            if not bars or max(bars) == 0:
+                # No volume bars: the board isn't running the mic firmware (e.g. the lab switched to its
+                # factory demos). Publish nothing, so the backend marks the feed as not live.
+                bars = []
                 continue
             avg, peak = sum(bars) / len(bars), max(bars)
             reading = {"room_id": ROOM, "noise_db": to_db(avg), "peak_db": to_db(peak), "frames": len(bars),

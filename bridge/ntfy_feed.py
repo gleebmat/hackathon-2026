@@ -44,6 +44,8 @@ class LiveNoiseFeed:
     def ingest(self, reading: dict, received_at: float | None = None) -> None:
         if reading.get("room_id") != self.room_id or "noise_db" not in reading:
             return
+        if float(reading.get("peak_db", reading["noise_db"])) <= 30.0:
+            return  # zero bars all window = mic firmware not running (an old bridge.py sent these); not a reading
         now = time.time() if received_at is None else received_at
         with self._lock:
             avg = float(reading["noise_db"])
