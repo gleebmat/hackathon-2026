@@ -278,7 +278,8 @@ def post_reading(body: Reading, conn: Conn, x_token: str | None = Header(None)):
     if expected and x_token != expected:
         raise ApiError(403, "Bad sensor token")
     people = body.people if body.people is not None else (None if body.presence is None else int(body.presence))
-    booking.record_reading(conn, body.room_id, body.noise_db, people, clock.now(), body.left_items)
+    booking.record_reading(conn, body.room_id, body.noise_db, people, clock.now(), body.left_items,
+                           counted=body.people is not None)
     return {"ok": True}
 
 

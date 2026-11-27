@@ -11,7 +11,7 @@ import { TextGeometry } from "three/addons/geometries/TextGeometry.js";
 const FONT_URL = "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/fonts/helvetiker_bold.typeface.json";
 
 const TYPE_COLOR = { seminar: 0x2a8fb0, office: 0xd9dde3, wc: 0xa9c9e8, hall: 0xe3c99a, atrium: 0x9fd8b5, foyer: 0xf2f2f2 };
-const STATUS_COLOR = { free: 0xffffff, partial: 0xf5b642, full: 0xe0483e, ghost: 0xc9b8f2, closed: 0x9aa0a6 };
+const STATUS_COLOR = { free: 0xffffff, partial: 0xf5b642, full: 0xe0483e, ghost: 0x8b5cf6, closed: 0x9aa0a6 };   // ghost = the site's violet (--ghost)
 const HOVER_COLOR = new THREE.Color(0x4f8dff);   // the room under the mouse blends towards this blue
 const HIDDEN_BY_DEFAULT = new Set(["office", "wc", "foyer"]);  // "offices" toggle
 const SLAB = 0.35;
@@ -277,7 +277,8 @@ export function createBuilding(el, input, opts = {}) {
       if (r.hoverK < 0.002) r.hoverK = 0;
       const h = r.hoverK;
       r.mesh.material.color.copy(r.statusColor).lerp(HOVER_COLOR, 0.65 * h);
-      if (r.data.id === highlight) r.mesh.material.emissive.setRGB(0.55 * glow, 0.4 * glow, 0.1 * glow);
+      // selected room: brightened in its own status colour (a ghost stays violet); the gold halo marks the selection
+      if (r.data.id === highlight) r.mesh.material.emissive.copy(r.statusColor).multiplyScalar(0.35 * glow);
       else r.mesh.material.emissive.setRGB((r.loud ? pulse : 0) + 0.05 * h, 0.12 * h, 0.35 * h);
       r.mesh.position.y = r.baseY + 0.45 * h;
     }

@@ -617,6 +617,10 @@ dialog::backdrop { background: rgb(10 8 30 / 45%); backdrop-filter: blur(6px); -
 .stars-input .star.on, .stars-input:hover .star { color: #f5b642; }
 .stars-input .star:hover ~ .star { color: var(--border); }
 .stars-input .star:active { transform: scale(.85); }
+.sensor-check { display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-top: 8px; padding: 9px 12px;
+  border-radius: var(--radius-sm); font-size: 13px; background: var(--free-soft); color: var(--free); }
+.sensor-check.fewer { background: var(--shared-soft); color: var(--shared); }
+.sensor-check.empty { background: var(--ghost-soft); color: var(--ghost); }
 .ghost-alert { padding: 9px 12px; border-radius: var(--radius-sm); background: var(--ghost-soft); color: var(--ghost); font-size: 13px; font-weight: 600; }
 details.history summary { cursor: pointer; font-weight: 700; color: var(--muted); padding: 6px 0; }
 details.history .booking { opacity: .7; margin-top: 8px; }
