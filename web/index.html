@@ -3,64 +3,120 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Room V · Find a room</title>
+  <title>Room V · Book a room</title>
+  <script>
+    try {
+      document.documentElement.dataset.theme = localStorage.getItem("roomv-theme") || "violet";
+      document.documentElement.dataset.mode = localStorage.getItem("roomv-mode") || "auto";
+    } catch {}
+  </script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;600;700&display=swap">
   <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></symbol>
+    <symbol id="i-close" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></symbol>
+    <symbol id="i-cal" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="3"/><path d="M3 10h18M8 3v4M16 3v4"/></symbol>
+    <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></symbol>
+    <symbol id="i-users" viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0M16 4.5a3.5 3.5 0 0 1 0 7M18 14.5a6.5 6.5 0 0 1 3.5 5.5"/></symbol>
+    <symbol id="i-sound" viewBox="0 0 24 24"><path d="M4 9v6h4l5 4V5L8 9H4zM17 8.5a5 5 0 0 1 0 7M19.5 6a8.5 8.5 0 0 1 0 12"/></symbol>
+  </svg>
+
   <header class="topbar">
-    <div class="brand">
-      <span class="brand-mark" aria-hidden="true">V</span>
-      <div>
-        <div class="brand-name">Room V</div>
-        <div class="brand-sub">Smart Campus · Building V</div>
+    <a class="brand" href="./">
+      <span class="brand-mark">V</span>
+      <span><span class="brand-name">Room V</span><br><span class="brand-sub">Find it. Book it. Study.</span></span>
+    </a>
+
+    <div class="search" id="search">
+      <div class="search-field">
+        <svg class="icon"><use href="#i-search"/></svg>
+        <input id="search-input" type="search" placeholder="Search a room: 107a, Atrium, Seminarraum…" autocomplete="off"
+               role="combobox" aria-expanded="false" aria-controls="search-list" aria-autocomplete="list" aria-label="Search a room">
+        <kbd class="kbd">/</kbd>
+      </div>
+      <ul class="suggestions hidden" id="search-list" role="listbox"></ul>
+    </div>
+
+    <div class="top-actions">
+      <button class="btn mine-btn" id="mine-btn" type="button">
+        <svg class="icon"><use href="#i-cal"/></svg><span class="label">My bookings</span><span class="count" id="mine-count">0</span>
+      </button>
+      <div class="menu-wrap">
+        <button class="avatar" id="avatar" type="button" aria-haspopup="true" aria-expanded="false" title="Profile">?</button>
+        <div class="menu hidden" id="menu">
+          <div class="menu-user"><strong id="user-name"></strong><span class="muted small" id="user-email"></span></div>
+          <div class="menu-label">Colour theme</div>
+          <div class="swatches" id="swatches">
+            <button class="swatch" data-theme="violet" title="Violet" style="background:linear-gradient(135deg,#6d5dfc,#22d3ee)"></button>
+            <button class="swatch" data-theme="ocean" title="Ocean" style="background:linear-gradient(135deg,#0ea5e9,#34d399)"></button>
+            <button class="swatch" data-theme="sunset" title="Sunset" style="background:linear-gradient(135deg,#f43f5e,#fb923c)"></button>
+            <button class="swatch" data-theme="mint" title="Mint" style="background:linear-gradient(135deg,#10b981,#a3e635)"></button>
+          </div>
+          <div class="menu-label">Mode</div>
+          <div class="segmented" id="modes">
+            <button type="button" data-mode="auto">Auto</button>
+            <button type="button" data-mode="light">Light</button>
+            <button type="button" data-mode="dark">Dark</button>
+          </div>
+          <button class="btn" id="logout" type="button">Log out</button>
+        </div>
       </div>
     </div>
-
-    <form class="search" id="search-form" role="search" autocomplete="off">
-      <svg class="search-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
-      <input id="search-input" type="search" list="room-ids" placeholder="Search a room, e.g. V.1.07a" aria-label="Search a room">
-      <datalist id="room-ids"></datalist>
-      <kbd class="search-hint">/</kbd>
-    </form>
-
-    <div class="topbar-right">
-      <span class="source-badge" id="source-badge" title="Where the room data comes from">…</span>
-    </div>
   </header>
-  <p class="search-msg" id="search-msg" role="status"></p>
 
-  <main class="layout">
-    <section class="stats" id="stats" aria-label="Building overview"></section>
-
-    <section class="card viewer">
-      <div class="card-head">
-        <h2>Building V</h2>
-        <div class="floor-filter" id="floor-filter" role="group" aria-label="Floor">
-          <button type="button" data-floor="" class="active">All</button>
-          <button type="button" data-floor="0">Floor 0</button>
-          <button type="button" data-floor="1">Floor 1</button>
-          <button type="button" data-floor="2">Floor 2</button>
+  <main class="page">
+    <section class="card hero">
+      <div class="hero-head">
+        <div>
+          <h1 class="hero-title">Building V, <span class="gradient-text">floor 1</span></h1>
+          <p class="muted">Click a room to see when it's free, or search for one above.</p>
         </div>
+        <div class="stats" id="stats"></div>
       </div>
       <div class="building" id="building"></div>
       <div class="legend">
-        <span><i class="dot free"></i>Free</span>
-        <span><i class="dot partial"></i>Partly booked</span>
-        <span><i class="dot full"></i>Fully booked</span>
-        <span><i class="dot loud"></i>Loud right now</span>
+        <span><i style="background:var(--free)"></i>Free</span>
+        <span><i style="background:var(--shared)"></i>Shared, seats left</span>
+        <span><i style="background:var(--full)"></i>Full</span>
+        <span><i style="background:var(--ghost)"></i>Ghost booking (nobody there)</span>
+        <span><i style="background:var(--closed)"></i>Closed</span>
       </div>
     </section>
 
-    <aside class="card panel" id="room-panel" aria-live="polite"></aside>
-
-    <section class="card rooms">
-      <div class="card-head">
-        <h2>All rooms</h2>
-        <span class="muted" id="updated"></span>
+    <section>
+      <div class="section-head">
+        <div>
+          <h2>Rooms right now</h2>
+          <p id="updated">Loading live data…</p>
+        </div>
+        <div class="filters" id="filters">
+          <button class="chip active" data-filter="all" type="button">All</button>
+          <button class="chip" data-filter="free" type="button">Free</button>
+          <button class="chip" data-filter="share" type="button">Open to join</button>
+          <button class="chip" data-filter="quiet" type="button">Quiet</button>
+        </div>
       </div>
-      <div class="room-list" id="room-list"></div>
+      <div class="room-grid" id="room-grid">
+        <div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div>
+      </div>
     </section>
   </main>
+
+  <dialog class="sheet" id="room-dialog" aria-labelledby="room-title"></dialog>
+
+  <dialog class="drawer" id="mine-drawer" aria-labelledby="mine-title">
+    <div class="drawer-head">
+      <div><h2 id="mine-title">My bookings</h2><span class="muted small">Up to 4 hours per day</span></div>
+      <button class="icon-btn" type="button" data-close aria-label="Close"><svg class="icon"><use href="#i-close"/></svg></button>
+    </div>
+    <div class="drawer-body" id="mine-body"></div>
+  </dialog>
+
+  <div class="toasts" id="toasts" aria-live="polite"></div>
 
   <script type="module" src="js/app.js"></script>
 </body>

@@ -1,320 +1,800 @@
-// Room V dashboard: search, building view, room panel and room list.
-// All data comes through api.js (real backend or mock). The building view is claude-2's
-// building3d.js when it exists, otherwise a 2D placeholder with the same module API.
+// Room V main page: building view, live room cards, search, booking sheet and "My bookings".
+// Data: api.js (docs/PLAN.md, "Frontend flow"). Building view: claude-2's building3d.js when it
+// exists, otherwise the 2D plan in plan2d.js (same module API).
 import * as api from "./api.js";
+import { createPlan, layoutBuilding } from "./plan2d.js";
 
 const POLL_MS = 5000;
+const DAY_LIMIT = 4;
+const HORIZON_DAYS = 14;
 const LIVE_ROOM = "V.1.07a";
-const STATUS_LABEL = { free: "Free", partial: "Partly booked", full: "Fully booked" };
-const PURPOSE_LABEL = {
-  quiet_study: "Quiet study", group_study: "Group study", gaming: "Gaming", meeting: "Meeting",
-  board_games: "Board games", event: "Event", custom: "Custom",
-};
+const STATUS = { free: "Free", partial: "Shared", full: "Full", ghost: "Ghost booking", closed: "Closed" };
+const PURPOSES = [
+  { id: "quiet_study", label: "Quiet study", emoji: "📚", noise: "quiet" },
+  { id: "group_study", label: "Group study", emoji: "🧠", noise: "moderate" },
+  { id: "meeting", label: "Meeting", emoji: "💼", noise: "moderate" },
+  { id: "gaming", label: "Gaming", emoji: "🎮", noise: "loud" },
+  { id: "board_games", label: "Board games", emoji: "🎲", noise: "loud" },
+  { id: "event", label: "Event", emoji: "🎉", noise: "loud" },
+  { id: "custom", label: "Other", emoji: "✏️", noise: "moderate" },
+];
+const PURPOSE = Object.fromEntries(PURPOSES.map((p) => [p.id, p]));
 
-const state = { building: null, rooms: [], selected: null, detail: null, floor: null, view: null, error: null };
+const state = { user: null, rooms: [], mine: [], view: null, filter: "all", sheet: null, gridDrawn: false };
 const $ = (id) => document.getElementById(id);
 
-function esc(value) {
-  return String(value ?? "").replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
+// ---------- Small helpers ----------
+
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
+const pad = (n) => String(n).padStart(2, "0");
+const dateKey = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+const nowKey = () => { const d = new Date(); return `${dateKey(d)}T${pad(d.getHours())}:${pad(d.getMinutes())}`; };
+const hm = (iso) => iso.slice(11, 16);
+const hoursText = (h) => (h === 0.5 ? "30 min" : `${h} h`);
+const purposeText = (b) => (b.purpose === "custom" && b.custom_purpose ? b.custom_purpose : PURPOSE[b.purpose]?.label ?? b.purpose);
+const roomName = (id) => state.rooms.find((r) => r.id === id)?.name ?? "";
+
+function dayLabel(key, long = false) {
+  const today = new Date();
+  const d = new Date(`${key}T12:00`);
+  const diff = Math.round((d - new Date(`${dateKey(today)}T12:00`)) / 86400000);
+  const text = d.toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" });
+  if (diff === 0) return long ? `Today, ${text}` : "Today";
+  if (diff === 1) return long ? `Tomorrow, ${text}` : "Tomorrow";
+  return text;
 }
 
-function time(iso) {
-  return new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
+function minutesUntil(iso) {
+  return Math.max(0, Math.round((new Date(iso) - new Date()) / 60000));
 }
 
-function purpose(b) {
-  return b.purpose === "custom" && b.custom_purpose ? b.custom_purpose : PURPOSE_LABEL[b.purpose] ?? b.purpose;
-}
-
-function roomById(id) {
-  return state.rooms.find((r) => r.id === id);
-}
-
-function liveBadge(room) {
-  if (room.live) return `<span class="live-badge" title="Measured by the PSOC Edge E84 board">LIVE</span>`;
-  if (room.id === LIVE_ROOM) return `<span class="live-badge offline" title="No board data in the last 20 s">SENSOR OFFLINE</span>`;
-  return "";
-}
-
-// ---------- 2D placeholder with the same API as building3d.js (PLAN.md) ----------
-
-function createPlaceholder(el, building) {
-  const floors = [...new Set(building.rooms.map((r) => r.floor))].sort();
-  const statuses = {};
-  let floor = null;
-  let focused = null;
-  let onClick = () => {};
-  let queued = false;
-
-  function plan(f) {
-    const { w, d } = building.outer;
-    const c = building.courtyard;
-    const rooms = building.rooms.filter((r) => r.floor === f).map((r) => {
-      const s = statuses[r.id] ?? {};
-      const cls = ["room", s.status ?? "free", s.noise_class === "loud" ? "loud" : "", r.id === focused ? "selected" : ""];
-      const live = s.live
-        ? `<rect class="live-tag" x="${r.x + r.w / 2 - 7}" y="${r.z - r.d / 2 + 0.8}" width="6.2" height="3" rx="1"/>
-           <text class="live-text" x="${r.x + r.w / 2 - 3.9}" y="${r.z - r.d / 2 + 2.4}">LIVE</text>`
-        : "";
-      return `<g data-room="${esc(r.id)}">
-        <rect class="${cls.join(" ")}" x="${r.x - r.w / 2}" y="${r.z - r.d / 2}" width="${r.w}" height="${r.d}" rx="0.8">
-          <title>${esc(r.id)} · ${esc(r.name)}</title></rect>
-        <text class="room-label" x="${r.x}" y="${r.z}">${esc(r.id.replace(/^V\./, ""))}</text>${live}</g>`;
-    }).join("");
-    return `<div class="plan"><div class="plan-title">Floor ${f}</div>
-      <svg viewBox="${-w / 2 - 1} ${-d / 2 - 1} ${w + 2} ${d + 2}" role="img" aria-label="Floor ${f} plan">
-        <rect class="outline" x="${-w / 2}" y="${-d / 2}" width="${w}" height="${d}" rx="1.5"/>
-        <rect class="courtyard" x="${-c.w / 2}" y="${-c.d / 2}" width="${c.w}" height="${c.d}" rx="1"/>
-        ${rooms}</svg></div>`;
+function handleAuth(err) {
+  if (err.status === 401) {
+    location.replace("login.html");
+    return true;
   }
+  return false;
+}
 
-  function render() {
-    queued = false;
-    const shown = floor === null ? floors : [floor];
-    el.innerHTML = `<span class="placeholder-note">2D placeholder · the 3D model (claude-2) replaces this</span>
-      <div class="plans ${floor === null ? "all" : ""}">${shown.map(plan).join("")}</div>`;
-    el.classList.toggle("focused", focused !== null);
+// ---------- Toasts and confetti ----------
+
+function toast(message, { error = false, action } = {}) {
+  const el = document.createElement("div");
+  el.className = `toast${error ? " error" : ""}`;
+  el.innerHTML = `<span>${esc(message)}</span>`;
+  if (action) {
+    const b = document.createElement("button");
+    b.className = "btn";
+    b.textContent = action.label;
+    b.addEventListener("click", () => { action.run(); dismiss(); });
+    el.append(b);
   }
+  $("toasts").append(el);
+  const dismiss = () => { el.classList.add("out"); setTimeout(() => el.remove(), 260); };
+  setTimeout(dismiss, error ? 6000 : 4500);
+}
 
-  function schedule() {
-    if (!queued) {
-      queued = true;
-      queueMicrotask(render);
-    }
+function confetti(fromEl) {
+  const box = fromEl.getBoundingClientRect();
+  const styles = getComputedStyle(document.documentElement);
+  const colors = ["--brand", "--brand-2", "--free", "--shared", "--live"].map((v) => styles.getPropertyValue(v));
+  for (let i = 0; i < 28; i++) {
+    const c = document.createElement("i");
+    c.className = "confetti";
+    c.style.left = `${box.left + box.width / 2}px`;
+    c.style.top = `${box.top + box.height / 2}px`;
+    c.style.background = colors[i % colors.length];
+    c.style.setProperty("--dx", `${(Math.random() - 0.5) * 420}px`);
+    c.style.setProperty("--dy", `${-80 - Math.random() * 260}px`);
+    c.style.setProperty("--r", `${Math.random() * 720 - 360}deg`);
+    document.body.append(c);
+    setTimeout(() => c.remove(), 1200);
   }
+}
 
-  el.addEventListener("click", (e) => {
-    const g = e.target.closest("[data-room]");
-    if (g) onClick(g.dataset.room);
-  });
-  render();
+// ---------- Rooms overview ----------
 
+function renderStats() {
+  const open = state.rooms.filter((r) => r.status !== "closed");
+  const free = open.filter((r) => r.status === "free").length;
+  const join = open.filter((r) => r.status === "partial" && r.seats_free > 0).length;
+  const seats = open.reduce((sum, r) => sum + r.seats_free, 0);
+  const live = state.rooms.find((r) => r.id === LIVE_ROOM);
+  $("stats").innerHTML = [
+    [free, "rooms free"],
+    [join, "open to join"],
+    [seats, "seats free"],
+    live ? [`${Math.round(live.noise_db)} dB`, `${LIVE_ROOM} ${live.live ? "· live" : ""}`] : null,
+  ].filter(Boolean).map(([v, l]) => `<div class="stat"><b>${esc(v)}</b><span>${esc(l)}</span></div>`).join("");
+}
+
+function roomMatches(r) {
+  if (state.filter === "free") return r.status === "free";
+  if (state.filter === "share") return r.status === "partial" && r.seats_free > 0;
+  if (state.filter === "quiet") return r.noise_class === "quiet" && r.status !== "closed";
+  return true;
+}
+
+function renderGrid() {
+  const grid = $("room-grid");
+  const rooms = state.rooms.filter(roomMatches);
+  grid.innerHTML = rooms.map((r, i) => {
+    const noisePct = Math.min(100, Math.max(5, ((r.noise_db - 30) / 60) * 100));
+    const peoplePct = Math.min(100, (r.people / r.capacity) * 100);
+    const live = r.live ? `<span class="live-badge">LIVE</span>` : "";
+    const foot = r.status === "ghost" && r.ghost_release_at
+      ? `<span class="ghost-note">👻 Nobody here · frees up at ${hm(r.ghost_release_at)}</span>`
+      : r.status === "closed" ? `<span class="muted small">Closed today</span>`
+      : `<span class="muted small">${r.seats_free} of ${r.capacity} seats free</span>`;
+    return `<button type="button" class="room-card ${esc(r.status)}" data-room="${esc(r.id)}" style="--i:${i}">
+      <div class="room-card-head">
+        <div><div class="rid">${esc(r.id)}</div><div class="rname">${esc(r.name)}</div></div>
+        <div style="display:grid;gap:6px;justify-items:end"><span class="pill ${esc(r.status)}">${STATUS[r.status] ?? esc(r.status)}</span>${live}</div>
+      </div>
+      <div class="facts">
+        <div class="fact"><span>Noise</span><b>${Math.round(r.noise_db)} dB</b> <span style="display:inline" class="small">${esc(r.noise_class)}</span>
+          <div class="bar"><i class="${esc(r.noise_class)}" style="width:${noisePct}%"></i></div></div>
+        <div class="fact"><span>People</span><b>${r.people}/${r.capacity}</b>
+          <div class="bar"><i style="width:${peoplePct}%"></i></div></div>
+      </div>
+      ${foot}
+      <span class="go"><svg class="icon"><use href="#i-arrow"/></svg></span>
+    </button>`;
+  }).join("") || `<div class="empty">No rooms match this filter right now.</div>`;
+  if (state.gridDrawn) for (const c of grid.children) c.style.animation = "none";
+  state.gridDrawn = true;
+}
+
+async function refreshRooms() {
+  try {
+    state.rooms = await api.rooms();
+    renderStats();
+    renderGrid();
+    for (const r of state.rooms) state.view?.setStatus(r.id, r);
+    $("updated").textContent = `Live · updated ${new Date().toLocaleTimeString("en-GB")}`;
+  } catch (err) {
+    if (!handleAuth(err)) $("updated").textContent = err.message;
+  }
+}
+
+async function createView() {
+  const el = $("building");
+  const data = (await api.building()) || layoutBuilding(state.rooms);
+  try {
+    const { createBuilding } = await import("./building3d.js");
+    state.view = createBuilding(el, data);
+  } catch {
+    state.view = createPlan(el, data);
+  }
+  state.view.setFloor?.(1);
+  state.view.onRoomClick((id) => openRoom(id));
+  for (const r of state.rooms) state.view.setStatus(r.id, r);
+}
+
+// ---------- My bookings ----------
+
+const upcoming = () => state.mine.filter((b) => b.status === "active" && b.end > nowKey())
+  .sort((a, b) => a.start.localeCompare(b.start));
+
+function usedHours(day, exceptId) {
+  return state.mine.filter((b) => b.status === "active" && b.start.startsWith(day) && b.id !== exceptId)
+    .reduce((sum, b) => sum + b.hours, 0);
+}
+
+async function refreshMine() {
+  try {
+    state.mine = await api.myBookings();
+  } catch (err) {
+    if (!handleAuth(err)) toast(err.message, { error: true });
+    return;
+  }
+  const count = $("mine-count");
+  const n = upcoming().length;
+  if (count.textContent !== String(n)) {
+    count.textContent = n;
+    count.classList.remove("bump");
+    void count.offsetWidth;
+    count.classList.add("bump");
+  }
+  if ($("mine-drawer").open) renderMine();
+}
+
+function bookingCard(b, { actions = true } = {}) {
+  const isNow = b.start <= nowKey() && nowKey() < b.end;
+  const mode = b.mode === "full" ? "🔒 Private" : "👥 Open to share";
+  const statusTag = b.status === "cancelled" ? `<span class="tag">Cancelled</span>`
+    : b.status === "released" ? `<span class="tag">Released (nobody came)</span>`
+    : isNow ? `<span class="tag now">Now</span>` : "";
+  const ghost = b.ghost_release_at
+    ? `<div class="ghost-alert">👻 Nobody detected. Released at ${hm(b.ghost_release_at)} (in ${minutesUntil(b.ghost_release_at)} min) unless someone shows up.</div>`
+    : "";
+  const left = DAY_LIMIT - usedHours(b.start.slice(0, 10));
+  const buttons = actions && b.status === "active" && b.end > nowKey() ? `<div class="booking-actions">
+      <button class="btn btn-sm" type="button" data-action="add" data-id="${b.id}" ${left < 0.5 ? "disabled title=\"4 h used on this day\"" : ""}>+ Add time</button>
+      <button class="btn btn-sm btn-danger" type="button" data-action="cancel" data-id="${b.id}">Cancel</button></div>` : "";
+  return `<article class="booking ${isNow && b.status === "active" ? "now" : ""}">
+    <div class="booking-top">
+      <div><div class="booking-time">${hm(b.start)}–${hm(b.end)}</div>
+        <div class="booking-room">${esc(b.room_id)} · ${esc(roomName(b.room_id))}</div></div>
+      ${statusTag}
+    </div>
+    <div class="booking-tags">
+      <span class="tag">${PURPOSE[b.purpose]?.emoji ?? ""} ${esc(purposeText(b))}</span>
+      <span class="tag">${mode}</span>
+      <span class="tag">${b.seats} ${b.seats === 1 ? "person" : "people"}</span>
+      <span class="tag">${hoursText(b.hours)}</span>
+    </div>
+    ${ghost}${buttons}
+  </article>`;
+}
+
+function renderMine() {
+  const body = $("mine-body");
+  const next = upcoming();
+  const days = [...new Set(next.map((b) => b.start.slice(0, 10)))];
+  const history = state.mine.filter((b) => !next.includes(b)).slice(0, 12);
+  const groups = days.map((day) => {
+    const used = usedHours(day);
+    return `<section class="day-group">
+      <div class="day-head"><b>${esc(dayLabel(day, true))}</b><span class="hours">${used} of ${DAY_LIMIT} h used</span></div>
+      <div class="bar"><i style="width:${(used / DAY_LIMIT) * 100}%"></i></div>
+      ${next.filter((b) => b.start.startsWith(day)).map((b) => bookingCard(b)).join("")}
+    </section>`;
+  }).join("");
+  body.innerHTML = `
+    ${groups || `<div class="drawer-empty"><div class="big">🗓️</div><p><b>No upcoming bookings</b></p><p>Find a room and grab a slot.</p></div>`}
+    <button class="btn btn-primary" type="button" data-action="find">Book a room</button>
+    ${history.length ? `<details class="history"><summary>Past and cancelled (${history.length})</summary>
+      ${history.map((b) => bookingCard(b, { actions: false })).join("")}</details>` : ""}`;
+}
+
+function openDrawer() {
+  renderMine();
+  $("mine-drawer").showModal();
+  refreshMine();
+}
+
+async function cancelBooking(btn) {
+  if (!btn.classList.contains("confirm")) {
+    btn.classList.add("confirm");
+    btn.textContent = "Sure? Tap again";
+    setTimeout(() => { if (btn.isConnected) { btn.classList.remove("confirm"); btn.textContent = "Cancel"; } }, 3500);
+    return;
+  }
+  btn.disabled = true;
+  try {
+    await api.cancel(Number(btn.dataset.id));
+    toast("Booking cancelled");
+    await Promise.all([refreshMine(), refreshRooms()]);
+    if (state.sheet) loadSheetData();
+  } catch (err) {
+    if (!handleAuth(err)) toast(err.message, { error: true });
+    btn.disabled = false;
+  }
+}
+
+// ---------- Booking sheet ----------
+
+function newSheet(id, opts = {}) {
   return {
-    setStatus(id, s) { statuses[id] = s; schedule(); },
-    focusRoom(id) {
-      if (!building.rooms.some((r) => r.id === id)) return false;
-      focused = id;
-      schedule();
-      return true;
-    },
-    showAll() { focused = null; schedule(); },
-    setFloor(n) { floor = n; schedule(); },
-    onRoomClick(cb) { onClick = cb; },
+    roomId: id, room: null, date: opts.date || dateKey(new Date()), slots: null,
+    start: null, hours: opts.hours || 1, wantTime: opts.time || null,
+    mode: opts.mode || null, seats: opts.seats || 1, purpose: opts.purpose || null, custom: opts.custom || "",
+    error: null, suggestions: [], busy: false,
   };
 }
 
-async function createView(el, building) {
+async function openRoom(id, opts) {
+  closeSuggestions();
+  state.view?.focusRoom(id);
+  state.sheet = newSheet(id, opts);
+  const dlg = $("room-dialog");
+  dlg.innerHTML = `
+    <div class="sheet-head" id="sh-head"><div class="skeleton" style="min-height:60px;width:260px"></div></div>
+    <div class="sheet-body">
+      <div class="sheet-col">
+        <div class="block" id="sh-now"></div>
+        <div class="block"><div class="block-title"><h3>Pick a day</h3></div><div class="dates" id="sh-dates"></div></div>
+        <div class="block">
+          <div class="block-title"><h3>Pick a time</h3><span class="muted small">Tap a start, then an end</span></div>
+          <div class="slots" id="sh-slots"><div class="skeleton" style="grid-column:1/-1;min-height:200px"></div></div>
+          <div class="slot-legend">
+            <span><i style="background:var(--free)"></i>Free</span>
+            <span><i style="background:var(--shared)"></i>Shared, seats left</span>
+            <span><i style="background:var(--full)"></i>Full</span>
+            <span><i style="background:var(--brand)"></i>Your booking</span>
+          </div>
+        </div>
+      </div>
+      <div class="sheet-col" id="sh-form"></div>
+    </div>`;
+  if (!dlg.open) dlg.showModal();
+  renderDates();
+  await loadSheetData();
+}
+
+async function loadSheetData() {
+  const sh = state.sheet;
+  if (!sh) return;
   try {
-    const { createBuilding } = await import("./building3d.js");
-    return createBuilding(el, building);
-  } catch {
-    return createPlaceholder(el, building);
-  }
-}
-
-// ---------- Rendering ----------
-
-function renderSource(source, buildingMock) {
-  const badge = $("source-badge");
-  badge.className = `source-badge ${source}`;
-  badge.textContent = source === "api" ? "Live API" : "Mock data";
-  badge.title = source === "api"
-    ? `Room data from the backend${buildingMock ? "; building layout is mock data" : ""}`
-    : "The backend is not reachable, so the UI shows made-up demo data";
-}
-
-function renderStats() {
-  const count = (s) => state.rooms.filter((r) => r.status === s).length;
-  const live = roomById(LIVE_ROOM);
-  const liveValue = live
-    ? `${Math.round(live.noise_db)} <small>dB · ${esc(live.noise_class)}</small>`
-    : "–";
-  $("stats").innerHTML = [
-    ["Free rooms", `${count("free")} <small>of ${state.rooms.length}</small>`],
-    ["Partly booked", count("partial")],
-    ["Fully booked", count("full")],
-    [`${LIVE_ROOM} noise ${live ? liveBadge(live) : ""}`, liveValue],
-  ].map(([label, value]) => `<div class="card stat"><div class="stat-label">${label}</div>
-    <div class="stat-value">${value}</div></div>`).join("");
-}
-
-function renderList() {
-  const rooms = state.rooms.filter((r) => state.floor === null || r.floor === state.floor);
-  $("room-list").innerHTML = rooms.map((r) => `
-    <button type="button" class="room-row ${r.id === state.selected ? "selected" : ""}" data-room="${esc(r.id)}">
-      <span class="room-id">${esc(r.id)}</span>
-      <span class="room-name">${esc(r.name)} ${liveBadge(r)}</span>
-      <span><span class="pill ${esc(r.status)}">${STATUS_LABEL[r.status] ?? esc(r.status)}</span></span>
-      <span class="room-noise">${Math.round(r.noise_db)} dB · ${esc(r.noise_class)}</span>
-      <span class="room-people">${r.people}/${r.capacity} people</span>
-    </button>`).join("") || `<p class="muted">No rooms on this floor.</p>`;
-}
-
-function renderPanel() {
-  const panel = $("room-panel");
-  const room = state.detail?.id === state.selected ? state.detail : roomById(state.selected);
-  if (!room) {
-    panel.innerHTML = `<div class="panel-empty">
-      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 21V5a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v16M16 9h3a2 2 0 0 1 2 2v10M3 21h18M8 7h3M8 11h3M8 15h3"/></svg>
-      <p><strong>No room selected</strong></p>
-      <p>Search for a room or click one in the building to see its noise, people and bookings.</p></div>`;
+    const [room, avail] = await Promise.all([api.room(sh.roomId), api.availability(sh.roomId, sh.date)]);
+    if (state.sheet !== sh) return;
+    sh.room = room;
+    sh.slots = avail.slots;
+  } catch (err) {
+    if (!handleAuth(err)) toast(err.message, { error: true });
     return;
   }
-  const noisePct = Math.min(100, Math.max(4, ((room.noise_db - 30) / 60) * 100));
-  const peoplePct = Math.min(100, (room.people / room.capacity) * 100);
-  const now = Date.now();
-  const today = (room.bookings_today ?? []).slice().sort((a, b) => Date.parse(a.start) - Date.parse(b.start));
-  const bookings = today.length
-    ? `<ul class="bookings">${today.map((b) => {
-        const active = Date.parse(b.start) <= now && now < Date.parse(b.end);
-        const seats = b.mode === "full" ? "Whole room" : `${b.seats} seats`;
-        return `<li class="${active ? "now" : ""}"><span class="time">${time(b.start)}–${time(b.end)}</span>
-          <span>${esc(purpose(b))} · ${seats}</span></li>`;
-      }).join("")}</ul>`
-    : `<p class="muted">${room.bookings_today ? "No bookings today." : "Loading bookings…"}</p>`;
+  if (sh.wantTime) {
+    const i = sh.slots.findIndex((s) => s.start === sh.wantTime);
+    sh.wantTime = null;
+    if (i >= 0 && selectable(i)) {
+      const keep = sh.hours;
+      sh.start = i;
+      sh.hours = Math.max(0.5, Math.min(keep, maxHours(i)));
+    }
+  }
+  fixSelection();
+  renderSheetHead();
+  renderSlots();
+  if (!$("sh-form")?.contains(document.activeElement) || document.activeElement?.tagName !== "INPUT") renderForm();
+}
 
-  panel.innerHTML = `
-    <div class="panel-head">
-      <div>
-        <div class="panel-title">${esc(room.id)}</div>
-        <div class="panel-sub">${esc(room.name)} · Floor ${room.floor} · ${room.capacity} seats</div>
+function closeSheet() {
+  const dlg = $("room-dialog");
+  if (!dlg.open) return;
+  dlg.classList.add("closing");
+  setTimeout(() => {
+    dlg.classList.remove("closing");
+    dlg.close();
+    state.sheet = null;
+    state.view?.showAll();
+  }, 190);
+}
+
+// Slot rules (mirror app/booking.py so the form only offers what the backend accepts).
+function busySlot(i) {
+  const sh = state.sheet;
+  const s = sh.slots[i];
+  const t0 = `${sh.date}T${s.start}`;
+  const t1 = `${sh.date}T${s.end}`;
+  return state.mine.find((b) => b.status === "active" && b.start < t1 && b.end > t0) || null;
+}
+
+function selectable(i) {
+  const s = state.sheet.slots[i];
+  return !!s && (s.status === "free" || s.status === "partial") && !busySlot(i);
+}
+
+function dayLeft() {
+  return DAY_LIMIT - usedHours(state.sheet.date);
+}
+
+function maxHours(i) {
+  let n = 0;
+  while (selectable(i + n) && (n + 1) / 2 <= DAY_LIMIT) n++;
+  return Math.min(n / 2, dayLeft());
+}
+
+function range() {
+  const sh = state.sheet;
+  if (sh.start === null) return [];
+  return sh.slots.slice(sh.start, sh.start + sh.hours * 2);
+}
+
+function rules() {
+  const sh = state.sheet;
+  const r = range();
+  const cap = sh.room?.capacity ?? 1;
+  const canFull = r.length > 0 && r.every((s) => s.status === "free");
+  const shareSeats = r.length ? Math.min(...r.map((s) => s.seats_free)) : cap;
+  const noises = new Set(r.map((s) => s.noise).filter(Boolean));
+  const maxSeats = sh.mode === "full" ? cap : shareSeats;
+  return { canFull, maxSeats, noises };
+}
+
+function purposeBlocked(p) {
+  const sh = state.sheet;
+  const { canFull, noises } = rules();
+  if (p.id === "event" && (!canFull || sh.mode === "partial")) return "Events need the whole room";
+  if (sh.mode === "partial" && p.noise === "quiet" && noises.has("loud")) return "Someone booked a loud activity then";
+  if (sh.mode === "partial" && p.noise === "loud" && noises.has("quiet")) return "Someone booked quiet study then";
+  return null;
+}
+
+function fixSelection() {
+  const sh = state.sheet;
+  if (sh.start !== null && (!selectable(sh.start) || maxHours(sh.start) < 0.5)) sh.start = null;
+  if (sh.start !== null) sh.hours = Math.max(0.5, Math.min(sh.hours, maxHours(sh.start)));
+  const { canFull, maxSeats } = rules();
+  if (sh.start !== null && (!sh.mode || (sh.mode === "full" && !canFull))) sh.mode = canFull ? "full" : "partial";
+  sh.seats = Math.max(1, Math.min(sh.seats, maxSeats || 1));
+  if (sh.purpose && purposeBlocked(PURPOSE[sh.purpose])) sh.purpose = null;
+}
+
+function renderSheetHead() {
+  const r = state.sheet.room;
+  const live = r.live ? `<span class="live-badge">LIVE</span>` : "";
+  $("sh-head").innerHTML = `
+    <div>
+      <div class="sheet-title"><h2 id="room-title">${esc(r.id)}</h2><span class="muted">${esc(r.name)}</span></div>
+      <div class="sheet-meta">
+        <span class="pill ${esc(r.status)}">${STATUS[r.status] ?? esc(r.status)}</span>${live}
+        <span class="meta"><svg class="icon"><use href="#i-users"/></svg>${r.people} here · ${r.capacity} max</span>
+        <span class="meta"><svg class="icon"><use href="#i-sound"/></svg>${r.noise_db.toFixed(0)} dB · ${esc(r.noise_class)}</span>
       </div>
     </div>
-    <div class="panel-badges"><span class="pill ${esc(room.status)}">${STATUS_LABEL[room.status] ?? esc(room.status)}</span>${liveBadge(room)}</div>
-    <section class="metrics">
-      <div>
-        <div class="metric"><span class="muted">Noise right now</span>
-          <span class="metric-class ${esc(room.noise_class)}">${esc(room.noise_class)}</span></div>
-        <div class="metric-value">${room.noise_db.toFixed(1)} dB</div>
-        <div class="meter"><span class="${esc(room.noise_class)}" style="width:${noisePct}%"></span></div>
-        <div class="scale"><span>quiet &lt; 40</span><span>moderate</span><span>loud &gt; 60</span></div>
-      </div>
-      <div>
-        <div class="metric"><span class="muted">People (estimate)</span>
-          <span class="muted">${room.live ? "from the board" : "simulated"}</span></div>
-        <div class="metric-value">${room.people} <small class="muted">/ ${room.capacity}</small></div>
-        <div class="meter"><span class="people" style="width:${peoplePct}%"></span></div>
-      </div>
-    </section>
-    <section>
-      <h3>Today's bookings</h3>
-      ${bookings}
-    </section>
-    <button class="btn" type="button" disabled title="Comes in the next step">Book this room</button>`;
+    <button class="icon-btn" type="button" data-action="close" aria-label="Close"><svg class="icon"><use href="#i-close"/></svg></button>`;
+  const now = r.bookings_now.length
+    ? r.bookings_now.map((b) => `<div class="now-item"><span>${b.shareable ? "👥" : "🔒"} ${b.seats} ${b.seats === 1 ? "person" : "people"} · ${esc(PURPOSE[b.purpose]?.label ?? b.purpose)}</span>
+        <span class="muted">${b.shareable ? "open to join · " : "private · "}until ${hm(b.end)}</span></div>`).join("")
+    : `<div class="now-item"><span>✨ Nobody has booked it right now</span></div>`;
+  const ghost = r.status === "ghost" && r.ghost_release_at
+    ? `<div class="ghost-alert" style="margin-top:8px">👻 Booked, but nobody is here. Frees up at ${hm(r.ghost_release_at)} unless someone shows up.</div>` : "";
+  $("sh-now").innerHTML = `<div class="block-title"><h3>Right now</h3></div><div class="now-list">${now}</div>${ghost}`;
 }
 
-function renderAll() {
-  renderStats();
-  renderList();
-  renderPanel();
-  for (const r of state.rooms) state.view.setStatus(r.id, { status: r.status, noise_class: r.noise_class, live: r.live });
-  $("updated").textContent = state.error
-    ? `Update failed: ${state.error}`
-    : `Updated ${new Date().toLocaleTimeString([], { hourCycle: "h23" })} · every ${POLL_MS / 1000} s`;
-}
-
-// ---------- Actions ----------
-
-async function refresh() {
-  try {
-    state.rooms = await api.getRooms();
-    if (state.selected) state.detail = await api.getRoom(state.selected);
-    state.error = null;
-  } catch (err) {
-    state.error = err.message;
-  }
-  renderAll();
-}
-
-function setFloor(n) {
-  state.floor = n;
-  for (const b of $("floor-filter").querySelectorAll("button")) {
-    b.classList.toggle("active", b.dataset.floor === (n === null ? "" : String(n)));
-  }
-  state.view.setFloor(n);
-  renderList();
-}
-
-async function selectRoom(id) {
-  const room = state.building.rooms.find((r) => r.id === id);
-  if (!room) return;
-  state.selected = id;
-  state.detail = null;
-  if (state.floor !== null && state.floor !== room.floor) setFloor(room.floor);
-  state.view.focusRoom(id);
-  $("search-input").value = id;
-  $("search-msg").textContent = "";
-  renderList();
-  renderPanel();
-  try {
-    const detail = await api.getRoom(id);
-    if (state.selected === id) state.detail = detail;
-  } catch (err) {
-    state.error = err.message;
-  }
-  if (state.selected === id) renderPanel();
-}
-
-function clearSelection() {
-  state.selected = null;
-  state.detail = null;
-  state.view.showAll();
-  $("search-input").value = "";
-  $("search-msg").textContent = "";
-  renderList();
-  renderPanel();
-}
-
-function findRoom(query) {
-  const norm = (s) => s.toLowerCase().replace(/\s+/g, "");
-  const q = norm(query);
-  const rooms = state.building.rooms;
-  return rooms.find((r) => norm(r.id) === q)
-    || rooms.find((r) => norm(r.id) === `v.${q}`)
-    || rooms.find((r) => norm(r.id).includes(q))
-    || rooms.find((r) => norm(r.name).includes(q));
-}
-
-function wireEvents() {
-  $("search-form").addEventListener("submit", (e) => {
-    e.preventDefault();
-    const query = $("search-input").value.trim();
-    if (!query) return clearSelection();
-    const room = findRoom(query);
-    if (room) selectRoom(room.id);
-    else $("search-msg").textContent = `No room matches “${query}”.`;
+function renderDates() {
+  const today = new Date();
+  const days = Array.from({ length: HORIZON_DAYS + 1 }, (_, i) => {
+    const d = new Date(today.getFullYear(), today.getMonth(), today.getDate() + i);
+    return { key: dateKey(d), top: i === 0 ? "Today" : d.toLocaleDateString("en-GB", { weekday: "short" }), day: d.getDate() };
   });
-  $("search-input").addEventListener("keydown", (e) => {
-    if (e.key === "Escape") clearSelection();
+  $("sh-dates").innerHTML = days.map((d) => `<button type="button" class="date ${d.key === state.sheet.date ? "active" : ""}" data-date="${d.key}">
+    <small>${d.top}</small><b>${d.day}</b></button>`).join("");
+}
+
+function renderSlots(popIndex) {
+  const sh = state.sheet;
+  const end = sh.start === null ? -1 : sh.start + sh.hours * 2;
+  const past = sh.slots.filter((s) => s.status === "past").length;
+  const note = past === sh.slots.length
+    ? `<p class="muted small" style="grid-column:1/-1">This day is over. Pick another one.</p>`
+    : past ? `<p class="muted small" style="grid-column:1/-1;margin:0 0 4px">Earlier slots today are over.</p>` : "";
+  $("sh-slots").innerHTML = note + sh.slots.map((s, i) => {
+    if (s.status === "past") return "";
+    const busy = busySlot(i);
+    const inRange = i >= sh.start && i < end;
+    let cls = s.status;
+    let note = s.status === "free" ? "free" : s.status === "partial" ? `${s.seats_free} left` : s.status;
+    if (busy) {
+      cls = "mine";
+      note = busy.room_id === sh.roomId ? "yours" : "booked";
+    }
+    return `<button type="button" class="slot ${cls} ${inRange ? "in-range" : ""} ${i === sh.start ? "start" : ""} ${i === popIndex ? "pop" : ""}"
+      data-slot="${i}" ${selectable(i) ? "" : "disabled"} title="${s.start}–${s.end}">${s.start}<small>${esc(note)}</small></button>`;
+  }).join("");
+}
+
+function renderForm() {
+  const sh = state.sheet;
+  const r = range();
+  const { canFull, maxSeats } = rules();
+  const left = dayLeft();
+  const when = r.length
+    ? `<div class="when set"><b>${r[0].start} – ${r[r.length - 1].end}</b><span class="muted small">${esc(dayLabel(sh.date, true))} · ${hoursText(sh.hours)}</span></div>`
+    : `<div class="when"><b>Pick a time</b><span class="muted small">${left >= 0.5 ? "Tap a free time slot to start" : "You've used your 4 h on this day. Try another day."}</span></div>`;
+  const durations = [0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4].map((h) => `<button type="button" class="chip ${sh.start !== null && h === sh.hours ? "active" : ""}"
+    data-hours="${h}" ${sh.start === null || h > maxHours(sh.start) ? "disabled" : ""}>${h === 0.5 ? "30m" : `${h}h`}</button>`).join("");
+  const thisHours = r.length ? sh.hours : 0;
+  const purposes = PURPOSES.map((p) => {
+    const blocked = purposeBlocked(p);
+    return `<button type="button" class="purpose ${sh.purpose === p.id ? "active" : ""}" data-purpose="${p.id}"
+      ${blocked ? `disabled title="${esc(blocked)}"` : ""}><span class="emoji">${p.emoji}</span>${p.label}</button>`;
+  }).join("");
+  const seatHint = sh.mode === "full" ? `Up to ${maxSeats}, the room's limit`
+    : `Up to ${maxSeats} · seats still free at that time`;
+  const alert = sh.error
+    ? `<div class="alert" role="alert">${esc(sh.error)}${sh.suggestions.length ? `<div class="suggest"><span class="small" style="width:100%">Try one of these instead:</span>
+        ${sh.suggestions.map((id) => `<button type="button" class="btn btn-sm" data-suggest="${esc(id)}">${esc(id)} <span class="muted">${esc(roomName(id))}</span></button>`).join("")}</div>` : ""}</div>`
+    : "";
+
+  $("sh-form").innerHTML = `
+    <div class="block"><span class="field-label">When</span>${when}</div>
+    <div class="block"><span class="field-label">How long</span><div class="durations">${durations}</div></div>
+    <div class="block day-limit">
+      <div class="row"><span class="muted">Your hours on ${esc(dayLabel(sh.date, true))}</span><b>${usedHours(sh.date) + thisHours} / ${DAY_LIMIT} h</b></div>
+      <div class="bar"><i style="width:${((usedHours(sh.date) + thisHours) / DAY_LIMIT) * 100}%"></i></div>
+    </div>
+    <div class="block"><span class="field-label">Who can join?</span>
+      <div class="modes">
+        <button type="button" class="mode ${sh.mode === "full" ? "active" : ""}" data-mode="full" ${r.length && !canFull ? "disabled" : ""}>
+          <span class="emoji">🔒</span><b>Private room</b><span>Only you and your group.</span></button>
+        <button type="button" class="mode ${sh.mode === "partial" ? "active" : ""}" data-mode="partial">
+          <span class="emoji">👥</span><b>Open to share</b><span>Others can join until it's full.</span></button>
+      </div>
+      ${r.length && !canFull ? `<p class="hint">Someone already booked part of this time, so you can only share it.</p>` : ""}
+    </div>
+    <div class="block people-row">
+      <div><span class="field-label" style="margin:0">How many people?</span><span class="hint" style="margin:0">${esc(seatHint)}</span></div>
+      <div class="stepper"><button type="button" data-seats="-1" ${sh.seats <= 1 ? "disabled" : ""} aria-label="Fewer">−</button>
+        <output>${sh.seats}</output><button type="button" data-seats="1" ${sh.seats >= maxSeats ? "disabled" : ""} aria-label="More">+</button></div>
+    </div>
+    <div class="block"><span class="field-label">What for?</span><div class="purposes">${purposes}</div>
+      ${sh.purpose === "custom" ? `<input class="text-input" id="custom" style="margin-top:8px" maxlength="80" placeholder="Describe it, e.g. Thesis writing" value="${esc(sh.custom)}">` : ""}
+    </div>
+    ${alert ? `<div class="block">${alert}</div>` : ""}
+    <div class="block"><button type="button" class="btn btn-primary btn-lg" data-action="book" ${canBook() ? "" : "disabled"}>
+      ${sh.busy ? "Booking…" : r.length ? `Book ${r[0].start}–${r[r.length - 1].end}` : "Book"}</button></div>`;
+}
+
+function canBook() {
+  const sh = state.sheet;
+  return !sh.busy && sh.start !== null && sh.purpose && (sh.purpose !== "custom" || sh.custom.trim()) && sh.mode;
+}
+
+function update(popIndex) {
+  fixSelection();
+  renderSlots(popIndex);
+  renderForm();
+}
+
+function onSlot(i) {
+  const sh = state.sheet;
+  sh.error = null;
+  if (dayLeft() < 0.5) {
+    sh.error = `You've already booked ${DAY_LIMIT} h on ${dayLabel(sh.date)}. Pick another day.`;
+    return update();
+  }
+  const end = sh.start === null ? -1 : sh.start + maxHours(sh.start) * 2;
+  if (sh.start === null || i < sh.start || i >= end) {
+    sh.start = i;
+    sh.hours = Math.min(1, maxHours(i));
+  } else if (i === sh.start) {
+    sh.start = null;
+  } else {
+    sh.hours = (i - sh.start + 1) / 2;
+  }
+  update(i);
+}
+
+async function submitBooking(btn) {
+  const sh = state.sheet;
+  const r = range();
+  sh.busy = true;
+  sh.error = null;
+  renderForm();
+  try {
+    const b = await api.book({
+      room_id: sh.roomId, start: `${sh.date}T${r[0].start}`, hours: sh.hours, mode: sh.mode, seats: sh.seats,
+      purpose: sh.purpose, custom_purpose: sh.purpose === "custom" ? sh.custom.trim() : null,
+    });
+    confetti(btn);
+    toast(`Booked ${b.room_id}, ${dayLabel(sh.date)} ${hm(b.start)}–${hm(b.end)} 🎉`, { action: { label: "My bookings", run: openDrawer } });
+    closeSheet();
+    refreshMine();
+    refreshRooms();
+  } catch (err) {
+    if (handleAuth(err)) return;
+    sh.busy = false;
+    sh.error = err.message;
+    sh.suggestions = err.status === 409 ? err.suggestions : [];
+    await refreshMine();
+    await loadSheetData();
+  }
+}
+
+function wireSheet() {
+  const dlg = $("room-dialog");
+  dlg.addEventListener("cancel", (e) => { e.preventDefault(); closeSheet(); });
+  dlg.addEventListener("click", (e) => {
+    if (e.target === dlg) return closeSheet();
+    const sh = state.sheet;
+    if (!sh) return;
+    const t = e.target.closest("button");
+    if (!t || t.disabled) return;
+    if (t.dataset.action === "close") return closeSheet();
+    if (t.dataset.date) {
+      sh.date = t.dataset.date;
+      sh.start = null;
+      sh.error = null;
+      renderDates();
+      t.scrollIntoView({ block: "nearest", inline: "nearest", behavior: "smooth" });
+      return loadSheetData();
+    }
+    if (t.dataset.slot) return onSlot(Number(t.dataset.slot));
+    if (!sh.slots) return;
+    if (t.dataset.hours) { sh.hours = Number(t.dataset.hours); return update(sh.start); }
+    if (t.dataset.mode) {
+      sh.mode = t.dataset.mode;
+      return update();
+    }
+    if (t.dataset.seats) { sh.seats += Number(t.dataset.seats); return update(); }
+    if (t.dataset.purpose) {
+      sh.purpose = t.dataset.purpose;
+      if (sh.purpose === "event") sh.mode = "full";
+      update();
+      if (sh.purpose === "custom") $("custom")?.focus();
+      return;
+    }
+    if (t.dataset.suggest) {
+      return openRoom(t.dataset.suggest, {
+        date: sh.date, time: range()[0]?.start, hours: sh.hours, mode: sh.mode, seats: sh.seats, purpose: sh.purpose, custom: sh.custom,
+      });
+    }
+    if (t.dataset.action === "book") return submitBooking(t);
+  });
+  dlg.addEventListener("input", (e) => {
+    if (e.target.id !== "custom" || !state.sheet) return;
+    state.sheet.custom = e.target.value;
+    const btn = dlg.querySelector('[data-action="book"]');
+    if (btn) btn.disabled = !canBook();
+  });
+}
+
+// ---------- Search with suggestions ----------
+
+const search = { results: [], active: -1, seq: 0, timer: null };
+
+function highlight(text, q) {
+  const i = text.toLowerCase().indexOf(q.toLowerCase());
+  if (!q || i < 0) return esc(text);
+  return `${esc(text.slice(0, i))}<mark>${esc(text.slice(i, i + q.length))}</mark>${esc(text.slice(i + q.length))}`;
+}
+
+function renderSuggestions(q) {
+  const list = $("search-list");
+  list.innerHTML = search.results.length
+    ? search.results.map((r, i) => `<li role="option" id="sug-${i}" data-room="${esc(r.id)}" aria-selected="${i === search.active}">
+        <span class="sug-id">${highlight(r.id, q)}</span><span class="sug-name">${highlight(r.name, q)}</span>
+        <span class="pill ${esc(r.status)}">${r.status === "closed" ? "Closed" : `${r.seats_free} free`}</span></li>`).join("")
+    : `<li class="sug-empty">No room matches “${esc(q)}”</li>`;
+  list.classList.remove("hidden");
+  $("search-input").setAttribute("aria-expanded", "true");
+  $("search-input").setAttribute("aria-activedescendant", search.active >= 0 ? `sug-${search.active}` : "");
+}
+
+function closeSuggestions() {
+  $("search-list").classList.add("hidden");
+  $("search-input").setAttribute("aria-expanded", "false");
+  search.active = -1;
+}
+
+function pick(id) {
+  $("search-input").value = id;
+  closeSuggestions();
+  $("search-input").blur();
+  openRoom(id);
+}
+
+function wireSearch() {
+  const input = $("search-input");
+  input.addEventListener("input", () => {
+    clearTimeout(search.timer);
+    const q = input.value.trim();
+    if (!q) return closeSuggestions();
+    search.timer = setTimeout(async () => {
+      const seq = ++search.seq;
+      try {
+        const results = await api.search(q);
+        if (seq !== search.seq) return;
+        search.results = results;
+        search.active = results.length ? 0 : -1;
+        renderSuggestions(q);
+      } catch (err) {
+        handleAuth(err);
+      }
+    }, 150);
+  });
+  input.addEventListener("keydown", (e) => {
+    const n = search.results.length;
+    const open = !$("search-list").classList.contains("hidden");
+    if (e.key === "ArrowDown" && open && n) { e.preventDefault(); search.active = (search.active + 1) % n; renderSuggestions(input.value.trim()); }
+    else if (e.key === "ArrowUp" && open && n) { e.preventDefault(); search.active = (search.active - 1 + n) % n; renderSuggestions(input.value.trim()); }
+    else if (e.key === "Enter") {
+      e.preventDefault();
+      if (open && search.results[search.active]) pick(search.results[search.active].id);
+      else if (input.value.trim()) api.search(input.value.trim(), 1).then((r) => (r[0] ? pick(r[0].id) : toast("No room found", { error: true })));
+    } else if (e.key === "Escape") { closeSuggestions(); input.blur(); }
+  });
+  input.addEventListener("focus", () => { if (input.value.trim() && search.results.length) renderSuggestions(input.value.trim()); });
+  input.addEventListener("blur", () => setTimeout(closeSuggestions, 120));
+  $("search-list").addEventListener("mousedown", (e) => {
+    const li = e.target.closest("[data-room]");
+    if (li) { e.preventDefault(); pick(li.dataset.room); }
   });
   document.addEventListener("keydown", (e) => {
-    if (e.key === "/" && document.activeElement?.tagName !== "INPUT") {
+    if (e.key === "/" && !["INPUT", "TEXTAREA"].includes(document.activeElement?.tagName) && !document.querySelector("dialog[open]")) {
       e.preventDefault();
-      $("search-input").focus();
+      input.focus();
     }
   });
-  $("floor-filter").addEventListener("click", (e) => {
-    const b = e.target.closest("button");
-    if (b) setFloor(b.dataset.floor === "" ? null : Number(b.dataset.floor));
+}
+
+// ---------- Profile menu and theme ----------
+
+function save(key, value) {
+  try { localStorage.setItem(key, value); } catch { /* private mode: the choice just isn't remembered */ }
+}
+
+function syncThemeButtons() {
+  const root = document.documentElement.dataset;
+  for (const b of document.querySelectorAll("[data-theme]")) b.classList.toggle("active", b.dataset.theme === (root.theme || "violet"));
+  for (const b of $("modes").querySelectorAll("button")) b.classList.toggle("active", b.dataset.mode === (root.mode || "auto"));
+}
+
+function wireMenu() {
+  const menu = $("menu");
+  const avatar = $("avatar");
+  const toggle = (open) => { menu.classList.toggle("hidden", !open); avatar.setAttribute("aria-expanded", String(open)); };
+  avatar.addEventListener("click", (e) => { e.stopPropagation(); toggle(menu.classList.contains("hidden")); });
+  document.addEventListener("click", (e) => { if (!menu.contains(e.target)) toggle(false); });
+  $("swatches").addEventListener("click", (e) => {
+    const b = e.target.closest("[data-theme]");
+    if (!b) return;
+    document.documentElement.dataset.theme = b.dataset.theme;
+    save("roomv-theme", b.dataset.theme);
+    syncThemeButtons();
   });
-  $("room-list").addEventListener("click", (e) => {
-    const row = e.target.closest("[data-room]");
-    if (row) selectRoom(row.dataset.room);
+  $("modes").addEventListener("click", (e) => {
+    const b = e.target.closest("[data-mode]");
+    if (!b) return;
+    document.documentElement.dataset.mode = b.dataset.mode;
+    save("roomv-mode", b.dataset.mode);
+    syncThemeButtons();
+  });
+  $("logout").addEventListener("click", async () => {
+    try { await api.logout(); } finally { location.replace("login.html"); }
+  });
+  syncThemeButtons();
+}
+
+// ---------- Start ----------
+
+function wirePage() {
+  $("room-grid").addEventListener("click", (e) => {
+    const card = e.target.closest("[data-room]");
+    if (card) openRoom(card.dataset.room);
+  });
+  $("filters").addEventListener("click", (e) => {
+    const b = e.target.closest("[data-filter]");
+    if (!b) return;
+    state.filter = b.dataset.filter;
+    for (const c of $("filters").children) c.classList.toggle("active", c === b);
+    state.gridDrawn = false;
+    renderGrid();
+  });
+  $("mine-btn").addEventListener("click", openDrawer);
+  const drawer = $("mine-drawer");
+  const closeDrawer = () => {
+    drawer.classList.add("closing");
+    setTimeout(() => { drawer.classList.remove("closing"); drawer.close(); }, 200);
+  };
+  drawer.addEventListener("cancel", (e) => { e.preventDefault(); closeDrawer(); });
+  drawer.addEventListener("click", (e) => {
+    if (e.target === drawer || e.target.closest("[data-close]")) return closeDrawer();
+    const t = e.target.closest("button[data-action]");
+    if (!t || t.disabled) return;
+    if (t.dataset.action === "cancel") return cancelBooking(t);
+    if (t.dataset.action === "find") { closeDrawer(); setTimeout(() => $("search-input").focus(), 220); return; }
+    if (t.dataset.action === "add") {
+      const b = state.mine.find((x) => x.id === Number(t.dataset.id));
+      closeDrawer();
+      openRoom(b.room_id, { date: b.start.slice(0, 10), time: hm(b.end), hours: 1, mode: b.mode, seats: b.seats, purpose: b.purpose, custom: b.custom_purpose || "" });
+    }
   });
 }
 
 async function main() {
-  const source = await api.detectSource();
-  const { data: building, mock: buildingMock } = await api.getBuilding();
-  state.building = building;
-  renderSource(source, buildingMock);
-  $("room-ids").innerHTML = building.rooms
-    .map((r) => `<option value="${esc(r.id)}">${esc(r.name)}, floor ${r.floor}</option>`).join("");
-  state.view = await createView($("building"), building);
-  state.view.onRoomClick(selectRoom);
-  wireEvents();
-  await refresh();
-  setInterval(refresh, POLL_MS);
+  try {
+    state.user = await api.me();
+  } catch (err) {
+    if (!handleAuth(err)) toast(err.message, { error: true });
+    return;
+  }
+  $("avatar").textContent = (state.user.name || state.user.email).trim()[0].toUpperCase();
+  $("user-name").textContent = state.user.name;
+  $("user-email").textContent = state.user.email;
+  wireMenu();
+  wireSearch();
+  wireSheet();
+  wirePage();
+  await Promise.all([refreshRooms(), refreshMine()]);
+  await createView();
+  setInterval(async () => {
+    await Promise.all([refreshRooms(), refreshMine()]);
+    if (state.sheet && !state.sheet.busy) loadSheetData();
+  }, POLL_MS);
 }
 
 main();
