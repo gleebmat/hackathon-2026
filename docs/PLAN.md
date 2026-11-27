@@ -10,8 +10,8 @@ N, Z, L and S), and books it.
   email and a password of 4+ characters. The repo is public, so never put real emails in it.
 - **Rooms:** every room the map marks `bookable` (71 seminar rooms, lecture halls and the atrium, all floors).
 - **The board room is `Z.1.04`** (seminar room, 51 seats, in the central building Z). It is the only room with
-  real sensor data from the PSOC Edge E84; it shows a LIVE badge while the board is sending. Every other room is
-  simulated. Change it with `BOARD_ROOM` in the backend and the 4th argument of `bridge.py`.
+  real sensor data from the XIAO ESP32S3 Sense board (simulated in Velxio); it shows a LIVE badge while the board is sending. Every other room is
+  simulated. Change it with `BOARD_ROOM` in the backend and `ROOM_ID` in `firmware/xiao_sense/sketch.ino`.
 - **Booking options:**
   - Time: 30-minute slots from 08:00 to 22:00, 0.5–4 h per booking, and **at most 4 h per student per day**.
     Picking a room shows every slot of the day as free, shared, full, closed or past.
@@ -27,7 +27,7 @@ N, Z, L and S), and books it.
   all work; the building letter may be left out), like campusplan.aau.at.
 - **Noise detector for partial bookings:** every room shows a live noise level, so someone who wants silence can
   choose another room.
-  - **Z.1.04 is measured by the PSOC Edge E84 microphone** (our laptop mic, played into the Live Lab).
+  - **Z.1.04 is measured by the board's PDM microphone** (your real microphone in Velxio).
   - The other rooms are simulated by the backend: random but the same for everyone, changing every minute.
 - **People** per room. Z.1.04 gets presence (0 or 1 person) from the board's person detection; a real count comes
   later from Arshia's model. The other rooms are simulated from their bookings, plus a few walk-ins.
@@ -42,7 +42,7 @@ All numbers are made up. This is a prototype.
 | Agent | Owns (only edit these, plus your section of `docs/LOG.md`) | Delivers |
 |---|---|---|
 | **gleb-claude** (Gleb's Claude Code): Backend | `app/` (except `app/lost_items.py`), `tests/`, `requirements.txt`, `.env.example` | FastAPI + SQLite: login, sign-up, rooms (from the map), search, availability, bookings, the booking rules, ghost release, board readings for Z.1.04 and the simulation of every other room (**done**, see API below). Integrates UI + map + board. |
-| **tom-claude** (Tom's Claude Code): Board | `bridge/` | Board bridge (noise and presence work, as separate firmwares). Next: see "Board (Live Lab): decisions and next steps". |
+| **tom-claude** (Tom's Claude Code): Board | `firmware/`, `bridge/` | XIAO ESP32S3 Sense firmware (`firmware/xiao_sense/`, first version by gleb-claude, tested in Velxio): presence, noise, left items over MQTT. See "Board: XIAO ESP32S3 Sense on Velxio". `bridge/` is the old Infineon path, kept as a fallback. |
 | **tom-claude**: 3D map (claude-2's role) | `web/map3d/`, `tools/campus3d/` | **Done:** a Three.js campus map of buildings V, N, Z, L and S with search, glow highlight, building and floor isolation, 3D room numbers and status colours. See "3D campus map" below. Standalone until the team decides how to combine it with the UI. |
 | **claude-3**: Website UI | `web/index.html`, `web/login.html`, `web/js/app.js`, `web/js/api.js`, `web/js/picker.js`, `web/js/plan2d.js`, `web/css/style.css` | **Done** and wired to the 3D map. The login page, the search bar (calls `focusRoom`), the room panel (live noise, people, today's bookings, a LIVE badge on the room with `board: true`), the booking form (hours, full or partial, seats, purpose, and suggestions on a 409), and "my bookings"., and the **Lost & found** page: item cards, a "That's mine" button, and a "maybe yours" banner. |
 | **tom-claude**, continued | `detector/`, `app/lost_items.py` (a FastAPI `APIRouter` that gleb-claude includes in `app/main.py`) | The lost-item service: snapshot vs reference diff, YOLOv8n labels, crops, and the endpoints below. Board: flash person detection and forward the person count through the bridge. |
@@ -50,61 +50,51 @@ All numbers are made up. This is a prototype.
 
 ## Architecture
 ```
-PSOC Edge E84 (Live Lab) -> UART -> bridge.py on the lab PC -> HTTPS (cloudflared tunnel, X-Token)
-                                                                       |  POST /api/readings, room Z.1.04
-web/ (UI + map3d/, Three.js from CDN) <-- JSON --> FastAPI + SQLite (app/) <-+
+XIAO ESP32S3 Sense (Velxio simulator or real board), room Z.1.04
+  camera (your webcam in Velxio) -> person model ON the board (TensorFlow Lite Micro) -> presence
+  camera -> empty-room snapshot diff -> left items        PDM mic -> noise_db
+  -> MQTT publish  aau-hack26/rooms/Z.1.04/readings  (public broker broker.hivemq.com:1883, JSON)
+       -> backend subscribes (app/mqtt_feed.py) -> same storage as POST /api/readings
+web/ (UI + map3d/, Three.js from CDN) <-- JSON --> FastAPI + SQLite (app/)
                                                    (simulates every other room; rooms from web/map3d/campus.json)
 ```
-Fallback without a tunnel: `bridge.py` publishes to ntfy.sh and `bridge/ntfy_feed.py` in the backend reads it
-(noise only, and ntfy's daily limit applies).
-- **Stack:** Python 3.12, FastAPI, the standard-library `sqlite3`, and static HTML/JS with Three.js from a CDN
-  (pin an exact version, e.g. `three@0.160.0`), so there is no build step.
+- **Why MQTT:** the board can reach the internet but not the laptop, and the simulated board's HTTPS handshake
+  with a Cloudflare tunnel was rejected. With MQTT the laptop never has to be reachable from outside. The broker
+  is public (anyone could publish fake readings): fine for the demo, use a private broker with a password later.
+- **Stack:** Python 3.12, FastAPI, the standard-library `sqlite3`, `paho-mqtt`, and static HTML/JS with Three.js
+  from a CDN (pin an exact version, e.g. `three@0.160.0`), so there is no build step.
 - **Run:** `pip install -r requirements.txt`, then `uvicorn app.main:app --reload`, then open http://localhost:8000.
-  The backend serves `web/` at `/`.
+  The backend serves `web/` at `/`. Board runbook: `README.md`.
 
-## Board (Live Lab): decisions and next steps for tom-claude
-**How it works.** The PSOC Edge E84 is a microcontroller (Cortex-M33 + Cortex-M55 + Ethos-U55 NPU), not an
-FPGA; call it "the board" or "PSOC Edge E84" in the pitch. It sits in Infineon's remote Live Lab and represents
-one room, **Z.1.04** (seminar room in the central building). Our laptop's microphone plays through a speaker next to the board, and our
-webcam is shown on the lab's simulation display that the board's USB camera films. **The board measures noise
-and detects people itself**; only its results leave it.
+## Board: XIAO ESP32S3 Sense on Velxio (the Infineon PSOC Edge E84 is no longer used)
+**Why this board.** Velxio (velxio.dev) simulates it for free, with no reservation: the camera (OV3660) and the PDM
+microphone are emulated with real data, the camera can use your real webcam and the mic your real microphone,
+and WiFi reaches the internet ("Velxio-GUEST", open). The same sketch runs on the physical board.
 
-**Target data path (decided):**
-```
-laptop mic/webcam -> Live Lab speaker/display -> board (mic + camera, NPU) -> UART -> bridge.py on the lab PC
-  -> HTTPS POST <tunnel URL>/api/readings (header X-Token) -> backend on the demo laptop (cloudflared tunnel)
-```
-- **Why not ntfy:** ntfy.sh allows 250 messages per day per IP. At one reading every 5 s that is used up in
-  about 20 minutes, and the lab PC may share its IP with other teams. Keep ntfy only until the direct path works.
-- **Why noise and presence aren't both live yet:** the chip runs one firmware at a time, and we use two separate
-  Infineon examples. The hardware can do both; it needs **one merged firmware**.
+**Firmware:** `firmware/xiao_sense/sketch.ino` + `person_model.h` (Arshia's `models/vww_96_int8.tflite` as a C
+array, generated). Libraries in Velxio: `Chirale_TensorFlowLite` (builds TFLM from source; `tflm_esp32` does
+not work on arduino-esp32 3.x) and `PubSubClient`. Every 2 s it publishes
+`{"room_id": "Z.1.04", "noise_db": 37.2, "presence": true, "person_score": 0.91, "left_items": 0}`.
 
-**Tasks for tom-claude, in this order**
-1. **Test the positive presence case first** (never tested): with the current presence firmware, put a person
-   on the simulation display (Webcam Access → Enable) and confirm `PRESENCE 1`. Also confirm the USER LED is not
-   lit for any other reason (a blinking heartbeat would give false positives). Record the result in LOG.
-2. **Merged firmware:** start from `mtb-example-psoc-edge-ml-aihub-deploy-vision` (our `inference_task.c`) and
-   add the PDM microphone capture from `mtb-example-psoc-edge-pdm-pcm` as a second FreeRTOS task. Print once per
-   second, next to the presence line:
-   `PRESENCE <0|1> <person_frames>/<frames>` and `NOISE <avg_db> <peak_db>`.
-   Check first whether the PDM pins and clocks must be enabled in the vision project's Device Configurator
-   (`design.modus`). Keep `setup_person.ps1` as the fallback if the merge doesn't work within one session.
-3. **Done:** `python bridge.py COM3 <tunnel URL> <token>` posts one reading every 2 s to
-   `POST <tunnel URL>/api/readings` with header `X-Token: <token>`:
-   `{"room_id": "Z.1.04", "presence": true, "person_ratio": 0.9, "people": 1, "noise_avg_db": 63.2,
-   "noise_peak_db": 78.5, "noise_db": 47.0}`. The bridge calibrates `noise_db`; the backend uses `people`
-   (or `presence`) and `noise_db`, and ignores the raw fields. Tested end to end against the backend.
-4. **Done:** LOG role fixed; the 3D map is tom-claude's (`web/map3d/`).
-5. **Next live session:** run the demo runbook in `README.md` end to end with the real board.
+**Tested in Velxio with a webcam (28 Nov):**
+| Feature | How | Result |
+|---|---|---|
+| Presence | Arshia's 96x96 RGB int8 model on the board, majority of the last 3 frames | in view 0.70-0.98, empty 0.02-0.16; ~1.3 s per frame; 101 KB arena |
+| Noise | PDM mic RMS mapped to ~30-90 dB | 30-62 dB with the real mic (72 dB = Velxio's test tone when Mic is off) |
+| Ghost booking | presence -> backend ghost timer | released after the 1-min demo timer |
+| Left items | 24x24 cell diff vs the empty-room snapshot, exposure shift removed, fragments merged, median of 5 | reliably 0 while someone is there and >0 after an object is left; the exact count drifts (1-3), so the UI shows yes/no |
+| People count | not available: the model only says yes/no (`counted: false`) | later: a detector that counts (e.g. ESP-DL pedestrian detection) |
+
+**Next steps (board owner):** real people count; left-item count accuracy (or keep yes/no); test on a physical
+XIAO ESP32S3 Sense with your own WiFi SSID.
 
 **Demo notes**
-- Use headphones or mute the laptop speakers: the lab sends its room audio back, which can echo.
-- Keep loud phases short (under about a minute): the noise floor is learned from the last 3 minutes.
-- Start the backend with `GHOST_RELEASE_MIN=1` for the demo, so a ghost booking is released within the pitch.
-- Pitch wording: presence and noise are computed on the board, and only a yes/no and a level leave it. Don't
-  claim a people count or on-board lost-item detection until those exist.
-- **People count and lost items:** Arshia (gemini) is looking for a model that counts people and finds items;
-  that comes later. The backend already accepts `people` as a number.
+- In Velxio: click **Camera** and **Mic** under the board (allow them in Chrome), then Run.
+- Start the backend with `GHOST_RELEASE_MIN=1`, so a ghost booking is released within the pitch.
+- Before leaving an object for the left-item demo, keep the camera view empty for ~20 s so the board takes a clean
+  empty-room snapshot.
+- Pitch wording: presence, noise and left items are computed on the board; only small JSON readings leave it.
+  Don't claim a people count yet.
 
 ## Contracts (code against these; whoever changes one updates this file in the same PR)
 

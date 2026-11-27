@@ -5,13 +5,13 @@ Hackathon project: speed matters, but don't break `main`.
 
 ## Project status (update when something important lands)
 - Project: Smart Campus Room Booking on a 3D AAU campus map (Infineon challenge). **Read `docs/PLAN.md` (spec + your role) and `docs/LOG.md` (status per agent) first; run steps are in `README.md`.**
-- Team: Gleb = backend + integration (`app/`), Thomas = board + 3D map (`bridge/`, `web/map3d/`), Martha = frontend (`web/`), Arshia = models (people count, lost items).
+- Team: Gleb = backend + integration (`app/`), Thomas = board + 3D map (`firmware/`, `web/map3d/`), Martha = frontend (`web/`), Arshia = models (people count, lost items).
 - Done and integrated on `main`: final UI (map, always-visible calendar, booking panel under the map, my bookings,
-  ratings) + 3D map + backend +
-  board bridge. Rooms come from `web/map3d/campus.json`; the board room is **Z.1.04**, every other room is
+  ratings) + 3D map + backend + board (see below). Rooms come from `web/map3d/campus.json`; the board room is **Z.1.04**, every other room is
   simulated.
-- Open: Arshia's two models (people count, lost items), the merged noise + presence firmware, and a real-board
-  run in the Live Lab (PLAN, "Board (Live Lab)").
+- Board: **XIAO ESP32S3 Sense in Velxio** (`firmware/xiao_sense/`), readings over MQTT to the backend
+  (`app/mqtt_feed.py`); presence, noise, ghost and left items (yes/no) work. Open: a real people count.
+  The Infineon Live Lab path (`bridge/`) is no longer used.
 
 ## Docs
 - Only `docs/PLAN.md`, `docs/LOG.md` and `README.md`. No other Markdown files; log in your own section of `docs/LOG.md`.
