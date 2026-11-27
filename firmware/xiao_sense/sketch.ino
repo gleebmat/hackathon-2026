@@ -190,14 +190,12 @@ void publish(const String& json) {
   if (!mqtt.connected()) {
     String id = String("xiao-") + String((uint32_t)ESP.getEfuseMac(), HEX);
     if (!mqtt.connect(id.c_str())) {
-      Serial.printf("MQTT connect failed (%d)
-", mqtt.state());
+      Serial.printf("MQTT connect failed (%d)\n", mqtt.state());
       return;
     }
   }
   bool ok = mqtt.publish(topic.c_str(), json.c_str());
-  Serial.printf("MQTT %s -> %s
-", topic.c_str(), ok ? "sent" : "FAILED");
+  Serial.printf("MQTT %s -> %s\n", topic.c_str(), ok ? "sent" : "FAILED");
 }
 
 void setup() {
