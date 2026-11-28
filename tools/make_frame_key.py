@@ -1,7 +1,7 @@
 """Makes the camera frame key shared by the board and the backend (app/vision.py).
 
 Usage: python tools/make_frame_key.py
-Writes firmware/xiao_sense/frame_key.h (gitignored). Add that file to the Velxio project too; the backend reads the
+Writes firmware/xiao_sense/frame_key.h (the repo holds a public demo key; a new one is secret). Add that file to the Velxio project too; the backend reads the
 same file (or FRAME_KEY). Keep an existing key: run it again only to change the key on both sides.
 """
 
