@@ -150,6 +150,45 @@ export function createBuilding(el, input, opts = {}) {
   const machineMat = { coffee: new THREE.MeshStandardMaterial({ color: 0x23a55a, roughness: 0.5 }),
                        vending: new THREE.MeshStandardMaterial({ color: 0xd63a32, roughness: 0.5 }) };
   const machineFrontMat = new THREE.MeshStandardMaterial({ color: 0xf4f6fa, roughness: 0.4 });
+  const machines = new Map();   // "machine:Z:0" -> {mesh, data: {kind, x, z, floor, building, buildingName}}
+
+  // Walls only face the outside: where another piece of building (this one or a neighbour) is right behind an edge
+  // on a floor, that floor gets no wall there, so hallways between pieces stay open. Returns wall parts
+  // [t0, t1, firstFloor, lastFloor] along the edge (t = 0..1).
+  const pieces = buildings.flatMap((bd) => bd.blocks.map((bl) => ({ bl, pts: corners(bl), floors: bl.floors ?? bd.floors })));
+  const coveredAt = (x, z, self) => {
+    const out = new Set();
+    for (const p of pieces) {
+      if (p.bl === self || !inside([x, z], p.pts) || (p.bl.holes ?? []).some((h) => inside([x, z], h))) continue;
+      for (const f of p.floors) out.add(f);
+    }
+    return out;
+  };
+  function outerWalls(b, pts, floors, [x0, z0], [x1, z1], len) {
+    let nx = -(z1 - z0) / len, nz = (x1 - x0) / len;       // normal pointing out of this piece
+    const mx = (x0 + x1) / 2, mz = (z0 + z1) / 2;
+    if (inside([mx + nx * 0.3, mz + nz * 0.3], pts)) { nx = -nx; nz = -nz; }
+    const n = Math.max(1, Math.round(len));                  // a probe about every metre along the edge
+    const open = [];
+    for (let k = 0; k < n; k++) {
+      const t = (k + 0.5) / n, cov = coveredAt(x0 + (x1 - x0) * t + nx * 0.3, z0 + (z1 - z0) * t + nz * 0.3, b);
+      open.push(floors.filter((f) => !cov.has(f)).join(","));
+    }
+    const out = [];
+    for (let k = 0; k < n;) {
+      let e = k;
+      while (e < n && open[e] === open[k]) e++;
+      const fl = open[k] ? open[k].split(",").map(Number) : [];
+      for (let i = 0; i < fl.length;) {                      // consecutive floors make one wall
+        let j = i;
+        while (j + 1 < fl.length && fl[j + 1] === fl[j] + 1) j++;
+        out.push([k / n, e / n, fl[i], fl[j]]);
+        i = j + 1;
+      }
+      k = e;
+    }
+    return out;
+  }
 
   // --- buildings ---
   const floorGroups = new Map();   // "V:1" -> Group (slab + rooms of that floor)
@@ -186,11 +225,14 @@ export function createBuilding(el, input, opts = {}) {
       if (b.link) { shell.add(part); linkParts.push(part); }
       part.add(roof);
       const pts = corners(b);
-      pts.forEach(([x0, z0], i) => {                       // one glass wall per footprint edge
+      pts.forEach(([x0, z0], i) => {                       // glass walls along the footprint edges
         const [x1, z1] = pts[(i + 1) % pts.length], len = Math.hypot(x1 - x0, z1 - z0);
         if (len < 0.05) return;
-        const w = box((x0 + x1) / 2, (z0 + z1) / 2, len, 0.3, bBase, bTop - bBase, glass, part);
-        w.rotation.y = -Math.atan2(z1 - z0, x1 - x0);
+        outerWalls(b, pts, fl, [x0, z0], [x1, z1], len).forEach(([t0, t1, f0, f1]) => {
+          const a = (t0 + t1) / 2;
+          const w = box(x0 + (x1 - x0) * a, z0 + (z1 - z0) * a, len * (t1 - t0), 0.3, f0 * H, (f1 - f0 + 1) * H, glass, part);
+          w.rotation.y = -Math.atan2(z1 - z0, x1 - x0);
+        });
       });
       const c = b.courtyard;
       if (c) {
@@ -219,9 +261,12 @@ export function createBuilding(el, input, opts = {}) {
       door.rotation.y = -Math.atan2(d.dir[1], d.dir[0]);   // local +x points out of the door
       (floorGroups.get(`${bd.id}:${d.floor}`) ?? scene).add(door);
     }
-    for (const m of bd.machines ?? []) {
+    for (const [i, m] of (bd.machines ?? []).entries()) {
       const g = new THREE.Group();
-      const body = new THREE.Mesh(machineBody, machineMat[m.kind] ?? machineMat.coffee);
+      const body = new THREE.Mesh(machineBody, (machineMat[m.kind] ?? machineMat.coffee).clone());
+      const id = `machine:${bd.id}:${i}`;
+      body.userData.machineId = id;
+      machines.set(id, { mesh: body, data: { ...m, id, building: bd.id, buildingName: bd.name } });
       body.position.y = 0.95 + SLAB;
       body.castShadow = true;
       const front = new THREE.Mesh(machineFront, machineFrontMat);
@@ -312,19 +357,20 @@ export function createBuilding(el, input, opts = {}) {
     const r = renderer.domElement.getBoundingClientRect();
     mouse.set(((ev.clientX - r.left) / r.width) * 2 - 1, -((ev.clientY - r.top) / r.height) * 2 + 1);
     ray.setFromCamera(mouse, camera);
-    const visible = [...rooms.values()].map((x) => x.mesh).filter((m) => m.visible && m.parent.visible);
+    const visible = [...rooms.values(), ...machines.values()].map((x) => x.mesh)
+      .filter((m) => m.visible && m.parent.visible && m.parent.parent?.visible !== false);
     const hit = ray.intersectObjects(visible, false)[0];
-    return hit ? hit.object.userData.roomId : null;
+    return hit ? hit.object.userData.roomId ?? hit.object.userData.machineId : null;
   };
   renderer.domElement.addEventListener("pointerdown", (e) => (down = [e.clientX, e.clientY]));
   renderer.domElement.addEventListener("pointerup", (e) => {
     if (down && Math.hypot(e.clientX - down[0], e.clientY - down[1]) < 5) { const id = pick(e); if (id && clickCb) clickCb(id); }
   });
-  // Hover: only bookable rooms react (blue glow + small lift, animated in the render loop) and show a pointer.
+  // Hover: bookable rooms and the coffee/vending machines react (glow, rooms lift a little) and show a pointer.
   let hovered = null;
   const setHover = (id, e) => {
     const r = id && rooms.get(id);
-    const next = r && r.data.bookable ? id : null;
+    const next = (r && r.data.bookable) || machines.has(id) ? id : null;
     renderer.domElement.style.cursor = next ? "pointer" : "";
     if (next !== hovered) { hovered = next; if (hoverCb) hoverCb(next, e); }
     else if (next && hoverCb) hoverCb(next, e);   // keep the tooltip following the pointer
@@ -369,6 +415,7 @@ export function createBuilding(el, input, opts = {}) {
       else r.mesh.material.emissive.setRGB((r.loud ? pulse : 0) + 0.05 * h, 0.12 * h, 0.35 * h);
       r.mesh.position.y = r.baseY + 0.45 * h;
     }
+    for (const [id, m] of machines) m.mesh.material.emissive.setRGB(...(id === hovered ? [0.25, 0.25, 0.25] : [0, 0, 0]));
     if (halo) {
       halo.scale.setScalar(1.06);
       halo.material.opacity = 0.32;
@@ -624,6 +671,8 @@ export function createBuilding(el, input, opts = {}) {
       goTo(view(box, floorFilter === null ? null : floorFilter * bd.floor_height + 1));
     },
     floor: () => floorFilter,
+    /** A coffee or vending machine by id ("machine:Z:0", as passed to onRoomClick / onRoomHover). */
+    machine: (id) => machines.get(id)?.data ?? null,
     /** Draws a walking route from campus.json "routes" (start tag text in opts.startLabel); clearRoute() removes it. */
     showRoute(r, opts) { showRoute(r, opts); },
     clearRoute() { clearRoute(); },

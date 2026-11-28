@@ -144,13 +144,16 @@ async function buildView() {
     state.view = createPlan(el, (await api.building()) || layoutBuilding(state.rooms));
   }
   // The map also draws rooms that can't be booked (offices, WCs); only bookable ones open the sheet.
-  state.view.onRoomClick((id) => { if (state.rooms.some((r) => r.id === id)) openRoom(id); });
+  state.view.onRoomClick((id) => {
+    if (id.startsWith("machine:")) return showMachineInfo(id);
+    if (state.rooms.some((r) => r.id === id)) openRoom(id);
+  });
   state.view.onRoomHover?.(showMapTip);
   for (const r of state.rooms) state.view.setStatus(r.id, r);
   state.view.setFloor?.(1);   // open on floor 1 (the board room Z.1.04 is there); "All floors" shows everything
 }
 
-// Small tooltip that follows the pointer over a bookable room on the 3D map.
+// Small tooltip that follows the pointer over a bookable room or a coffee / vending machine on the 3D map.
 const STATUS_VAR = { free: "--free", partial: "--shared", full: "--full", ghost: "--ghost", closed: "--muted", unbookable: "--unbookable" };
 function showMapTip(id, e) {
   const card = $("building").parentElement;
@@ -160,9 +163,10 @@ function showMapTip(id, e) {
     tip.className = "map-tip";
     card.append(tip);
   }
+  const m = id?.startsWith("machine:") && state.view?.machine?.(id);
   const r = id && state.rooms.find((x) => x.id === id);
-  if (!r || !e) { tip.classList.remove("on"); return; }
-  tip.innerHTML = `<b>${esc(r.label || r.id)}</b>${esc(r.label ? `${r.id} · ${r.name}` : r.name)}` +
+  if ((!r && !m) || !e) { tip.classList.remove("on"); return; }
+  tip.innerHTML = m ? `<b>${esc(t(`machine_${m.kind}`))}</b>${esc(t("machine_where", { b: m.building, floor: m.floor }))}` : `<b>${esc(r.label || r.id)}</b>${esc(r.label ? `${r.id} · ${r.name}` : r.name)}` +
     `<i style="background:var(${STATUS_VAR[r.status] ?? "--muted"})"></i>${STATUS[r.status] ?? esc(r.status)}` +
     (["closed", "unbookable"].includes(r.status) ? "" : ` · ${t("seats_of", { free: r.seats_free, cap: r.capacity })}`);
   const box = card.getBoundingClientRect();
@@ -320,10 +324,8 @@ function newSheet(id, opts = {}) {
   };
 }
 
-// Rooms that can't be booked (55+ seats) get a small card on the map, not the booking panel.
-function showRoomInfo(r) {
-  closeSheet({ route: false });
-  state.view?.focusRoom(r.id);
+// The card on the map: rooms that can't be booked (55+ seats) and the coffee / vending machines.
+function infoBox() {
   const card = document.querySelector(".map-card");
   let box = card.querySelector(".map-info");
   if (!box) {
@@ -336,10 +338,32 @@ function showRoomInfo(r) {
       if (!e.target.closest(".map-info-x")) return;
       state.view?.clearRoute?.();
       box.classList.remove("on");
+      if (box.dataset.kind === "machine") return;
       leaveRoute("room");
       state.view?.showAll();
     });
   }
+  return box;
+}
+
+function showMachineInfo(id) {
+  const m = state.view?.machine?.(id);
+  if (!m) return;
+  const box = infoBox();
+  box.dataset.kind = "machine";
+  box.innerHTML = `<button class="map-info-x" type="button" aria-label="Close">${ic("x")}</button>
+    <div class="map-info-id"><span class="machine-dot ${esc(m.kind)}"></span>${esc(t(`machine_${m.kind}`))}</div>
+    <div class="muted small">${esc(t("machine_where", { b: m.building, floor: m.floor }))}</div>
+    <p class="map-info-note">${esc(t(`machine_${m.kind}_note`))}</p>`;
+  box.classList.add("on");
+}
+
+// Rooms that can't be booked (55+ seats) get a small card on the map, not the booking panel.
+function showRoomInfo(r) {
+  closeSheet({ route: false });
+  state.view?.focusRoom(r.id);
+  const box = infoBox();
+  box.dataset.kind = "room";
   box.innerHTML = `<button class="map-info-x" type="button" aria-label="Close">${ic("x")}</button>
     <div class="map-info-id">${esc(r.label || r.id)}</div>
     <div class="muted small">${esc(r.label ? `${r.id} · ${r.name}` : r.name)}</div>
