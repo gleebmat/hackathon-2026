@@ -441,7 +441,7 @@ function renderSheetHead() {
         <span class="muted">${b.shareable ? "open to join · " : "private · "}until ${hm(b.end)}</span></div>`).join("")
     : `<div class="now-item"><span>✨ Nobody has booked it right now</span></div>`;
   const ghost = r.status === "ghost" && r.ghost_release_at
-    ? `<div class="ghost-alert" style="margin-top:8px">👻 Booked, but nobody is here. Frees up at ${hm(r.ghost_release_at)} unless someone shows up.</div>` : "";
+    ? `<div class="ghost-alert" style="margin-top:8px">👻 Booked, but nobody is here. Frees up at ${esc(r.ghost_release_at.slice(11, 19))} unless someone shows up.</div>` : "";
   $("sh-now").innerHTML = `<div class="block-title"><h3>Right now</h3></div><div class="now-list">${now}</div>${sensorCheck(r)}${ghost}`;
 }
 
@@ -452,6 +452,7 @@ function seenText(r) {
 }
 
 function occupancyText(r) {
+  if (r.board && !r.sensor) return r.live ? "Camera reading unavailable" : "Board offline";
   if (!r.sensor) return `${r.people} here · ${r.capacity} max`;
   return r.booked ? `Booked for ${r.booked} · ${seenText(r)}` : `${seenText(r)} · ${r.capacity} max`;
 }
@@ -815,6 +816,24 @@ async function main() {
   });
   await Promise.all([refreshRooms(), refreshMine()]);
   await createView();
+  // Refresh just the visible sensor panel between full campus polls.
+  let sensorPending = false;
+  setInterval(async () => {
+    const sh = state.sheet;
+    if (sensorPending || !sh?.room?.board || sh.busy || document.hidden) return;
+    sensorPending = true;
+    try {
+      const room = await api.room(sh.roomId);
+      if (state.sheet === sh) {
+        sh.room = room;
+        renderSheetHead();
+      }
+    } catch (err) {
+      handleAuth(err);
+    } finally {
+      sensorPending = false;
+    }
+  }, 500);
   let tick = 0;
   setInterval(async () => {
     await Promise.all([refreshRooms(), refreshMine()]);

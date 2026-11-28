@@ -153,7 +153,7 @@ def test_cancelled_hours_are_given_back(app_env):
 def test_time_rules(app_env):
     a = user(1)
     assert book(a, start="2026-11-27T12:15").status_code == 400
-    assert book(a, start="2026-11-27T21:00", hours=2).status_code == 400
+    assert book(a, start="2026-11-27T23:30", hours=0.5).status_code == 201
     assert book(a, start="2026-11-27T07:30", hours=1).status_code == 400
     assert book(a, start="2026-11-27T09:00", hours=1).status_code == 400  # past
     assert book(a, start="2026-12-31T12:00", hours=1).status_code == 400  # too far ahead
@@ -204,7 +204,7 @@ def test_availability_slots(app_env):
     a = user(1)
     book(a, start="2026-11-27T12:00", hours=1, seats=3)
     slots = a.get("/api/rooms/V.1.07a/availability").json()["slots"]
-    assert len(slots) == 28 and slots[0]["status"] == "past"
+    assert len(slots) == 48 and slots[0]["status"] == "past"
     noon = next(s for s in slots if s["start"] == "12:00")
     assert noon == {"start": "12:00", "end": "12:30", "status": "partial", "seats_free": 9, "shareable": True,
                     "noise": "moderate"}
@@ -240,7 +240,10 @@ def test_ghost_booking_released_after_10_min(app_env, time_now):
     booking_id = book(a, room="V.1.03", start="2026-11-27T10:00", hours=2).json()["id"]
     reading(a, "V.1.03", people=0, noise_db=34)  # 10:05, booking started 10:00
     state = room(a, "V.1.03")
-    assert state["status"] == "ghost" and state["ghost_release_at"] == "2026-11-27T10:15:00"
+    assert state["ghost_release_at"] is None
+    time_now["t"] += timedelta(minutes=1)
+    reading(a, "V.1.03", people=0)
+    assert room(a, "V.1.03")["status"] == "ghost"
     assert a.get("/api/bookings/mine").json()[0]["ghost_release_at"] == "2026-11-27T10:15:00"
     sensor_until(a, time_now, "V.1.03", 0, datetime(2026, 11, 27, 10, 14))
     assert room(a, "V.1.03")["status"] == "ghost"
@@ -266,7 +269,7 @@ def test_room_empty_mid_booking_starts_timer(app_env, time_now):
     book(a, room="V.1.03", start="2026-11-27T10:00", hours=2)
     sensor_until(a, time_now, "V.1.03", 2, datetime(2026, 11, 27, 10, 29))
     sensor_until(a, time_now, "V.1.03", 0, datetime(2026, 11, 27, 10, 30))  # everyone left at 10:30
-    assert room(a, "V.1.03")["ghost_release_at"] == "2026-11-27T10:40:00"
+    assert room(a, "V.1.03")["ghost_release_at"] is None
     sensor_until(a, time_now, "V.1.03", 0, datetime(2026, 11, 27, 10, 35))
     sensor_until(a, time_now, "V.1.03", 1, datetime(2026, 11, 27, 10, 50))  # back in time: timer stops
     assert a.get("/api/bookings/mine").json()[0]["status"] == "active"
@@ -311,9 +314,9 @@ def test_calendar_has_every_room_in_one_call(app_env):
     assert cal["date"] == "2026-11-27" and set(cal["rooms"]) == {r["id"] for r in a.get("/api/rooms").json()}
     room_cal = cal["rooms"]["V.1.07a"]
     assert room_cal["slots"] == a.get("/api/rooms/V.1.07a/availability").json()["slots"]
-    assert room_cal["free_hours"] == 12.0  # 10:00-22:00 still bookable (shared at 12:00 still counts)
+    assert room_cal["free_hours"] == 14.0  # 10:00-24:00 still bookable (shared at 12:00 still counts)
     assert cal["rooms"]["V.1.24"]["free_hours"] == 0  # closed
-    assert a.get("/api/calendar", params={"date": "2026-11-28"}).json()["rooms"]["V.1.07a"]["free_hours"] == 14.0
+    assert a.get("/api/calendar", params={"date": "2026-11-28"}).json()["rooms"]["V.1.07a"]["free_hours"] == 24.0
     assert a.get("/api/calendar", params={"date": "bad"}).status_code == 400
 
 
@@ -495,7 +498,7 @@ def test_booked_vs_present(app_env):
     assert (r["present"], r["counted"]) == (3, True)                                    # a real head count
     a.post("/api/readings", json={"room_id": "V.1.03", "presence": False})
     r = room(a, "V.1.03")
-    assert r["present"] == 0 and r["status"] == "ghost"
+    assert r["present"] == 0 and r["ghost_release_at"] is None
 
 
 def test_mqtt_reading_is_stored_like_http(app_env):
@@ -506,3 +509,48 @@ def test_mqtt_reading_is_stored_like_http(app_env):
     assert not main.mqtt_reading({"room_id": "V.9.99", "presence": True})   # unknown room
     assert not main.mqtt_reading({"room_id": "V.1.07a", "people": -3})      # invalid
     assert not main.mqtt_reading({"room_id": "V.1.07a"})                    # nothing measured
+
+
+def test_board_disconnect_and_recovery_during_demo(app_env, time_now, monkeypatch):
+    monkeypatch.setattr(booking, "GHOST_AFTER", timedelta(seconds=30))
+    c = user(1)
+    rid = booking.BOARD_ROOM
+    assert book(c, room=rid, start="2026-11-27T10:00").status_code == 201
+    for seconds in (0, 8, 16, 24):
+        time_now["t"] = NOW + timedelta(seconds=seconds)
+        reading(c, rid, people=0)
+    time_now["t"] = NOW + timedelta(seconds=30)
+    assert room(c, rid)["status"] == "ghost"  # no camera sample confirmed the deadline
+    time_now["t"] = NOW + timedelta(seconds=35)
+    assert not room(c, rid)["live"]
+    reading(c, rid, noise_db=51)
+    assert room(c, rid)["live"] and room(c, rid)["present"] is None
+    for seconds in range(36, 67, 2):
+        time_now["t"] = NOW + timedelta(seconds=seconds)
+        reading(c, rid, people=0)
+    assert c.get("/api/bookings/mine").json()[0]["status"] == "released"
+
+
+def test_last_and_first_overnight_slots(app_env):
+    c = user(1)
+    assert book(c, start="2026-11-27T23:30", hours=0.5).status_code == 201
+    assert book(c, start="2026-11-28T00:00", hours=0.5).status_code == 201
+    slots = c.get("/api/rooms/V.1.07a/availability").json()["slots"]
+    assert slots[-1]["start"] == "23:30" and slots[-1]["end"] == "24:00"
+
+
+@pytest.mark.parametrize("arrived_first", [False, True])
+def test_recording_grace_and_release(app_env, time_now, monkeypatch, arrived_first):
+    monkeypatch.setattr(booking, "GHOST_GRACE", timedelta(seconds=5))
+    monkeypatch.setattr(booking, "GHOST_AFTER", timedelta(seconds=15))
+    c = user(1)
+    rid = booking.BOARD_ROOM
+    assert book(c, room=rid, start="2026-11-27T10:00").status_code == 201
+    if arrived_first:
+        reading(c, rid, people=1)
+    for seconds, people, status in [(0, 0, "partial"), (4, 0, "partial"), (5, 0, "ghost"),
+                                    (7, 1, "partial"), (8, 0, "partial"), (13, 0, "ghost"),
+                                    (22, 0, "ghost"), (23, 0, "free")]:
+        time_now["t"] = NOW + timedelta(seconds=seconds)
+        reading(c, rid, people=people)
+        assert room(c, rid)["status"] == status

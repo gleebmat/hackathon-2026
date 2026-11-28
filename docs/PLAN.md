@@ -13,7 +13,7 @@ N, Z, L and S), and books it.
   real sensor data from the XIAO ESP32S3 Sense board (simulated in Velxio); it shows a LIVE badge while the board is sending. Every other room is
   simulated. Change it with `BOARD_ROOM` in the backend and `ROOM_ID` in `firmware/xiao_sense/sketch.ino`.
 - **Booking options:**
-  - Time: 30-minute slots from 08:00 to 22:00, 0.5–4 h per booking, and **at most 4 h per student per day**.
+  - Time: 30-minute slots from 00:00 to midnight, 0.5–4 h per booking, and **at most 4 h per student per day**.
     Picking a room shows every slot of the day as free, shared, full, closed or past.
   - **Full** (the whole room) or **partial** (sharing is fine, with a number of seats).
   - **Purpose:** quiet study, group study, gaming, meeting, board games, event, or custom text.
@@ -22,7 +22,7 @@ N, Z, L and S), and books it.
 - **Ghost bookings:** the board (or the simulator) reports the people count. When a booked room is empty, a
   10-minute timer starts: at the start of the booking, or when everyone leaves. If nobody is back when it runs
   out, the booking is released and its time slots are free again. Meanwhile the room shows as `ghost` with the
-  release time. A sensor that goes silent for over 2 minutes never releases anything.
+  release time. Z.1.04 readings expire after 10 seconds. Release requires an empty reading at or after the deadline.
 - **Search:** typing a room number or name shows suggestions as you type (`z104`, `Z.1.04`, `107a` and `atrium`
   all work; the building letter may be left out), like campusplan.aau.at.
 - **Noise detector for partial bookings:** every room shows a live noise level, so someone who wants silence can
@@ -73,7 +73,7 @@ and WiFi reaches the internet ("Velxio-GUEST", open). The same sketch runs on th
 
 **Firmware:** `firmware/xiao_sense/sketch.ino` + `person_model.h` (Arshia's `models/vww_96_int8.tflite` as a C
 array, generated). Libraries in Velxio: `Chirale_TensorFlowLite` (builds TFLM from source; `tflm_esp32` does
-not work on arduino-esp32 3.x) and `PubSubClient`. Every 2 s it publishes
+not work on arduino-esp32 3.x) and `PubSubClient`. The recording sketch targets one reading every 500 ms and publishes
 `{"room_id": "Z.1.04", "noise_db": 37.2, "presence": true, "person_score": 0.91, "left_items": 0}`.
 
 **Tested in Velxio with a webcam (28 Nov):**
@@ -133,7 +133,7 @@ can't take it). Times are campus time (Europe/Vienna) without a zone: `"2026-11-
   unless someone shows up").
 - `seats` is the number of people coming. `mode: "full"` is private (nobody else can join); `mode: "partial"`
   means "open to share": others join by booking the same room as partial, until the capacity is reached.
-- Bookings: start on :00 or :30, 0.5–4 h, between 08:00 and 22:00, up to 14 days ahead. `custom_purpose` is
+- Bookings: start on :00 or :30, 0.5–4 h, around the clock within a calendar day, up to 14 days ahead. `custom_purpose` is
   required when `purpose` is `custom`.
 - Purpose values: `quiet_study`, `group_study`, `meeting`, `custom`, `gaming`, `board_games`, `event`.
 - Room `status` is `free`, `partial` (people there, seats left), `full`, `ghost` (booked, sensor sees 0 people) or

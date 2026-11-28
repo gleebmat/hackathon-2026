@@ -1,6 +1,6 @@
 // Smart campus room sensor - Seeed XIAO ESP32S3 Sense (runs in the Velxio simulator and on the real board).
 //
-// Every 2 s it measures the room on the board itself and publishes one JSON reading over MQTT to the topic
+// At most twice per second it measures the room on the board itself and publishes one JSON reading over MQTT to the topic
 // aau-hack26/rooms/<room>/readings on a public broker; the backend (app/mqtt_feed.py) subscribes to it:
 //   {"room_id":"Z.1.04","noise_db":47.0,"presence":true,"person_score":0.91,"left_items":0}
 //  - presence: Arshia's 96x96 person model (models/vww_96_int8.tflite, TensorFlow Lite Micro), majority of the
@@ -25,7 +25,7 @@
 const char* ROOM_ID = "Z.1.04";
 const char* MQTT_HOST = "broker.hivemq.com";   // public broker: fine for a demo, use your own for real data
 const int MQTT_PORT = 1883;
-const uint32_t PERIOD_MS = 2000;
+const uint32_t PERIOD_MS = 500;
 const float PERSON_THRESHOLD = 0.60;
 
 // Seeed's camera pin map for the Sense board (same as Velxio's camera example)
@@ -49,7 +49,7 @@ const int CELL = 4, GRID = IMG / CELL;    // left-item check on a 24x24 grid of 
 const int CELL_DIFF = 30;                 // a cell changed if its mean brightness moved this much
 const int MIN_ITEM_CELLS = 4;             // smaller blobs are webcam noise (JPEG artefacts)
 const float MAX_CHANGED = 0.45;           // more than 45% changed = lights switched, not items
-const int COUNT_HISTORY = 5;              // left items = median of the last 5 counts, so it doesn't jump
+const int COUNT_HISTORY = 3;              // left items = median of the last 3 counts, so it doesn't jump
 const int CLEAN_FOR_REFRESH = 5;          // empty and clean this many checks in a row: refresh the snapshot
 
 I2SClass mic;
@@ -192,11 +192,11 @@ int medianCount() {
   return s[COUNT_HISTORY / 2];
 }
 
-// Approximate sound level: RMS of ~1/8 s of 16 kHz audio.
+// Approximate sound level: RMS of ~32 ms of 16 kHz audio.
 float noiseDb() {
   double sum = 0;
   int n = 0;
-  for (int i = 0; i < 2000; i++) {
+  for (int i = 0; i < 512; i++) {
     int s = mic.read();
     if (s == 0 || s == -1) continue;
     int16_t v = (int16_t)s;
@@ -259,17 +259,25 @@ void loop() {
     uint32_t t0 = millis();
     float score = personScore();
     uint32_t ms = millis() - t0;
+    if (score < 0) {
+      Serial.println("Inference failed; occupancy unknown");
+      json += "}";
+      publish(json);
+      mqtt.loop();
+      return;
+    }
     votes[voteIdx++ % 3] = score >= PERSON_THRESHOLD;
-    bool present = (votes[0] + votes[1] + votes[2]) >= 2;
+    bool present = score >= 0.85f || (votes[0] + votes[1] + votes[2]) >= 2;
 
     if (present) {
       emptyStreak = cleanStreak = 0;
       leftItems = 0;
       memset(counts, 0, sizeof counts);
-    } else if (++emptyStreak >= 3) {
+    } else if (++emptyStreak >= 2) {
       if (!haveBaseline) {                 // first calm empty room after start: remember it
         cellMeans(baseline);
         haveBaseline = true;
+        Serial.println("Empty-room baseline ready");
       } else {
         int k = countLeftItems();
         if (k < 0) {                       // lighting changed: new snapshot

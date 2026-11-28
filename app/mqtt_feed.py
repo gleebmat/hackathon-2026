@@ -28,6 +28,8 @@ def start(handle: Callable[[dict], None]) -> mqtt.Client:
         c.subscribe(topic)
 
     def on_message(_c, _userdata, msg):
+        if msg.retain:
+            return  # A replay on subscription is not a new heartbeat.
         try:
             data = json.loads(msg.payload)
             if isinstance(data, dict):

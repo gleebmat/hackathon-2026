@@ -109,6 +109,9 @@ reopens the serial port when it drops. Without a URL it falls back to ntfy. Test
 ---
 
 ## gleb-claude (Backend + integration)
+- Video demo: five seconds of continuous vacancy before Ghost, fifteen total before release. A return clears the countdown.
+- Recording mode: all 48 daily slots available. Open board panel polls every 500 ms. XIAO targets two readings per second and announces a ready empty-room reference.
+- XIAO readings expire after 10 seconds. A ghost release requires an empty reading at or after the deadline. Set `GHOST_RELEASE_SECONDS=30` for the demo. Retained MQTT replays are ignored.
 **Status (28 Nov):** the team switched from the Infineon Live Lab to a **XIAO ESP32S3 Sense simulated in Velxio**.
 Firmware (`firmware/xiao_sense/`) runs Arshia's person model on the board and publishes readings over MQTT; the
 backend subscribes (`app/mqtt_feed.py`). Tested end to end with a webcam: presence, real mic noise, ghost release

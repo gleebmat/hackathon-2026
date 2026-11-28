@@ -25,7 +25,7 @@ feed: LiveNoiseFeed | None = None
 async def lifespan(_app: FastAPI):
     global feed
     db.init()
-    if os.environ.get("NOISE_FEED", "1") != "0":
+    if os.environ.get("NOISE_FEED", "0") != "0":
         feed = LiveNoiseFeed(room_id=booking.BOARD_ROOM)  # fallback path: bridge.py without a backend URL
         feed.start()
     mqtt_client = mqtt_feed.start(mqtt_reading) if os.environ.get("MQTT_FEED", "1") != "0" else None
@@ -186,7 +186,7 @@ def room_availability(room_id: str, conn: Conn, day: date | None = Query(None, a
     room = booking.get_room(conn, room_id)
     day = day or now.date()
     return {"room_id": room_id, "date": day.isoformat(), "open": f"{booking.OPEN:%H:%M}",
-            "close": f"{booking.CLOSE:%H:%M}", "slots": booking.availability(conn, room, day, now, live_data())}
+            "close": "24:00", "slots": booking.availability(conn, room, day, now, live_data())}
 
 
 @app.get("/api/calendar")
