@@ -191,8 +191,11 @@ These features are for the room display only; the website shows none of them (ro
 **The page (`web/display.html`).** Laid out for 800x480 and scaled to any window. Home: one row of big buttons that
 scrolls sideways like a list (finger, mouse drag, wheel, the arrows or the arrow keys; it moves as one row, nothing
 wraps around or jumps). First the room card (300 px wide: status in words, people, booked until, minutes to the next
-break reminder), then Book, Sounds, Selfie and Break (236x338 px each, about 28x40 mm on the 4.3" panel; the third
-one peeks in at the edge so it's clear the row scrolls). It goes back to the start after 90 s untouched. Top bar: university logo (`web/img/aau-logo.svg`, the University
+break reminder), then Book (only while the room is free), Break, Sounds and Selfie (236x338 px each, about 28x40 mm
+on the 4.3" panel; the third one peeks in at the edge so it's clear the row scrolls). Sounds only works while the room
+is booked: otherwise the card is greyed out ("Only while the room is booked", "Book first"), and a playing sound
+stops and its screen closes when the booking ends. Browsers keep audio paused until the page is touched: any touch
+wakes it, and tapping a sound that shows "Playing" but can't be heard starts it instead of switching it off. It goes back to the start after 90 s untouched. Top bar: university logo (`web/img/aau-logo.svg`, the University
 of Klagenfurt's logo as on Wikipedia, `Universitaet_klagenfurt_logo.svg`; a protected trademark of the university,
 used here for the AAU challenge; without the file the name is written out), room, time with the date, a small ear
 while the fire-alarm listener runs, language, SOS. Plain campus-system look on purpose: Arial, square boxes, grey
