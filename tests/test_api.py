@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 import pytest
 from fastapi.testclient import TestClient
 
-from app import booking, clock, db, main
+from app import booking, campus_sim, clock, db, main
 
 NOW = datetime(2026, 11, 27, 10, 5)
 
@@ -24,6 +24,7 @@ def app_env(tmp_path, monkeypatch, time_now):
     monkeypatch.setenv("MQTT_FEED", "0")
     monkeypatch.delenv("READINGS_TOKEN", raising=False)
     monkeypatch.setenv("SIMULATE", "0")
+    monkeypatch.setenv("CAMPUS_SIM", "0")
     monkeypatch.setattr(db, "CAMPUS_JSON", tmp_path / "missing.json")  # use the built-in V floor 1 rooms
     monkeypatch.setattr(booking, "BOARD_ROOM", "V.1.07a")
     with TestClient(main.app):
@@ -570,3 +571,17 @@ def test_live_badge_follows_the_board_within_seconds(app_env, time_now):
     assert room(c, rid)["live"] is False
     reading(c, rid, noise_db=41)                     # and back at once
     assert room(c, rid)["live"] is True
+
+
+def test_other_students_keep_the_campus_busy(app_env, monkeypatch, time_now):
+    monkeypatch.setenv("SIMULATE", "1")
+    monkeypatch.setenv("CAMPUS_SIM", "1")
+    monkeypatch.setattr(campus_sim, "_last_tick", None)
+    c = TestClient(main.app)
+    rooms = c.get("/api/rooms").json()
+    busy = [r for r in rooms if r["bookings_now"]]
+    assert busy and not any(r["board"] for r in busy)         # the board room is only booked by real people
+    assert all(r["people"] <= r["capacity"] for r in rooms)
+    later = [s for r in c.get("/api/calendar").json()["rooms"].values() for s in r["slots"] if s["status"] != "free"]
+    assert later                                               # and some rooms are taken later today
+    assert c.post("/api/login", json={"email": campus_sim.EMAIL, "password": "!"}).status_code == 401

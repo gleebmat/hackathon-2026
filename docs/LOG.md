@@ -59,6 +59,8 @@ and left items (yes/no) reach the website. 50 tests pass. Runbook: `README.md`.
   on the laptop: steady people count and left items about 1 s after the camera sees them.
 - Backend: people sitting in a room without a booking (walk-ins) take seats for shared bookings but never block a
   whole-room booking. UI: an empty room always reads "Nobody here".
+- Lively campus: simulated noise drifts every few seconds, walk-ins change every 5 min, and simulated "Other
+  students" (`app/campus_sim.py`) book rooms every 2 min (~45% busy by day). LIVE badge calmer, off 3 s after the board stops.
 
 ---
 

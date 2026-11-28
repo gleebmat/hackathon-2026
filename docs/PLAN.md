@@ -138,7 +138,10 @@ can't take it). Times are campus time (Europe/Vienna) without a zone: `"2026-11-
 - Room `status` is `free`, `partial` (people there, seats left), `full`, `ghost` (booked, sensor sees 0 people) or
   `closed`. Rooms also carry `building` (`"Z"`), `board: true` on the board room, `live: true` while the board
   is sending, and `sensor: true` when a people count arrived in the last 2 min. Without a sensor, `noise_db` and
-  `people` are simulated (`SIMULATE=0` turns that off: then `people` is the booked seats).
+  `people` are simulated (`SIMULATE=0` turns that off: then `people` is the booked seats): noise drifts every few
+  seconds, walk-ins come and go every 5 minutes, and `app/campus_sim.py` books rooms as "Other students" every 2
+  minutes (about 45% of rooms in use during the day, 25% in the evening, 8% at night; never the board room;
+  `CAMPUS_SIM=0` turns only that off).
 - **Noise classes:** quiet below 40 dB, moderate from 40 to 60 dB, loud above 60 dB.
 - **Purpose → class:** quiet study is quiet; group study, meeting and custom are moderate; gaming, board games and
   event are loud.

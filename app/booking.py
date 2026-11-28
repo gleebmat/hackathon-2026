@@ -4,6 +4,7 @@ Booking times are campus-time strings 'YYYY-MM-DDTHH:MM' (fixed width, so they c
 Sensor times are compared as datetimes.
 """
 
+import math
 import os
 import random
 import sqlite3
@@ -134,23 +135,25 @@ def simulating() -> bool:
 
 
 def simulated(room: sqlite3.Row, current: list[sqlite3.Row], now: datetime) -> tuple[float, int]:
-    """Noise and people for a room without a sensor. Random but the same for every viewer: noise changes every
-    minute, walk-ins every 10 minutes. Booked rooms hold their booked people (or one fewer); about one free room
-    in twelve has one or two walk-ins."""
+    """Noise and people for a room without a sensor. Random but the same for every viewer: noise drifts smoothly
+    (a slow wave plus a small jump every 5 s), people in booked rooms change every minute, walk-ins every 5 minutes.
+    Booked rooms hold their booked people (or one fewer); about one free room in eight has one to three walk-ins."""
     booked = sum(b["seats"] for b in current)
     cls = loudest(current)
     if not simulating():
         return SIMULATED_DB[cls], booked
     rnd = random.Random(f"{room['id']}|{now:%Y-%m-%dT%H:%M}")
-    walk_ins = random.Random(f"{room['id']}|{now:%Y-%m-%dT%H}|{now.minute // 10}")
+    walk_ins = random.Random(f"{room['id']}|{now:%Y-%m-%dT%H}|{now.minute // 5}")
     if room["closed"]:
         people = 0
     elif current:
         people = max(1, booked - rnd.randint(0, 1))
     else:
-        people = walk_ins.choice([1, 2]) if walk_ins.random() < 1 / 12 else 0
+        people = walk_ins.choice([1, 1, 2, 3]) if walk_ins.random() < 1 / 8 else 0
     base = SIMULATED_DB[cls] if cls else SIMULATED_DB[None] + 3 * people
-    noise = base + rnd.uniform(-3, 3)
+    t = now.timestamp()
+    wave = 2.5 * math.sin(t / 40 + random.Random(room["id"]).uniform(0, 2 * math.pi))
+    noise = base + wave + random.Random(f"{room['id']}|{int(t // 5)}").uniform(-1.5, 1.5)
     if cls in (None, "quiet"):
         noise = min(noise, 39.0)  # stays "quiet", so quiet study is never refused by chance
     return round(noise, 1), people

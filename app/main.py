@@ -12,7 +12,7 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, ValidationError
 
-from app import auth, booking, clock, db, mqtt_feed, vision
+from app import auth, booking, campus_sim, clock, db, mqtt_feed, vision
 from app.booking import ApiError
 
 WEB_DIR = db.ROOT / "web"
@@ -57,6 +57,7 @@ def get_conn():
         conn.execute("BEGIN IMMEDIATE")
         try:
             booking.release_ghosts(conn, clock.now())
+            campus_sim.tick(conn, clock.now())
             yield conn
         except BaseException:
             conn.execute("ROLLBACK")
