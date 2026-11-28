@@ -65,12 +65,15 @@ def outside_doors(spaces, frame, lines):
                     if ends[0][0] > 0.35 or not outline.buffer(1.5).contains(arc):
                         continue
                     hinge = walls.interpolate(walls.project(Point(ends[0][1])))
-                    # the door is to the outside if just beyond the wall there is no building
-                    probe_in = Point(ends[1][1])
-                    nx, nz = hinge.x - probe_in.x, hinge.y - probe_in.y
+                    # the door is to the outside if just beyond the wall there is no building; exit doors usually
+                    # swing outwards, so the swing may end inside or outside
+                    swing = Point(ends[1][1])
+                    nx, nz = hinge.x - swing.x, hinge.y - swing.y
+                    if not outline.contains(swing):
+                        nx, nz = -nx, -nz
                     norm = math.hypot(nx, nz) or 1
                     outside = Point(hinge.x + nx / norm * 0.8, hinge.y + nz / norm * 0.8)
-                    if not outline.contains(probe_in) or any(o.contains(outside) for o in outlines.values()):
+                    if outline.contains(outside) or any(o.contains(outside) for o in outlines.values()):
                         continue
                     found.append((bid, hinge.x, hinge.y, nx / norm, nz / norm))
                     break
@@ -177,6 +180,29 @@ def stair_flights(spaces, frame, lines):
     return out
 
 
+def refile(spaces):
+    """The plan files some numberless spaces under the wrong building (most of Nexus's ground floor is under
+    "Südtrakt"). A numberless space that lies inside another building's numbered rooms (on any floor) but not inside
+    its own building's moves to that building."""
+    numbered = {}
+    for s in spaces:
+        if s["code"] and s["code"].startswith(f"{s['b']}."):
+            numbered.setdefault(s["b"], []).append(s["g"].buffer(0))
+    area = {b: unary_union(gs).buffer(1.0) for b, gs in numbered.items()}
+    moved = 0
+    for s in spaces:
+        if s["code"]:
+            continue
+        c = s["g"].buffer(0).representative_point()
+        if s["b"] in area and area[s["b"]].contains(c):
+            continue
+        homes = [b for b, a in area.items() if a.contains(c)]
+        if len(homes) == 1:
+            s["b"] = homes[0]
+            moved += 1
+    print(f"{moved} numberless spaces moved to the building they are in")
+
+
 def main():
     spaces = []
     for floor in FLOORS:
@@ -188,6 +214,7 @@ def main():
             g = affine_transform(shape(f["geometry"]), [K, 0, 0, -K, 0, 0])   # metres, x east, z south
             spaces.append({"b": bid, "f": p["floor_num"], "code": p["room_code"], "type": p["space_type_id"],
                            "name": p["short_name"] or p["room_description"] or "", "cap": p["capacity"], "g": g})
+    refile(spaces)
     # frame: centre of V, x along N's long side
     v = unary_union([s["g"] for s in spaces if s["b"] == "V"]).minimum_rotated_rectangle
     n = unary_union([s["g"] for s in spaces if s["b"] == "N"]).minimum_rotated_rectangle

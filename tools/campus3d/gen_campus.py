@@ -49,6 +49,9 @@ MIN_PIECE_WIDTH = 1.6      # m: thinner pieces too
 MAX_FILLED_HOLE = 80.0     # m2: shafts and small light wells inside a building are filled
 LINK_WIDTH = 8.0           # m: narrower parts of a building that reach another building are links (bridges,
                            # corridors); the map hides them when one building is shown on its own
+ENTRANCE_FLOORS = {"O": {0}}   # floors with doors to the outside; others: 0 and 1 (the campus slopes up to Z)
+# Entrances the door detection misses (seen on campusplan.aau.at): building, floor, x, z, outward direction.
+EXTRA_DOORS = [("V", 1, -7.2, -26.6, (1, 0))]     # V north-west: the entrance building with its stairs
 PILLARS = {"O"}            # buildings whose upper floors overhang the ground floor: legs under the overhang corners
 PILLAR_SIZE = 1.2          # m
 # Coffee and vending machines on floor 1, roughly where they are (x, z in metres); each is moved to the nearest free
@@ -111,7 +114,11 @@ def polys(geom):
 
 
 def tidy(g):
-    return set_precision(g.buffer(0.02, join_style=2).buffer(-0.02, join_style=2), 0.01)
+    g = g.buffer(0.02, join_style=2).buffer(-0.02, join_style=2)
+    try:
+        return set_precision(g, 0.01)
+    except Exception:            # GEOS can trip over rounding a tricky shape: round a repaired copy instead
+        return set_precision(make_valid(g.buffer(0)), 0.01)
 
 
 def shell_blocks(outlines, taken):
@@ -204,12 +211,13 @@ def block_union(b, floor):
 
 
 def outside_doors(b, doors, everything):
-    """The plan's doors to the outside, snapped onto this building's wall on their floor, facing out. Only doors at
-    ground level (floors 0 and 1; the campus slopes, the main entrance is on floor 1) and only the lowest of doors
-    stacked above each other (the upper ones open onto terraces and balconies)."""
+    """The plan's doors to the outside (and EXTRA_DOORS), snapped onto this building's wall on their floor, facing out.
+    Only doors at ground level (ENTRANCE_FLOORS; floors 0 and 1 elsewhere: the campus slopes, the main entrance is on
+    floor 1) and only the lowest of doors stacked above each other (the upper ones open onto terraces and balconies)."""
     out = []
-    for d in sorted(doors, key=lambda d: d["f"]):
-        if d["b"] != b["id"] or d["f"] not in b["floors"] or d["f"] > 1:
+    extra = [{"b": bid, "f": f, "x": x, "z": z} for bid, f, x, z, _ in EXTRA_DOORS]
+    for d in sorted(doors + extra, key=lambda d: d["f"]):
+        if d["b"] != b["id"] or d["f"] not in b["floors"] or d["f"] not in ENTRANCE_FLOORS.get(b["id"], {0, 1}):
             continue
         here = block_union(b, d["f"])
         walls = here.boundary

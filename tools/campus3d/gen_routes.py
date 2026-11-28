@@ -116,6 +116,32 @@ def main():
                         rows.append(np.array([na])); cols.append(np.array([nb]))
                         costs.append(np.array([horizontal + STAIR_COST]))
                         stair_links.append((na, nb))
+    # A building with no stairwell drawn on both floors of a pair (Nexus: its atrium stairs are drawn on floors 1-2
+    # only) still has stairs: a flight right above (or below) a corridor of the other floor connects the two there.
+    buildings_of = [(Polygon(bl["poly"]), b["id"]) for b in campus["buildings"] for bl in b["blocks"]]
+
+    def building_at(g):
+        c = g.centroid
+        return next((bid for p, bid in buildings_of if p.contains(c)), None)
+
+    paired = set()
+    for f in floors:
+        for a in flights.get(f, []):
+            if any(a.distance(b) <= STAIR_LINK for b in flights.get(f + 1, [])):
+                paired.add((building_at(a), f))
+    for f in floors:
+        if f + 1 not in flights:
+            continue
+        for g, here, there in [(g, f + 1, f) for g in flights[f + 1]] + [(g, f, f + 1) for g in flights[f]]:
+            bid = building_at(g)
+            low = min(here, there)
+            if bid is None or (bid, low) in paired or walk[there].distance(g.centroid) > 1.5:
+                continue
+            na, nb = nearest_node(g.centroid.x, g.centroid.y, here), nearest_node(g.centroid.x, g.centroid.y, there)
+            if na is not None and nb is not None:
+                rows.append(np.array([na])); cols.append(np.array([nb]))
+                costs.append(np.array([math.dist(node_xyf[na][:2], node_xyf[nb][:2]) + STAIR_COST]))
+                stair_links.append((na, nb))
     graph = coo_matrix((np.concatenate(costs), (np.concatenate(rows), np.concatenate(cols))), shape=(count, count)).tocsr()
 
     # starts: the main entrance, then every outside door on floor 0/1
