@@ -836,7 +836,7 @@ h1, h2, h3, .brand-name, .picker-title, .sheet-title h2, .pick-id, .map-info-id,
 
 /* Monogram tiles: cb. for the site, r. for Roomie the assistant */
 .brand-tile, .fab-tile {
-  display: inline-grid; place-items: center; flex: none; background: var(--text); color: var(--bg);
+  display: inline-grid; place-items: center; flex: none; background: var(--accent); color: #fff;
   font: 800 15px/1 var(--font-display); letter-spacing: -.06em; border-radius: 8px;
 }
 .brand-tile { width: 32px; height: 32px; }
@@ -900,7 +900,7 @@ h1, h2, h3, .brand-name, .picker-title, .sheet-title h2, .pick-id, .map-info-id,
 .ask-fab { padding: 0; border: 0; background: none; border-radius: 12px; box-shadow: var(--shadow); }
 .fab-tile { width: 46px; height: 46px; font-size: 19px; border-radius: 12px; transition: transform .3s var(--spring); }
 .ask-fab:hover .fab-tile { transform: rotate(-6deg) translateY(-1px); }
-.ask-fab.on .fab-tile { transform: rotate(0); background: var(--accent); }
+.ask-fab.on .fab-tile { transform: rotate(0); background: color-mix(in srgb, var(--accent) 80%, #000); }
 .assistant {
   width: min(360px, calc(100vw - 40px)); max-height: min(70vh, 560px); overflow: auto; padding: 14px;
   border-radius: var(--radius-lg); background: var(--surface); border: 1px solid var(--border); box-shadow: var(--shadow-lg);
@@ -919,7 +919,7 @@ h1, h2, h3, .brand-name, .picker-title, .sheet-title h2, .pick-id, .map-info-id,
 .ask-example { font-size: 12px; border-style: solid; }
 .ask-rooms { grid-template-columns: minmax(0, 1fr); }
 @media (max-width: 760px) { .ask-dock { right: 14px; bottom: 14px; } }
-.auth-art .brand-tile { background: #fff; color: #161614; }
+.auth-art .brand-tile { background: var(--accent); color: #fff; }
 
 
 /* Profile menu never runs off the screen */
