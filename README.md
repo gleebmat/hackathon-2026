@@ -39,8 +39,11 @@ API docs: http://localhost:8000/docs. The map alone: http://localhost:8000/map3d
   and suggestions, and the campus simulator doesn't book them. People sitting in a room without a booking take seats from
   sharers but **don't block booking the whole room** (a private booking just moves them out).
 - **Room display (board room):** the board has no display or speaker, so when it runs the backend opens a small
-  window (Edge or Chrome) that acts as its touch display: book-a-room QR, soundscapes, selfie QR, emergency, take a break
-  (API in `docs/PLAN.md`, "Room display"). It closes when the board stops. Chrome somewhere else: set `DISPLAY_BROWSER`.
+  window (Edge or Chrome) that acts as its touch display: book-a-room QR, soundscapes, selfie QR (your webcam),
+  take a break, quiet room, emergency; big swipeable cards sized for the E84 kit's 4.3" 800x480 screen
+  (`web/display.html`, API in `docs/PLAN.md`, "Room display"). It closes when the board stops. Chrome somewhere else:
+  set `DISPLAY_BROWSER`. Without the board: `$env:DISPLAY_TOKEN='dev-display'`, start the backend, open
+  http://localhost:8000/display.html?room=Z.1.04&token=dev-display.
 - **Public website:** `python tools/tunnel.py` (backend running) prints a public `https://...trycloudflare.com`
   address for phones and the jury; the display's QR codes use it. New address on every start. Needs `cloudflared`
   (`winget install --id Cloudflare.cloudflared`). Anyone with the link can use the site and the demo accounts.

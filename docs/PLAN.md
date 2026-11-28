@@ -164,29 +164,40 @@ can't take it). Times are campus time (Europe/Vienna) without a zone: `"2026-11-
   - Events must be full bookings.
   - A student can't hold two bookings at the same time, and their active bookings on one day total at most 4 h.
 
-### Room display + speaker (gleb-claude backend `app/display.py`, page `web/display.html` by the frontend friend)
-The XIAO has no display or speaker, so a small window on the laptop pretends to be the Infineon kit's touch display.
-The board sends `"display": true` in its readings (`HAS_DISPLAY` in the sketch); while it does, the backend opens a
-chromeless Edge/Chrome window (480x360) on `/display.html?room=Z.1.04&token=<token>` and closes it ~10 s after the
+### Room display + speaker (gleb-claude backend `app/display.py`, page `web/display.html` by Arshia)
+The XIAO has no display or speaker, so a small window on the laptop pretends to be the Infineon E84 kit's 4.3" touch
+display (800x480). The board sends `"display": true` in its readings (`HAS_DISPLAY` in the sketch); while it does, the
+backend opens a chromeless Edge/Chrome window (800x520) on `/display.html?room=Z.1.04&token=<token>` and closes it ~10 s after the
 board stops (`DISPLAY_WINDOW=0` turns this off, `DISPLAY_BROWSER` = browser path, `DISPLAY_TOKEN` fixes the token;
 the log prints the URL to open it by hand). Sound plays in that window (laptop speakers). Actions send the token from
 the page URL as header `X-Display-Token` (403 without it). QR codes use the public address (`tools/tunnel.py`).
 
 | Method | Path | What it does |
 |---|---|---|
-| GET | `/api/display/{room}` | `{room_id, label, name, status, people, noise_db, board_online, bookings_now, break_until, sound:{kind, volume}, sounds:[...], emergency:{id, room_id, created_at, resolved_at}\|null, booking_url}`; poll it every 1-2 s; no token needed |
+| GET | `/api/display/{room}` | `{room_id, label, name, status, people, noise_db, board_online, bookings_now, break_until, sound:{kind, volume}, sounds:[...], quiet, emergency:{id, room_id, created_at, resolved_at}\|null, booking_url}`; poll it every 1-2 s; no token needed |
 | GET | `/api/display/{room}/qr` | SVG QR code of `booking_url` (1. book a room) |
 | POST | `/api/display/{room}/sound` | `{kind: off\|rain\|ocean\|forest\|cafe\|white\|pink\|brown, volume: 0-100}` (2. soundscapes): the backend only stores it, the page plays it (WebAudio or files) |
-| POST | `/api/display/{room}/selfie` | (3. selfie) the board camera's newest frame → `{url, qr_svg, expires_at}`; the photo lives in memory for 10 min, never on disk; 409 when the camera isn't live |
+| POST | `/api/display/{room}/selfie` | (3. selfie) optional `{image: base64 JPEG}` = the photo the display took with its webcam; without it, the board camera's newest frame → `{url, qr_svg, expires_at}`; the photo lives in memory for 10 min, never on disk; 409 when there's no image and the board camera isn't live; 400 when the image isn't a JPEG |
 | GET | `/api/selfies/{token}` | the selfie JPEG (what the QR opens); 404 once expired |
 | POST | `/api/display/{room}/emergency` | `{confirm: true}` (4. emergency, after the page's "Are you sure?") → the open emergency; pressing again returns the same one. Simulated: logged and shown on the website, nobody is really called |
 | GET | `/api/emergencies` | open emergencies for the website (logged in) |
 | POST | `/api/emergencies/{id}/resolve` | marks one handled (logged in) |
 | POST / DELETE | `/api/display/{room}/break` | `{minutes: 5-30}` (5. take a break) → `{break_until}` on every running booking in the room; 409 when nobody booked. While it runs the booking is never released as a ghost; afterwards the empty timer starts again. DELETE ends it early |
+| POST | `/api/display/{room}/quiet` | `{on: true\|false}` (6. quiet room / do not disturb) → `{room_id, on}`; kept in memory like the sound |
 
-Website fields: every room has `break_until` (null or ISO time), `sound` (`"off"`, `"rain"`, ...) and `emergency`
-(true while one is open); bookings have `break_until`. Show "On break until 14:20", the playing sound and a red
-emergency alert (`GET /api/emergencies`, resolve button).
+Website fields: every room has `break_until` (null or ISO time), `sound` (`"off"`, `"rain"`, ...), `quiet` (true
+while the display asks for silence) and `emergency` (true while one is open); bookings have `break_until`. Show "On
+break until 14:20", the playing sound, a "Quiet room" badge and a red emergency alert (`GET /api/emergencies`,
+resolve button).
+
+**The page (`web/display.html`).** Laid out for 800x480 and scaled to any window. Built for a 4.3" touch screen: one
+big swipeable card per feature (Book, Soundscapes, Selfie, Take a break, Quiet room) instead of a grid of small
+buttons; arrows, dots and the keyboard (arrows, Esc) work too. Touch targets at least 56 px, text at least 17 px,
+white on near-black, status in words and colour (never colour alone), visible focus ring, English/German (same
+`roomv-lang` choice as the website), screen-reader labels, reduced motion respected, back to the first card after
+90 s untouched. SOS is always top right, asks "Are you sure?" first, and shows "Help has been called" until the
+website resolves it. Selfie: this computer's webcam (preview mirrored, photo not), else the board camera's frame.
+Sounds are synthesised in the page (Web Audio), no files.
 
 ### Frontend flow (claude-3 / Martha; every call above is live on `uvicorn app.main:app`)
 1. **Login page:** `POST /api/login` or `POST /api/register`, then the main page. On load, `GET /api/me`; 401 →
