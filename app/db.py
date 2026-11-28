@@ -32,7 +32,7 @@ CREATE TABLE IF NOT EXISTS bookings (
     break_until TEXT);
 CREATE TABLE IF NOT EXISTS emergencies (
     id INTEGER PRIMARY KEY, room_id TEXT NOT NULL REFERENCES rooms(id), created_at TEXT NOT NULL,
-    resolved_at TEXT, resolved_by INTEGER REFERENCES users(id));
+    resolved_at TEXT);
 CREATE INDEX IF NOT EXISTS bookings_room_time ON bookings (room_id, status, start);
 CREATE INDEX IF NOT EXISTS bookings_user_time ON bookings (user_id, status, start);
 """

@@ -19,11 +19,23 @@ import paho.mqtt.client as mqtt
 log = logging.getLogger(__name__)
 
 
+LED_TOPIC = "aau-hack26/rooms/{room}/led"
+client: mqtt.Client | None = None
+
+
+def led(room_id: str, sos: bool) -> None:
+    """Board LED: "sos" blinks it (open emergency on the room display), "off" stops. Retained, so a board that
+    (re)connects gets the current state at once."""
+    if client is not None:
+        client.publish(LED_TOPIC.format(room=room_id), "sos" if sos else "off", qos=1, retain=True)
+
+
 def start(handle: Callable[[dict], None], frame: Callable[[str, bytes], None] | None = None) -> mqtt.Client:
     host = os.environ.get("MQTT_HOST", "broker.hivemq.com")
     port = int(os.environ.get("MQTT_PORT", "1883"))
     topic = os.environ.get("MQTT_TOPIC", "aau-hack26/rooms/+/readings")
     frame_topic = os.environ.get("MQTT_FRAME_TOPIC", "aau-hack26/rooms/+/frame")
+    global client
     client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
 
     def on_connect(c, _userdata, _flags, reason_code, _props):

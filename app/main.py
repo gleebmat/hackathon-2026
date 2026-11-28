@@ -328,7 +328,7 @@ def display_state(room_id: str, request: Request, conn: Conn):
     return {"room_id": room_id, "label": state["label"], "name": state["name"], "status": state["status"],
             "people": state["people"], "noise_db": state["noise_db"], "board_online": display.online(room_id),
             "bookings_now": state["bookings_now"], "break_until": state["break_until"],
-            "sound": display.sound(room_id), "sounds": list(display.SOUNDS), "quiet": display.quiet(room_id),
+            "sound": display.sound(room_id), "sounds": list(display.SOUNDS),
             "emergency": emergency_out(emergency) if emergency else None,
             "booking_url": booking_link(request, room_id)}
 
@@ -350,17 +350,6 @@ class SoundRequest(BaseModel):
 def display_sound(room_id: str, body: SoundRequest, conn: Conn, token: DisplayToken = None):
     display_room(conn, room_id, token)
     return display.set_sound(room_id, body.kind, body.volume)
-
-
-class QuietRequest(BaseModel):
-    on: bool
-
-
-@app.post("/api/display/{room_id}/quiet")
-def display_quiet(room_id: str, body: QuietRequest, conn: Conn, token: DisplayToken = None):
-    """Quiet room (do not disturb): the website shows the room as silent study only."""
-    display_room(conn, room_id, token)
-    return {"room_id": room_id, "on": display.set_quiet(room_id, body.on)}
 
 
 class BreakRequest(BaseModel):
@@ -428,32 +417,28 @@ class EmergencyRequest(BaseModel):
 
 @app.post("/api/display/{room_id}/emergency")
 def display_emergency(room_id: str, body: EmergencyRequest, conn: Conn, token: DisplayToken = None):
-    """Emergency button. Simulated: recorded and shown on the website; a real one would call campus security."""
+    """SOS button (after "Are you sure?"). Simulated police call: recorded and logged, nobody is really called; the
+    board's LED blinks until the SOS is ended on the display."""
     display_room(conn, room_id, token)
     row = open_emergency(conn, room_id)
     if row is None:
         cur = conn.execute("INSERT INTO emergencies (room_id, created_at) VALUES (?, ?)",
                            (room_id, clock.now().isoformat(timespec="seconds")))
         row = conn.execute("SELECT * FROM emergencies WHERE id = ?", (cur.lastrowid,)).fetchone()
-        display.log.warning("EMERGENCY in %s: campus security notified (simulated)", room_id)
+        display.log.warning("EMERGENCY in %s: police (133) called (simulated)", room_id)
+    mqtt_feed.led(room_id, sos=True)
     return emergency_out(row)
 
 
-@app.get("/api/emergencies")
-def emergencies(_user: User, conn: Conn):
-    """Open emergencies, newest first, for the website's alerts."""
-    rows = conn.execute("SELECT * FROM emergencies WHERE resolved_at IS NULL ORDER BY id DESC").fetchall()
-    return [emergency_out(r) for r in rows]
-
-
-@app.post("/api/emergencies/{emergency_id}/resolve")
-def resolve_emergency(emergency_id: int, user: User, conn: Conn):
-    row = conn.execute("SELECT * FROM emergencies WHERE id = ? AND resolved_at IS NULL", (emergency_id,)).fetchone()
-    if row is None:
-        raise ApiError(404, "No open emergency with that id")
-    conn.execute("UPDATE emergencies SET resolved_at = ?, resolved_by = ? WHERE id = ?",
-                 (clock.now().isoformat(timespec="seconds"), user["id"], emergency_id))
-    return emergency_out(conn.execute("SELECT * FROM emergencies WHERE id = ?", (emergency_id,)).fetchone())
+@app.delete("/api/display/{room_id}/emergency")
+def display_emergency_end(room_id: str, conn: Conn, token: DisplayToken = None):
+    """"End emergency" on the display: closes the open SOS and stops the LED."""
+    display_room(conn, room_id, token)
+    conn.execute("UPDATE emergencies SET resolved_at = ? WHERE room_id = ? AND resolved_at IS NULL",
+                 (clock.now().isoformat(timespec="seconds"), room_id))
+    mqtt_feed.led(room_id, sos=False)
+    display.log.warning("EMERGENCY in %s ended on the display", room_id)
+    return {"room_id": room_id, "emergency": None}
 
 
 # --- sensors ---
@@ -475,6 +460,8 @@ vision_at: dict[str, datetime] = {}   # when the camera detector (app/vision.py)
 def save_reading(conn: sqlite3.Connection, body: Reading) -> None:
     if body.display:
         display.heard(body.room_id)
+        if body.noise_db is not None:   # without the room display's own soundscape
+            body = body.model_copy(update={"noise_db": display.room_noise(body.room_id, body.noise_db)})
     people = body.people if body.people is not None else (None if body.presence is None else int(body.presence))
     left_items = body.left_items
     seen = vision_at.get(body.room_id)

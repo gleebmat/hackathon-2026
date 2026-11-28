@@ -11,6 +11,7 @@
 // In Velxio: Camera button = your webcam, Mic button = your microphone (off = test pattern / 440 Hz tone).
 // Display + speaker: the XIAO has none, so HAS_DISPLAY adds "display":true to every reading and the backend opens a
 // small window on the laptop that acts as the room's touch display and speaker while this board runs (app/display.py).
+// SOS on that display: the backend sends "sos" on aau-hack26/rooms/<room>/led and the user LED blinks until "off".
 // Libraries: Chirale_TensorFlowLite, PubSubClient. Files: sketch.ino + person_model.h (+ frame_key.h).
 #include <WiFi.h>
 #include <PubSubClient.h>
@@ -159,13 +160,23 @@ float noiseDb() {
 
 WiFiClient net;
 PubSubClient mqtt(net);
-String readingsTopic, frameTopic;
+String readingsTopic, frameTopic, ledTopic;
+bool sosOn = false, ledLit = false;   // SOS from the room display: blink the user LED (LED_BUILTIN, lit on LOW)
+
+void onMqtt(char* topic, byte* payload, unsigned int len) {
+  if (ledTopic != topic) return;
+  sosOn = len == 3 && memcmp(payload, "sos", 3) == 0;
+  Serial.println(sosOn ? "SOS: LED blinking" : "SOS over: LED off");
+}
 
 bool mqttReady() {
   if (WiFi.status() != WL_CONNECTED) return false;
   if (mqtt.connected()) return true;
   String id = String("xiao-") + String((uint32_t)ESP.getEfuseMac(), HEX);
-  if (mqtt.connect(id.c_str())) return true;
+  if (mqtt.connect(id.c_str())) {
+    mqtt.subscribe(ledTopic.c_str());   // retained: an SOS that is still open arrives right away
+    return true;
+  }
   Serial.printf("MQTT connect failed (%d)\n", mqtt.state());
   return false;
 }
@@ -220,6 +231,10 @@ void setup() {
   Serial.println(WiFi.status() == WL_CONNECTED ? "WIFI OK" : "WIFI FAILED");
   readingsTopic = String("aau-hack26/rooms/") + ROOM_ID + "/readings";
   frameTopic = String("aau-hack26/rooms/") + ROOM_ID + "/frame";
+  ledTopic = String("aau-hack26/rooms/") + ROOM_ID + "/led";
+  pinMode(LED_BUILTIN, OUTPUT);
+  digitalWrite(LED_BUILTIN, HIGH);   // off
+  mqtt.setCallback(onMqtt);
   mqtt.setServer(MQTT_HOST, MQTT_PORT);
 }
 
@@ -258,6 +273,8 @@ void loop() {
   }
   json += "}";
   if (mqttReady()) mqtt.publish(readingsTopic.c_str(), json.c_str());
+  ledLit = sosOn && !ledLit;   // toggles every loop (a few times per second) while the SOS is open
+  digitalWrite(LED_BUILTIN, ledLit ? LOW : HIGH);
   Serial.println(json);
   mqtt.loop();
 }

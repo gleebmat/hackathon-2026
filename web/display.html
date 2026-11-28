@@ -41,7 +41,6 @@
   .room b { display: block; font-size: 26px; line-height: 1.1; }
   .status { display: inline-flex; align-items: center; gap: 8px; font-size: 18px; color: var(--muted); margin-top: 2px; white-space: nowrap; }
   .status .dot { width: 14px; height: 14px; border-radius: 50%; background: var(--closed); flex: none; }
-  .badge { font-size: 17px; font-weight: 700; padding: 8px 14px; border-radius: 999px; background: var(--surface-2); display: inline-flex; gap: 8px; align-items: center; }
   .clock { font-size: 22px; font-weight: 600; color: var(--muted); font-variant-numeric: tabular-nums; }
   .langbtn { min-width: 64px; height: 56px; border-radius: 14px; background: var(--surface-2); font-size: 18px; font-weight: 700; }
   .sos {
@@ -72,7 +71,6 @@
     margin-top: auto; align-self: stretch; height: 64px; border-radius: 16px; display: flex; align-items: center; justify-content: center;
     gap: 10px; font-size: 24px; font-weight: 700; color: #0b0f14;
   }
-  .card.on { border-color: var(--ghost); background: #221b3a; }
   .nav {
     position: absolute; top: 141px; width: 72px; height: 72px; border-radius: 50%; background: var(--surface-2);
     border: 2px solid var(--line); display: grid; place-items: center; font-size: 34px; z-index: 2;
@@ -156,7 +154,6 @@
 <div id="screen">
   <header class="bar">
     <div class="room"><b id="label">Room</b><span class="status" id="status"><span class="dot"></span><span id="statusText">…</span></span></div>
-    <span class="badge hidden" id="quietBadge"></span>
     <span class="clock" id="clock" aria-hidden="true">--:--</span>
     <button class="langbtn" id="lang"></button>
     <button class="sos" id="sos"></button>
@@ -268,7 +265,10 @@
       <div class="warn pulse" id="sosOpenIcon"></div>
       <h2 id="sosOpenTitle" data-t="sos_open"></h2>
       <p class="lead" id="sosOpenText"></p>
-      <button class="big secondary" style="width:100%" id="sosHide" data-t="sos_hide"></button>
+      <div class="row">
+        <button class="big secondary" id="sosHide" data-t="sos_hide"></button>
+        <button class="big danger" id="sosEnd" data-t="sos_end"></button>
+      </div>
     </div>
   </div>
   <div class="banner hidden" id="sosBanner" role="alert"></div>
@@ -293,15 +293,12 @@
       st_free: "Free", st_partial: "Shared", st_full: "Booked", st_ghost: "Nobody here: booking may be released",
       st_closed: "Closed", st_unbookable: "Live status only", st_break: "On break until {t}",
       people_0: "nobody here", people_1: "1 person here", people_n: "{n} people here",
-      quiet_badge: "Quiet room",
       c_book: "Book this room", c_book_p: "Scan a QR code with your phone to book it.", c_book_cta: "Show QR code",
       c_sound: "Soundscapes", c_sound_p: "Rain, ocean, forest and more, to help you focus.", c_sound_cta: "Choose a sound",
       c_sound_on: "Playing: {s}",
       c_selfie: "Group selfie", c_selfie_p: "Take a photo and download it with a QR code.", c_selfie_cta: "Open camera",
       c_break: "Take a break", c_break_p: "Step out without losing the room.", c_break_cta: "Start a break",
       c_break_on: "On break: {m} min left",
-      c_quiet: "Quiet room", c_quiet_p_off: "Ask everyone to keep silent. The website shows it too.",
-      c_quiet_p_on: "On. Others see this room as a silent room.", c_quiet_cta_off: "Turn on", c_quiet_cta_on: "Turn off",
       book_title: "Book this room", book_lead: "Point your phone camera at the code. It opens this room on the booking website.",
       book_free: "Free right now.", book_until: "Booked until {t}.",
       sound_title: "Soundscapes", playing: "Playing", vol: "Volume", vol_down: "Quieter", vol_up: "Louder",
@@ -314,9 +311,10 @@
       break_title: "Take a break", break_lead: "The room stays yours while everyone steps out. It isn't released as empty.",
       min: "min", start_break: "Start break", break_held: "The room is held for you", back_by: "Back by {t}",
       more5: "+5 min", im_back: "I'm back", minus: "Less", plus: "More",
-      sos_ask: "Call emergency services?", sos_ask_lead: "Campus security is told that there is an emergency in this room.",
-      sos_yes: "Yes, call now", sos_open: "Help has been called", sos_open_text: "Reported at {t}. Stay calm and stay in the room if it is safe.",
-      sos_hide: "Hide this message", sos_banner: "Emergency reported at {t}. Help is on the way.",
+      sos_ask: "Call the police?", sos_ask_lead: "The police (133) are called to this room. Only in a real emergency.",
+      sos_yes: "Yes, call now", sos_calling: "Calling the police (133)…", sos_calling_text: "Connecting. Stay in the room if it is safe.",
+      sos_open: "Police called", sos_open_text: "Called at {t}. Help is on the way: stay calm and stay in the room if it is safe.",
+      sos_hide: "Hide this message", sos_end: "End emergency", sos_banner: "Police called at {t}. Help is on the way.",
       offline: "No connection to the server. Retrying…", no_token: "This display isn't paired with the room (token missing).",
       err_no_booking: "Nobody has booked this room right now, so there's nothing to hold. Book it first.",
       err_no_camera: "no webcam here and the room camera is off."
@@ -327,15 +325,12 @@
       st_free: "Frei", st_partial: "Geteilt", st_full: "Gebucht", st_ghost: "Niemand da: Buchung wird ggf. freigegeben",
       st_closed: "Geschlossen", st_unbookable: "Nur Live-Status", st_break: "Pause bis {t}",
       people_0: "niemand da", people_1: "1 Person da", people_n: "{n} Personen da",
-      quiet_badge: "Ruheraum",
       c_book: "Raum buchen", c_book_p: "QR-Code mit dem Handy scannen und buchen.", c_book_cta: "QR-Code zeigen",
       c_sound: "Klangwelten", c_sound_p: "Regen, Meer, Wald und mehr, zum Konzentrieren.", c_sound_cta: "Klang wählen",
       c_sound_on: "Läuft: {s}",
       c_selfie: "Gruppen-Selfie", c_selfie_p: "Foto machen und per QR-Code herunterladen.", c_selfie_cta: "Kamera öffnen",
       c_break: "Pause machen", c_break_p: "Kurz raus, ohne den Raum zu verlieren.", c_break_cta: "Pause starten",
       c_break_on: "Pause: noch {m} Min.",
-      c_quiet: "Ruheraum", c_quiet_p_off: "Alle um Ruhe bitten. Die Website zeigt es auch.",
-      c_quiet_p_on: "An. Andere sehen diesen Raum als Ruheraum.", c_quiet_cta_off: "Einschalten", c_quiet_cta_on: "Ausschalten",
       book_title: "Raum buchen", book_lead: "Handykamera auf den Code richten. Er öffnet diesen Raum auf der Buchungsseite.",
       book_free: "Gerade frei.", book_until: "Gebucht bis {t}.",
       sound_title: "Klangwelten", playing: "Läuft", vol: "Lautstärke", vol_down: "Leiser", vol_up: "Lauter",
@@ -348,9 +343,10 @@
       break_title: "Pause machen", break_lead: "Der Raum bleibt deiner, während alle kurz rausgehen. Er wird nicht als leer freigegeben.",
       min: "Min.", start_break: "Pause starten", break_held: "Der Raum ist für dich reserviert", back_by: "Zurück bis {t}",
       more5: "+5 Min.", im_back: "Bin zurück", minus: "Weniger", plus: "Mehr",
-      sos_ask: "Notruf absetzen?", sos_ask_lead: "Der Campus-Sicherheitsdienst erfährt, dass es in diesem Raum einen Notfall gibt.",
-      sos_yes: "Ja, jetzt rufen", sos_open: "Hilfe wurde gerufen", sos_open_text: "Gemeldet um {t}. Ruhig bleiben und, wenn es sicher ist, im Raum bleiben.",
-      sos_hide: "Meldung ausblenden", sos_banner: "Notfall gemeldet um {t}. Hilfe ist unterwegs.",
+      sos_ask: "Polizei rufen?", sos_ask_lead: "Die Polizei (133) wird in diesen Raum gerufen. Nur im echten Notfall.",
+      sos_yes: "Ja, jetzt rufen", sos_calling: "Polizei wird gerufen (133)…", sos_calling_text: "Verbindung wird hergestellt. Wenn es sicher ist, im Raum bleiben.",
+      sos_open: "Polizei gerufen", sos_open_text: "Gerufen um {t}. Hilfe ist unterwegs: ruhig bleiben und, wenn es sicher ist, im Raum bleiben.",
+      sos_hide: "Meldung ausblenden", sos_end: "Notfall beenden", sos_banner: "Polizei gerufen um {t}. Hilfe ist unterwegs.",
       offline: "Keine Verbindung zum Server. Neuer Versuch…", no_token: "Dieses Display ist nicht mit dem Raum verbunden (Token fehlt).",
       err_no_booking: "Der Raum ist gerade nicht gebucht, es gibt nichts zu reservieren. Bitte zuerst buchen.",
       err_no_camera: "keine Webcam hier und die Raumkamera ist aus."
@@ -367,7 +363,6 @@
     music: '<path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/>',
     camera: '<path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3z"/><circle cx="12" cy="13" r="3.5"/>',
     coffee: '<path d="M17 8h1a4 4 0 0 1 0 8h-1"/><path d="M3 8h14v9a4 4 0 0 1-4 4H7a4 4 0 0 1-4-4z"/><path d="M6 2v2M10 2v2M14 2v2"/>',
-    moon: '<path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/>',
     alert: '<path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4M12 17h.01"/>',
     left: '<path d="M15 18l-6-6 6-6"/>', right: '<path d="M9 18l6-6-6-6"/>',
     phone: '<path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1 1 .4 1.9.7 2.8a2 2 0 0 1-.5 2.1L8 9.9a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.8.7a2 2 0 0 1 1.7 2z"/>',
@@ -430,7 +425,6 @@
 
   const SOUND_KINDS = ["off", "rain", "ocean", "forest", "cafe", "white", "pink", "brown"];
   let sound = { kind: "off", volume: 50 };
-  let quiet = false;
 
   function render() {
     if (!S) return;
@@ -444,10 +438,6 @@
     $("statusText").textContent = text;
     const colour = { free: "--free", partial: "--shared", full: "--full", ghost: "--ghost", break: "--amber" }[st] || "--closed";
     document.querySelector(".status .dot").style.background = `var(${colour})`;
-
-    quiet = !!S.quiet;
-    $("quietBadge").classList.toggle("hidden", !quiet);
-    $("quietBadge").innerHTML = ic("moon") + t("quiet_badge");
 
     if (Date.now() - soundLocalAt > 4000 && S.sound && (S.sound.kind !== sound.kind || S.sound.volume !== sound.volume)) {
       sound = { ...S.sound }; Synth.apply(sound);
@@ -464,8 +454,7 @@
     { id: "book", icon: "qr", c: "#6ea8ff" },
     { id: "sound", icon: "music", c: "#3ddc84" },
     { id: "selfie", icon: "camera", c: "#5ee0e0" },
-    { id: "break", icon: "coffee", c: "#ffb020" },
-    { id: "quiet", icon: "moon", c: "#b69cff" }
+    { id: "break", icon: "coffee", c: "#ffb020" }
   ];
   const track = $("track"), dots = $("dots");
   let current = 0;
@@ -487,8 +476,6 @@
       if (c.id === "sound" && sound.kind !== "off") p = t("c_sound_on", { s: t("s_" + sound.kind) });
       const brk = S && parseLocal(S.break_until);
       if (c.id === "break" && brk && brk > new Date()) p = t("c_break_on", { m: Math.ceil((brk - new Date()) / 60000) });
-      if (c.id === "quiet") { p = t(quiet ? "c_quiet_p_on" : "c_quiet_p_off"); cta = t(quiet ? "c_quiet_cta_on" : "c_quiet_cta_off"); }
-      el.classList.toggle("on", c.id === "quiet" && quiet);
       el.setAttribute("aria-label", `${title}. ${p}. ${i + 1} / ${CARDS.length}`);
       const html = `<div class="icon" style="color:${c.c};background:${c.c}26">${ic(c.icon)}</div>
         <h2>${title}</h2><p>${p}</p>
@@ -546,7 +533,6 @@
   /* ---------- sheets ---------- */
   let openSheet = null;
   function openCard(id) {
-    if (id === "quiet") return toggleQuiet();
     closeSheet();
     openSheet = id;
     $("home").classList.add("hidden");
@@ -563,13 +549,6 @@
     track.children[current].focus({ preventScroll: true });
   }
   document.querySelectorAll("[data-back]").forEach((b) => b.addEventListener("click", closeSheet));
-
-  async function toggleQuiet() {
-    try {
-      const r = await api("POST", "/quiet", { on: !quiet });
-      quiet = r.on; if (S) S.quiet = r.on; render();
-    } catch (e) { fail(e); }
-  }
 
   /* ---------- 1. book ---------- */
   $("bookQr").src = `${API}/qr`;
@@ -800,13 +779,26 @@
     } catch (e) { fail(e); }
   });
   $("sosHide").addEventListener("click", () => { sosHidden = S && S.emergency && S.emergency.id; renderEmergency(); });
+  $("sosEnd").addEventListener("click", async () => {
+    try {
+      await api("DELETE", "/emergency");
+      if (S) S.emergency = null; renderEmergency(); $("sos").focus();
+    } catch (e) { fail(e); }
+  });
+  // the simulated call: "Calling the police (133)…" for a few seconds, then "Police called"
+  const CALL_MS = 4000;
+  setInterval(() => { if (S && S.emergency && !sosCalled) renderEmergency(); }, 500);
+  let sosCalled = false;
   function renderEmergency() {
     const em = S && S.emergency;
     const at = em ? hhmm(parseLocal(em.created_at)) : "";
+    sosCalled = !em || Date.now() - parseLocal(em.created_at) >= CALL_MS;
     $("sosOpen").classList.toggle("hidden", !em || sosHidden === em.id);
     $("sosBanner").classList.toggle("hidden", !em || sosHidden !== em.id);
     if (em) {
-      $("sosOpenText").textContent = t("sos_open_text", { t: at });
+      $("sosOpenTitle").textContent = t(sosCalled ? "sos_open" : "sos_calling");
+      $("sosOpenText").textContent = sosCalled ? t("sos_open_text", { t: at }) : t("sos_calling_text");
+      $("sosHide").disabled = $("sosEnd").disabled = !sosCalled;
       $("sosBanner").innerHTML = ic("phone") + t("sos_banner", { t: at });
     }
   }

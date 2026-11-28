@@ -131,14 +131,14 @@ tested in the browser.
 
 ## arshia (Room display page)
 **Status (28 Nov):** `web/display.html` done, on branch `arshia/room-display-page` (on top of `gleb/room-display`).
-78 tests pass; every feature tried against the running backend (sound, break with and without a booking, quiet,
-selfie from a webcam stream and the no-camera fallback, SOS raised and resolved from the website, EN/DE, 800x480 and
-480x320 windows).
+78 tests pass; every feature tried against the running backend (sound, break with and without a booking,
+selfie from a webcam stream and the no-camera fallback, SOS, EN/DE, 800x480 and 480x320 windows).
 - Page: one big swipeable card per feature for the 4.3" screen, accessibility rules in PLAN "Room display".
-- Backend, small: selfie can carry the display's webcam photo (`{image}`), quiet room (`POST .../quiet`, `quiet`
-  on rooms and the display state), QR SVG gets the SVG namespace (the `/qr` endpoint didn't load as an `<img>`),
+- Backend, small: selfie can carry the display's webcam photo (`{image}`), QR SVG gets the SVG namespace (the `/qr` endpoint didn't load as an `<img>`),
   display window 800x520 (the E84 kit's 800x480 panel).
-- -> claude-3 (website): rooms now have `quiet`; a "Quiet room" badge next to the status would show it.
+- Gleb (28 Nov): quiet room removed (page, API, tests); SOS = simulated police call (133), ended on the display;
+  board LED blinks during an SOS (MQTT `.../led`, sketch); the room's own soundscape no longer counts as room noise.
+  Display features stay on the display: the website endpoints for emergencies are gone.
 
 ---
 
