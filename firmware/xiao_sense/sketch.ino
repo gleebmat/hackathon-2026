@@ -25,12 +25,13 @@
 
 // People count (optional): Seeed's Swift-YOLO Nano person detector (models/swift_yolo_nano_person_192_int8.tflite)
 // runs in the background on the other CPU core and counts people every few seconds; the fast person model above
-// still decides presence every frame. The 1.9 MB model is stored zlib-compressed in count_model.h (1.6 MB, so the
-// firmware still fits the 3 MB app flash) and unpacked into PSRAM at startup with the decompressor in the chip's ROM.
-// Set COUNT_PEOPLE to 0 to go back to presence only (count_model.h is then not needed).
+// still decides presence every frame. The 1.9 MB model is stored zlib-compressed in count_model_1.h + _2.h (1.6 MB,
+// so the firmware still fits the 3 MB app flash) and unpacked into PSRAM at startup with the ROM decompressor.
+// Set COUNT_PEOPLE to 0 to go back to presence only (the count_model files are then not needed).
 #define COUNT_PEOPLE 1
 #if COUNT_PEOPLE
-#include "count_model.h"
+#include "count_model_1.h"
+#include "count_model_2.h"
 #include "esp32s3/rom/miniz.h"
 #endif
 
@@ -160,12 +161,15 @@ uint8_t* unpackModel() {
   tinfl_decompressor* d = (tinfl_decompressor*)malloc(sizeof(tinfl_decompressor));   // ~11 KB: too big for the stack
   if (!buf || !d) return nullptr;
   tinfl_init(d);
-  size_t in = COUNT_MODEL_Z_BYTES, out = COUNT_MODEL_BYTES;
-  tinfl_status st = tinfl_decompress(d, g_count_model_z, &in, buf, buf, &out,
-                                     TINFL_FLAG_PARSE_ZLIB_HEADER | TINFL_FLAG_USING_NON_WRAPPING_OUTPUT_BUF);
+  const int flags = TINFL_FLAG_PARSE_ZLIB_HEADER | TINFL_FLAG_USING_NON_WRAPPING_OUTPUT_BUF;
+  size_t in1 = COUNT_MODEL_Z1_BYTES, out1 = COUNT_MODEL_BYTES;      // part 1, more input follows
+  tinfl_status st = tinfl_decompress(d, g_count_model_z1, &in1, buf, buf, &out1, flags | TINFL_FLAG_HAS_MORE_INPUT);
+  size_t in2 = COUNT_MODEL_Z2_BYTES, out2 = COUNT_MODEL_BYTES - out1;
+  if (st == TINFL_STATUS_NEEDS_MORE_INPUT && in1 == COUNT_MODEL_Z1_BYTES)
+    st = tinfl_decompress(d, g_count_model_z2, &in2, buf, buf + out1, &out2, flags);
   free(d);
-  if (st == TINFL_STATUS_DONE && out == COUNT_MODEL_BYTES) return buf;
-  Serial.printf("count model unpack failed (%d, %u bytes)\n", (int)st, (unsigned)out);
+  if (st == TINFL_STATUS_DONE && out1 + out2 == COUNT_MODEL_BYTES) return buf;
+  Serial.printf("count model unpack failed (%d)\n", (int)st);
   free(buf);
   return nullptr;
 }
