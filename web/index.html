@@ -92,6 +92,17 @@
     <!-- Room panel: opens right under the map (not as an overlay) so the zoom to the room stays visible. -->
     <section class="sheet" id="room-dialog" aria-labelledby="room-title" hidden></section>
 
+    <!-- Room assistant: a request in plain words -> the best rooms (app/assistant.py) -->
+    <section class="assistant" id="assistant">
+      <form class="ask-form" id="ask-form">
+        <span class="ask-spark" aria-hidden="true">✨</span>
+        <input id="ask-input" type="text" maxlength="300" autocomplete="off" data-i18n-ph="ask_ph" data-i18n-aria="ask_aria">
+        <button class="btn btn-primary" type="submit" data-i18n="ask_btn">Ask</button>
+      </form>
+      <div class="ask-examples" id="ask-examples"></div>
+      <div class="ask-answer" id="ask-answer" aria-live="polite" hidden></div>
+    </section>
+
     <section class="picker" id="picker">
       <div class="cal">
         <div class="cal-month">

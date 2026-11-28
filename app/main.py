@@ -12,7 +12,7 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, ValidationError
 
-from app import auth, booking, campus_sim, clock, db, mqtt_feed, vision
+from app import assistant, auth, booking, campus_sim, clock, db, mqtt_feed, vision
 from app.booking import ApiError
 
 WEB_DIR = db.ROOT / "web"
@@ -246,6 +246,12 @@ def cancel_booking(booking_id: int, user: User, conn: Conn):
         raise ApiError(400, "This booking is already over")
     conn.execute("UPDATE bookings SET status = 'cancelled' WHERE id = ?", (booking_id,))
     return {"ok": True}
+
+
+@app.get("/api/assistant")
+def ask_assistant(conn: Conn, q: str = Query(min_length=1, max_length=300)):
+    """A booking request in plain English or German -> what was understood and the best rooms for it."""
+    return assistant.answer(conn, q, clock.now())
 
 
 @app.get("/api/suggest")

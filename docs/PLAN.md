@@ -33,6 +33,15 @@ N, Z, L and S), and books it.
   later from Arshia's model. The other rooms are simulated from their bookings, plus a few walk-ins.
 - **Lost & found:** after a booking ends and the board reports 0 persons, the system detects items left behind
   (e.g. "backpack at seat area 3") and tells the student who booked the room. Details are under "Lost items" below.
+- **Room assistant** (`app/assistant.py`, `GET /api/assistant?q=`): a request in plain English or German
+  ("quiet room for 3 tomorrow at 14:00 for 2 hours", "Besprechung jetzt zu viert, nur wir") is read for day, time,
+  length, people, purpose, private/shared and building, rule-based (no AI service, works offline). It answers with
+  what it understood and the 3 best rooms (right-sized, quiet first for quiet study); "Book this" opens the room
+  with everything filled in.
+- **Smart alerts** (in the website, while it is open): your quiet-study room got loud (board microphone), your
+  running booking is about to be released as a ghost, or something was left behind in a room you just used.
+- **Board room on the map:** a board badge (LIVE / OFFLINE) and, in the room panel, a live card with the people
+  count, the noise in dB on a meter and the last minute of noise.
 - **3D view:** the campus map (`web/map3d/`) is on the main page: rotate, zoom, click a room to book it; searching
   flies the camera to the room and highlights it.
 
