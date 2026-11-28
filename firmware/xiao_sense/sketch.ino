@@ -86,6 +86,7 @@ tflite::MicroInterpreter* interpreter = nullptr;
 uint8_t gray[IMG * IMG];                  // current frame, grayscale
 uint8_t baseGray[IMG * IMG];              // empty-room snapshot
 bool haveBaseline = false;
+bool manualSnapshot = false;              // taken with the serial command 'snapshot': kept until the next one
 bool occupiedSinceSnapshot = false;       // people were seen after the snapshot: compare, don't refresh
 int16_t edges[GRID * GRID], prevEdges[GRID * GRID];
 uint8_t steady[GRID * GRID];              // checks in a row each cell has been changed
@@ -329,6 +330,24 @@ void bestShift(int& bx, int& by) {
     }
 }
 
+// Prints the empty-room snapshot as text art (24x24, dark ' ' to bright '@'), so you can see the reference.
+void showSnapshot() {
+  static uint8_t cells[GRID * GRID];
+  const char* shades = " .:-=+*#%@";
+  if (!haveBaseline) {
+    Serial.println("No snapshot yet");
+    return;
+  }
+  cellMeans(baseGray, 0, 0, cells);
+  Serial.printf("Snapshot (%s):\n", manualSnapshot ? "manual" : "automatic");
+  for (int y = 0; y < GRID; y++) {
+    char row[2 * GRID + 1];
+    for (int x = 0; x < GRID; x++) row[2 * x] = row[2 * x + 1] = shades[cells[y * GRID + x] * 10 / 256];
+    row[2 * GRID] = 0;
+    Serial.printf("|%s|\n", row);
+  }
+}
+
 void takeSnapshot() {
   memcpy(baseGray, gray, sizeof baseGray);
   memset(steady, 0, sizeof steady);
@@ -432,6 +451,7 @@ void publish(const String& json) {
 
 void setup() {
   Serial.begin(115200);
+  Serial.setTimeout(20);
   delay(300);
   camOk = startCamera();
   Serial.println(camOk ? "CAM OK" : "CAM FAILED");
@@ -501,6 +521,30 @@ void loop() {
     int motion = 0;                        // largest contrast change since the last check
     for (int i = 0; i < GRID * GRID; i++) motion = max(motion, abs(edges[i] - prevEdges[i]));
 
+    // Serial commands (Velxio: type into the serial monitor and press Send):
+    //   snapshot = take the empty-room picture now and keep it;  show = print it;  auto = back to automatic snapshots
+    if (Serial.available()) {
+      String cmd = Serial.readStringUntil('\n');
+      cmd.trim();
+      if (cmd == "snapshot" && present) {
+        Serial.println("Someone is in view: snapshot NOT taken. Leave the view and try again.");
+      } else if (cmd == "snapshot") {
+        takeSnapshot();
+        manualSnapshot = true;
+        occupiedSinceSnapshot = false;
+        leftItems = cleanStreak = 0;
+        Serial.println("Snapshot taken: left items are compared with this picture until the next 'snapshot'.");
+        showSnapshot();
+      } else if (cmd == "show") {
+        showSnapshot();
+      } else if (cmd == "auto") {
+        manualSnapshot = false;
+        Serial.println("Automatic snapshots again (refreshed whenever the room is empty and still).");
+      } else if (cmd.length()) {
+        Serial.println("Commands: snapshot, show, auto");
+      }
+    }
+
     if (present) {
       if (haveBaseline) occupiedSinceSnapshot = true;
       emptyStreak = calmStreak = cleanStreak = 0;
@@ -511,11 +555,12 @@ void loop() {
       calmStreak = (score < EMPTY_SCORE && motion <= STILL_DIFF) ? calmStreak + 1 : 0;
       if (!occupiedSinceSnapshot) {
         // nobody has been here since the snapshot: keep it fresh (daylight, moved chairs) while the room is calm
-        if (calmStreak >= CALM_FOR_SNAPSHOT) takeSnapshot();
+        if (!manualSnapshot && calmStreak >= CALM_FOR_SNAPSHOT) takeSnapshot();
       } else if (emptyStreak >= 2) {
         int k = countLeftItems();
-        if (k < 0) {                       // view or lighting changed: new snapshot
-          takeSnapshot();
+        if (k < 0) {                       // view or lighting changed
+          if (manualSnapshot) Serial.println("View changed a lot since the snapshot: type 'snapshot' again");
+          else takeSnapshot();
           k = 0;
         }
         leftItems = k;

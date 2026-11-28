@@ -83,7 +83,9 @@ the sketch here, paste it into Velxio (or the other way round) and save (File > 
   missed (score below 0.6). Good light helps; a backlit person (window behind) scores low.
 - *Left items:* the board compares the frame with a **snapshot of the empty room**. It takes that snapshot by itself
   whenever the view is empty and still for about 3 checks (person score below 0.45, nothing moving), so after Run
-  keep the view empty for ~5 s until serial prints `Empty-room baseline ready`. When people were there and leave,
+  keep the view empty for ~5 s until serial prints `Empty-room baseline ready`. **Or take it yourself:** with the
+  view empty, type `snapshot` in the serial monitor and press Send; the board keeps that picture until the next
+  `snapshot` (`show` prints the reference as text art, `auto` goes back to automatic snapshots). When people were there and leave,
   every change against that snapshot that stays in place for 3 checks counts. So:
   - put the object **inside the view, away from the left, right and top edges** (changes touching those edges are
     treated as a person walking out); the bottom edge (the desk) is fine;
