@@ -7,7 +7,7 @@ Hackathon project: speed matters, but don't break `main`.
 - Project: Smart Campus Room Booking on a 3D AAU campus map (Infineon challenge). **Read `docs/PLAN.md` (spec + your role) and `docs/LOG.md` (status per agent) first; run steps are in `README.md`.**
 - Team: Gleb = backend + integration (`app/`), Thomas = board + 3D map (`firmware/`, `web/map3d/`), Martha = frontend (`web/`), Arshia = models (people count, lost items).
 - Done and integrated on `main`: room assistant ("Ask Room V", `app/assistant.py`), smart alerts, final UI (map, always-visible calendar, booking panel under the map, my bookings,
-  ratings) + 3D map + backend + board (see below). Rooms come from `web/map3d/campus.json`; the board room is **Z.1.04**, every other room is
+  ratings) + 3D map + backend + board (see below). Rooms come from `web/map3d/campus.json` (built from the real campusplan.aau.at data: real room numbers, buildings V N Z L S O); the board room is **Z.1.04**, every other room is
   simulated.
 - Board: **XIAO ESP32S3 Sense in Velxio** (`firmware/xiao_sense/`; team Velxio project TODAREISTODO, setup,
   placement tips and troubleshooting in `README.md`), readings over MQTT to the backend (`app/mqtt_feed.py`);

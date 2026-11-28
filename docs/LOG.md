@@ -25,6 +25,9 @@ Presence, noise, ghost release and left items tested end to end with a webcam. T
 - 28 Nov: booking rules (walk-ins don't block a whole-room booking; only rooms under 55 seats bookable, shown as
   "Not bookable"), map opens on floor 1, notification center; demo frame key shared in the repo.
 
+- 28 Nov: 3D map rebuilt from campusplan.aau.at's floor-plan data (real rooms and numbers, building O = Nexus,
+  bridges Z-S, no overlaps), compass, main entrance, offices toggle.
+
 **Next:** physical-board test.
 
 ---
