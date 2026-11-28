@@ -25,14 +25,13 @@
 
 // People count (optional): Seeed's Swift-YOLO Nano person detector (models/swift_yolo_nano_person_192_int8.tflite)
 // runs in the background on the other CPU core and counts people every few seconds; the fast person model above
-// still decides presence every frame. The 1.9 MB model doesn't fit next to the firmware in the 3 MB app flash, so
-// the board downloads it into PSRAM over WiFi at startup. Set COUNT_PEOPLE to 0 to go back to presence only.
+// still decides presence every frame. The 1.9 MB model is stored zlib-compressed in count_model.h (1.6 MB, so the
+// firmware still fits the 3 MB app flash) and unpacked into PSRAM at startup with the decompressor in the chip's ROM.
+// Set COUNT_PEOPLE to 0 to go back to presence only (count_model.h is then not needed).
 #define COUNT_PEOPLE 1
 #if COUNT_PEOPLE
-#include <HTTPClient.h>
-#include <WiFiClientSecure.h>
-const char* COUNT_MODEL_URL =
-    "https://raw.githubusercontent.com/gleebmat/hackathon-2026/main/models/swift_yolo_nano_person_192_int8.tflite";
+#include "count_model.h"
+#include "esp32s3/rom/miniz.h"
 #endif
 
 const char* ROOM_ID = "Z.1.04";
@@ -155,37 +154,24 @@ volatile int peopleCount = -1;
 volatile uint32_t countAt = 0;
 tflite::MicroInterpreter* counter = nullptr;
 
-// Downloads the count model into PSRAM. The file is public; a corrupt download fails the model's own checks.
-uint8_t* downloadModel() {
-  WiFiClientSecure tls;
-  tls.setInsecure();
-  HTTPClient http;
-  if (!http.begin(tls, COUNT_MODEL_URL)) return nullptr;
-  int code = http.GET();
-  int len = http.getSize();
-  if (code != 200 || len <= 0) {
-    Serial.printf("count model download failed (HTTP %d)\n", code);
-    http.end();
-    return nullptr;
-  }
-  uint8_t* buf = (uint8_t*)heap_caps_aligned_alloc(16, len, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
-  WiFiClient* stream = http.getStreamPtr();
-  int got = 0;
-  uint32_t t0 = millis();
-  while (buf && got < len && millis() - t0 < 180000) {
-    int n = stream->available();
-    if (n > 0) got += stream->readBytes(buf + got, min(n, len - got));
-    else delay(5);
-  }
-  http.end();
-  Serial.printf("count model: %d of %d bytes in %lus\n", got, len, (unsigned long)((millis() - t0) / 1000));
-  if (got == len) return buf;
+// Unpacks the count model into PSRAM.
+uint8_t* unpackModel() {
+  uint8_t* buf = (uint8_t*)heap_caps_aligned_alloc(16, COUNT_MODEL_BYTES, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+  tinfl_decompressor* d = (tinfl_decompressor*)malloc(sizeof(tinfl_decompressor));   // ~11 KB: too big for the stack
+  if (!buf || !d) return nullptr;
+  tinfl_init(d);
+  size_t in = COUNT_MODEL_Z_BYTES, out = COUNT_MODEL_BYTES;
+  tinfl_status st = tinfl_decompress(d, g_count_model_z, &in, buf, buf, &out,
+                                     TINFL_FLAG_PARSE_ZLIB_HEADER | TINFL_FLAG_USING_NON_WRAPPING_OUTPUT_BUF);
+  free(d);
+  if (st == TINFL_STATUS_DONE && out == COUNT_MODEL_BYTES) return buf;
+  Serial.printf("count model unpack failed (%d, %u bytes)\n", (int)st, (unsigned)out);
   free(buf);
   return nullptr;
 }
 
 bool startCounter() {
-  uint8_t* model = downloadModel();
+  uint8_t* model = unpackModel();
   uint8_t* mem = (uint8_t*)heap_caps_aligned_alloc(16, COUNT_ARENA, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
   if (!model || !mem) return false;
   static tflite::MicroMutableOpResolver<13> ops;
@@ -449,7 +435,7 @@ void setup() {
   for (int i = 0; i < 40 && WiFi.status() != WL_CONNECTED; i++) delay(250);
   Serial.println(WiFi.status() == WL_CONNECTED ? "WIFI OK" : "WIFI FAILED");
 #if COUNT_PEOPLE
-  if (WiFi.status() == WL_CONNECTED && startCounter()) {
+  if (startCounter()) {
     xTaskCreatePinnedToCore(counterTask, "count", 16384, nullptr, 1, nullptr, 0);   // loop() runs on core 1
     Serial.println("COUNT OK");
   } else {
