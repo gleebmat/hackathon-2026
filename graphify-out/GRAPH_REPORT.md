@@ -1,7 +1,7 @@
 # Graph Report - hackathon-2026  (2026-11-28)
 
 ## Corpus Check
-- 38 files · ~86,538 words
+- 38 files · ~86,522 words
 - Verdict: corpus is large enough that graph structure adds value.
 - Unclassified: 10 file(s) not represented in the graph (top: .tflite 4, (none) 2, .example 1)
 
@@ -11,7 +11,7 @@
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `393db51a`
+- Built from commit: `d4e31cb1`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -38,20 +38,20 @@
 4. `room()` - 24 edges
 5. `main()` - 23 edges
 6. `ApiError` - 21 edges
-7. `createPicker()` - 21 edges
-8. `now()` - 21 edges
+7. `now()` - 21 edges
+8. `createPicker()` - 21 edges
 9. `esc()` - 20 edges
 10. `request()` - 19 edges
 
 ## Surprising Connections (you probably didn't know these)
-- `3D campus map (tom-claude; built and working, standalone for now)` --references--> `pillars()`  [INFERRED]
-  docs/PLAN.md → tools/campus3d/gen_campus.py
-- `API (gleb-claude; implemented in `app/`, tested in `tests/test_api.py`)` --references--> `building()`  [INFERRED]
-  docs/PLAN.md → web/js/api.js
 - `Roles` --references--> `people()`  [INFERRED]
   docs/PLAN.md → web/js/i18n.js
-- `gleb-claude (Backend + integration)` --references--> `likes()`  [INFERRED]
-  docs/LOG.md → app/booking.py
+- `API (gleb-claude; implemented in `app/`, tested in `tests/test_api.py`)` --references--> `building()`  [INFERRED]
+  docs/PLAN.md → web/js/api.js
+- `3D campus map (tom-claude; built and working, standalone for now)` --references--> `pillars()`  [INFERRED]
+  docs/PLAN.md → tools/campus3d/gen_campus.py
+- `API (gleb-claude; implemented in `app/`, tested in `tests/test_api.py`)` --references--> `people()`  [INFERRED]
+  docs/PLAN.md → web/js/i18n.js
 - `API (gleb-claude; implemented in `app/`, tested in `tests/test_api.py`)` --references--> `q()`  [INFERRED]
   docs/PLAN.md → web/js/api.js
 
