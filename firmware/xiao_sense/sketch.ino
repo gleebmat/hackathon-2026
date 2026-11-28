@@ -6,8 +6,9 @@
 //  - presence: Arshia's 96x96 person model (models/vww_96_int8.tflite, TensorFlow Lite Micro), majority of the
 //    last 3 frames so one odd frame doesn't flip it
 //  - noise_db: PDM microphone level (approximate: silence ~30 dB, full scale ~90 dB)
-//  - left_items: once the room is empty, the frame is compared with the empty-room snapshot; changed areas that
-//    touch each other count as one item
+//  - left_items: while the room is empty and still, the board keeps a snapshot of it; after people leave, the frame
+//    is compared with that snapshot (camera nudges and lighting changes compensated) and changes that stay in place
+//    for a few seconds count as items, touching areas as one item
 // In Velxio: Camera button = your webcam, Mic button = your microphone (off = test pattern / 440 Hz tone).
 // Libraries: Chirale_TensorFlowLite (builds TFLM from source, works on arduino-esp32 3.x), PubSubClient.
 // Files: sketch.ino + person_model.h.
@@ -46,11 +47,16 @@ const float PERSON_THRESHOLD = 0.60;
 
 const int IMG = 96;                       // model input and camera frame: 96x96
 const int CELL = 4, GRID = IMG / CELL;    // left-item check on a 24x24 grid of 4x4-pixel cells
-const int CELL_DIFF = 30;                 // a cell changed if its mean brightness moved this much
-const int MIN_ITEM_CELLS = 4;             // smaller blobs are webcam noise (JPEG artefacts)
-const float MAX_CHANGED = 0.45;           // more than 45% changed = lights switched, not items
-const int COUNT_HISTORY = 3;              // left items = median of the last 3 counts, so it doesn't jump
-const int CLEAN_FOR_REFRESH = 5;          // empty and clean this many checks in a row: refresh the snapshot
+const int EDGE_DIFF = 14;                 // a cell changed if its contrast to its neighbours moved this much
+const int CELL_DIFF = 45;                 // ... or its brightness moved this much (after the global exposure shift)
+const int MIN_ITEM_CELLS = 3;             // smaller blobs are webcam noise (JPEG artefacts)
+const float MAX_CHANGED = 0.30;           // more than 30% changed = view or lights changed, not items: new snapshot
+const int MAX_SHIFT = 3;                  // camera nudged by up to 3 px: compensated
+const int STEADY_CHECKS = 3;              // a change must stay in place this many checks in a row to be an item
+const int STILL_DIFF = 8;                 // scene counts as still if no cell's contrast moved more than this
+const float EMPTY_SCORE = 0.45;           // the snapshot is only taken from frames that clearly show nobody
+const int CALM_FOR_SNAPSHOT = 3;          // empty, calm checks in a row before the snapshot is refreshed
+const int CLEAN_TO_RESET = 5;             // after people left: clean checks in a row before snapshots resume
 
 I2SClass mic;
 bool camOk = false, micOk = false, modelOk = false;
@@ -60,11 +66,12 @@ uint8_t* arena = nullptr;
 tflite::MicroInterpreter* interpreter = nullptr;
 
 uint8_t gray[IMG * IMG];                  // current frame, grayscale
-uint8_t baseline[GRID * GRID];            // empty-room snapshot (cell means)
+uint8_t baseGray[IMG * IMG];              // empty-room snapshot
 bool haveBaseline = false;
-int emptyStreak = 0, leftItems = 0, cleanStreak = 0;
-int counts[COUNT_HISTORY] = {0};
-int countIdx = 0;
+bool occupiedSinceSnapshot = false;       // people were seen after the snapshot: compare, don't refresh
+int16_t edges[GRID * GRID], prevEdges[GRID * GRID];
+uint8_t steady[GRID * GRID];              // checks in a row each cell has been changed
+int emptyStreak = 0, calmStreak = 0, cleanStreak = 0, leftItems = 0;
 bool votes[3] = {false, false, false};
 int voteIdx = 0;
 
@@ -125,31 +132,83 @@ float personScore() {
   return (out->data.int8[1] - out->params.zero_point) * out->params.scale;   // index 1 = person
 }
 
-void cellMeans(uint8_t* dst) {
+// Mean brightness of each 4x4 cell, read from img moved by (dx, dy) pixels (edges clamped).
+void cellMeans(const uint8_t* img, int dx, int dy, uint8_t* dst) {
   for (int gy = 0; gy < GRID; gy++)
     for (int gx = 0; gx < GRID; gx++) {
       int sum = 0;
       for (int y = 0; y < CELL; y++)
-        for (int x = 0; x < CELL; x++) sum += gray[(gy * CELL + y) * IMG + gx * CELL + x];
+        for (int x = 0; x < CELL; x++) {
+          int sx = constrain(gx * CELL + x + dx, 0, IMG - 1), sy = constrain(gy * CELL + y + dy, 0, IMG - 1);
+          sum += img[sy * IMG + sx];
+        }
       dst[gy * GRID + gx] = sum / (CELL * CELL);
     }
 }
 
-// Items left behind: cells that changed vs the empty-room snapshot, grouped into blobs. One object usually
-// shows up as several fragments (webcam JPEG noise), so every changed cell is grown by one cell first and
-// fragments that then touch count as one item. Returns -1 when most of the picture changed (lights), so the
-// caller takes a new snapshot instead.
+// Contrast of each cell to its 3x3 neighbourhood. Smooth lighting changes (exposure, daylight, soft shadows)
+// barely move it; an object's outline does.
+void cellEdges(const uint8_t* cells, int16_t* dst) {
+  for (int y = 0; y < GRID; y++)
+    for (int x = 0; x < GRID; x++) {
+      int sum = 0, n = 0;
+      for (int dy = -1; dy <= 1; dy++)
+        for (int dx = -1; dx <= 1; dx++) {
+          int nx = x + dx, ny = y + dy;
+          if (nx < 0 || ny < 0 || nx >= GRID || ny >= GRID) continue;
+          sum += cells[ny * GRID + nx];
+          n++;
+        }
+      dst[y * GRID + x] = cells[y * GRID + x] - sum / n;
+    }
+}
+
+// Camera offset (pixels) that best lines the frame up with the snapshot, so a nudged camera is not an item.
+// Compares brightness steps between neighbouring pixels, which exposure changes don't affect.
+void bestShift(int& bx, int& by) {
+  long best = -1;
+  for (int dy = -MAX_SHIFT; dy <= MAX_SHIFT; dy++)
+    for (int dx = -MAX_SHIFT; dx <= MAX_SHIFT; dx++) {
+      long cost = 0;
+      for (int y = MAX_SHIFT; y < IMG - MAX_SHIFT - 1; y += 2)
+        for (int x = MAX_SHIFT; x < IMG - MAX_SHIFT - 1; x += 2) {
+          int c = y * IMG + x, b = (y + dy) * IMG + x + dx;
+          cost += abs((gray[c + 1] - gray[c]) - (baseGray[b + 1] - baseGray[b])) +
+                  abs((gray[c + IMG] - gray[c]) - (baseGray[b + IMG] - baseGray[b]));
+        }
+      if (best < 0 || cost < best) { best = cost; bx = dx; by = dy; }
+    }
+}
+
+void takeSnapshot() {
+  memcpy(baseGray, gray, sizeof baseGray);
+  memset(steady, 0, sizeof steady);
+  if (!haveBaseline) Serial.println("Empty-room baseline ready");
+  haveBaseline = true;
+}
+
+// Items left behind: cells that differ from the empty-room snapshot and have stayed that way for STEADY_CHECKS
+// checks (a person walking out or flickering light moves), grouped into blobs. One object usually shows up as
+// several fragments, so every changed cell is grown by one cell first and fragments that then touch count as one
+// item. Returns -1 when a large part of the picture changed (camera moved, lights switched): take a new snapshot.
 int countLeftItems() {
-  static uint8_t cur[GRID * GRID], mask[GRID * GRID], grown[GRID * GRID];
+  static uint8_t cur[GRID * GRID], base[GRID * GRID], mask[GRID * GRID], grown[GRID * GRID];
+  static int16_t baseEdges[GRID * GRID];
   static uint16_t stack_[GRID * GRID];
-  cellMeans(cur);
+  int sx = 0, sy = 0;
+  bestShift(sx, sy);
+  cellMeans(gray, 0, 0, cur);
+  cellMeans(baseGray, sx, sy, base);
+  cellEdges(base, baseEdges);
   long shift = 0;                          // auto-exposure brightens or darkens the whole frame: ignore that
-  for (int i = 0; i < GRID * GRID; i++) shift += (int)cur[i] - (int)baseline[i];
+  for (int i = 0; i < GRID * GRID; i++) shift += (int)cur[i] - (int)base[i];
   shift /= GRID * GRID;
   int changed = 0;
   for (int i = 0; i < GRID * GRID; i++) {
-    mask[i] = abs((int)cur[i] - (int)baseline[i] - (int)shift) > CELL_DIFF;
-    changed += mask[i];
+    bool diff = abs(edges[i] - baseEdges[i]) > EDGE_DIFF || abs((int)cur[i] - (int)base[i] - (int)shift) > CELL_DIFF;
+    changed += diff;
+    steady[i] = diff ? min(steady[i] + 1, 255) : 0;
+    mask[i] = steady[i] >= STEADY_CHECKS;
   }
   if (changed > MAX_CHANGED * GRID * GRID) return -1;
   for (int y = 0; y < GRID; y++)
@@ -181,15 +240,8 @@ int countLeftItems() {
     }
     if (size >= MIN_ITEM_CELLS) items++;
   }
+  if (items) Serial.printf("left-item check: %d item(s), %d cells changed, camera shift %d,%d px\n", items, changed, sx, sy);
   return items;
-}
-
-int medianCount() {
-  int s[COUNT_HISTORY];
-  memcpy(s, counts, sizeof s);
-  for (int i = 1; i < COUNT_HISTORY; i++)
-    for (int j = i; j > 0 && s[j - 1] > s[j]; j--) { int t = s[j]; s[j] = s[j - 1]; s[j - 1] = t; }
-  return s[COUNT_HISTORY / 2];
 }
 
 // Approximate sound level: RMS of ~32 ms of 16 kHz audio.
@@ -269,29 +321,33 @@ void loop() {
     votes[voteIdx++ % 3] = score >= PERSON_THRESHOLD;
     bool present = score >= 0.85f || (votes[0] + votes[1] + votes[2]) >= 2;
 
+    static uint8_t cells[GRID * GRID];
+    memcpy(prevEdges, edges, sizeof edges);
+    cellMeans(gray, 0, 0, cells);
+    cellEdges(cells, edges);
+    int motion = 0;                        // largest contrast change since the last check
+    for (int i = 0; i < GRID * GRID; i++) motion = max(motion, abs(edges[i] - prevEdges[i]));
+
     if (present) {
-      emptyStreak = cleanStreak = 0;
+      if (haveBaseline) occupiedSinceSnapshot = true;
+      emptyStreak = calmStreak = cleanStreak = 0;
       leftItems = 0;
-      memset(counts, 0, sizeof counts);
-    } else if (++emptyStreak >= 2) {
-      if (!haveBaseline) {                 // first calm empty room after start: remember it
-        cellMeans(baseline);
-        haveBaseline = true;
-        Serial.println("Empty-room baseline ready");
-      } else {
+      memset(steady, 0, sizeof steady);
+    } else {
+      emptyStreak++;
+      calmStreak = (score < EMPTY_SCORE && motion <= STILL_DIFF) ? calmStreak + 1 : 0;
+      if (!occupiedSinceSnapshot) {
+        // nobody has been here since the snapshot: keep it fresh (daylight, moved chairs) while the room is calm
+        if (calmStreak >= CALM_FOR_SNAPSHOT) takeSnapshot();
+      } else if (emptyStreak >= 2) {
         int k = countLeftItems();
-        if (k < 0) {                       // lighting changed: new snapshot
-          cellMeans(baseline);
+        if (k < 0) {                       // view or lighting changed: new snapshot
+          takeSnapshot();
           k = 0;
         }
-        counts[countIdx++ % COUNT_HISTORY] = k;
-        leftItems = medianCount();
-        // empty and clean for a while: refresh the snapshot, so slow changes (daylight) are not items later
+        leftItems = k;
         cleanStreak = k == 0 ? cleanStreak + 1 : 0;
-        if (cleanStreak >= CLEAN_FOR_REFRESH) {
-          cellMeans(baseline);
-          cleanStreak = 0;
-        }
+        if (cleanStreak >= CLEAN_TO_RESET) occupiedSinceSnapshot = false;
       }
     }
     json += ",\"presence\":" + String(present ? "true" : "false");
