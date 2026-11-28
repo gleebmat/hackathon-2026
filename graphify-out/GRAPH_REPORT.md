@@ -1,7 +1,7 @@
 # Graph Report - hackathon-2026  (2026-11-28)
 
 ## Corpus Check
-- 37 files · ~85,254 words
+- 37 files · ~85,311 words
 - Verdict: corpus is large enough that graph structure adds value.
 - Unclassified: 10 file(s) not represented in the graph (top: .tflite 4, (none) 2, .example 1)
 
@@ -11,7 +11,7 @@
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `25ec2db7`
+- Built from commit: `bb988e6c`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -46,14 +46,14 @@
 ## Surprising Connections (you probably didn't know these)
 - `3D campus map (tom-claude; built and working, standalone for now)` --references--> `pillars()`  [INFERRED]
   docs/PLAN.md → tools/campus3d/gen_campus.py
-- `Roles` --references--> `people()`  [INFERRED]
-  docs/PLAN.md → web/js/i18n.js
 - `API (gleb-claude; implemented in `app/`, tested in `tests/test_api.py`)` --references--> `building()`  [INFERRED]
   docs/PLAN.md → web/js/api.js
+- `Roles` --references--> `people()`  [INFERRED]
+  docs/PLAN.md → web/js/i18n.js
 - `API (gleb-claude; implemented in `app/`, tested in `tests/test_api.py`)` --references--> `q()`  [INFERRED]
   docs/PLAN.md → web/js/api.js
-- `API (gleb-claude; implemented in `app/`, tested in `tests/test_api.py`)` --references--> `people()`  [INFERRED]
-  docs/PLAN.md → web/js/i18n.js
+- `gleb-claude (Backend + integration)` --references--> `people()`  [INFERRED]
+  docs/LOG.md → web/js/i18n.js
 
 ## Import Cycles
 - None detected.

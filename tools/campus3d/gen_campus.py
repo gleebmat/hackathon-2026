@@ -51,9 +51,14 @@ PILLARS = {"O"}            # buildings whose upper floors overhang the ground fl
 PILLAR_SIZE = 1.2          # m
 # Coffee and vending machines on floor 1, roughly where they are (x, z in metres); each is moved to the nearest free
 # spot in the building (not in a room, a doorway or another machine).
-MACHINES = [("coffee", -25.2, -2.7), ("coffee", -23.3, -2.6), ("coffee", 122.9, 31.6), ("coffee", 250.5, 9.3),
-            ("coffee", 117.1, 69.2), ("vending", 120.2, 69.0), ("vending", 123.0, 70.2), ("coffee", 117.4, 144.7)]
+MACHINES = [("coffee", -23.6, -2.6), ("coffee", -23.6, -1.2), ("coffee", 122.9, 31.6), ("coffee", 250.5, 9.3),
+            ("coffee", 117.6, 71.2), ("vending", 120.2, 71.2), ("vending", 122.9, 71.2), ("coffee", 117.4, 144.7)]
 MACHINE_FLOOR = 1
+MACHINE_GAP = 0.42         # m from the wall to the machine's centre: its back touches the wall
+# Corrections: parts of a floor left out of the model (building, floor, outline). Z floor 1: the strip of storage,
+# prep rooms and toilets behind HS 1 and HS 2 reads as thick wall; the hall ends right behind the halls.
+CUTS = [("Z", 1, [(116.4, 66.0), (145.5, 66.0), (145.5, 71.33), (132.09, 70.97), (132.1, 70.74), (127.37, 70.61),
+                  (116.53, 70.54), (116.4, 70.54)])]
 
 
 def poly(s):
@@ -81,13 +86,16 @@ def coords(ring):
     return [[round(x, 2), round(z, 2)] for x, z in list(ring.coords)[:-1]]
 
 
-def floor_outlines(by_floor, taken):
+def floor_outlines(by_floor, taken, cuts=()):
     """Each floor's outline: its spaces joined (small gaps closed), minus what earlier buildings already cover."""
     out = {}
     for f, gs in by_floor.items():
         g = unary_union(gs).buffer(0.4, join_style=2).buffer(-0.4, join_style=2).simplify(OUTLINE_TOLERANCE)
         if f in taken:
             g = g.difference(taken[f])
+        for cf, pts in cuts:
+            if cf == f:
+                g = g.difference(Polygon(pts))
         out[f] = unary_union([p for p in rings(g) if p.area >= 8])   # drop slivers
     return out
 
@@ -215,8 +223,8 @@ def place_machines(buildings):
         nx, nz = -(p1.y - p0.y) / n, (p1.x - p0.x) / n
         if not walkable.contains(Point(wall.x + nx * 0.3, wall.y + nz * 0.3)):
             nx, nz = -nx, -nz
-        snug = Point(wall.x + nx * 0.5, wall.y + nz * 0.5)
-        if walkable.buffer(-0.35, join_style=2).contains(snug) and not any(k.contains(snug) for k in keep_clear):
+        snug = Point(wall.x + nx * MACHINE_GAP, wall.y + nz * MACHINE_GAP)
+        if walkable.buffer(-0.3, join_style=2).contains(snug) and not any(k.contains(snug) for k in keep_clear):
             spot = snug
         placed.append({"kind": kind, "building": b["id"], "floor": MACHINE_FLOOR, "x": round(spot.x, 2),
                        "z": round(spot.y, 2), "dir": [round(nx, 3), round(nz, 3)]})
@@ -333,7 +341,7 @@ def main():
         for s in mine:   # unnumbered leftovers count only where they touch the building's numbered rooms
             if not is_courtyard(s) and (s["code"] or (s["f"] in near and poly(s).intersects(near[s["f"]]))):
                 by_floor[s["f"]].append(poly(s))
-        outlines = floor_outlines(by_floor, taken)
+        outlines = floor_outlines(by_floor, taken, [(f, pts) for cb, f, pts in CUTS if cb == bid])
         # rooms: one per code; a room on several floors (lecture halls) is one tall room at its lowest floor
         per_code = defaultdict(list)
         for s in mine:
