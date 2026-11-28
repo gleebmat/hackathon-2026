@@ -1,17 +1,17 @@
 # Graph Report - hackathon-2026  (2026-11-28)
 
 ## Corpus Check
-- 27 files · ~63,220 words
+- 31 files · ~92,564 words
 - Verdict: corpus is large enough that graph structure adds value.
-- Unclassified: 7 file(s) not represented in the graph (top: (none) 2, .tflite 2, .example 1)
+- Unclassified: 9 file(s) not represented in the graph (top: .tflite 4, (none) 2, .example 1)
 
 ## Summary
-- 455 nodes · 1063 edges · 22 communities (15 shown, 7 thin omitted)
+- 466 nodes · 1073 edges · 25 communities (15 shown, 10 thin omitted)
 - Extraction: 98% EXTRACTED · 2% INFERRED · 0% AMBIGUOUS · INFERRED: 25 edges (avg confidence: 0.91)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `749d3cbf`
+- Built from commit: `325a3b82`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -60,11 +60,11 @@
 ## Import Cycles
 - None detected.
 
-## Communities (22 total, 7 thin omitted)
+## Communities (25 total, 10 thin omitted)
 
 ### Community 1 - "hackathon-2026"
-Cohesion: 0.33
-Nodes (5): Graphify (code knowledge graph, saves AI tokens), hackathon-2026, Run locally, Setup, The board: XIAO ESP32S3 Sense in Velxio
+Cohesion: 0.29
+Nodes (6): Board limits (the brief for choosing models), Graphify (code knowledge graph, saves AI tokens), hackathon-2026, Run locally, Setup, The board: XIAO ESP32S3 Sense in Velxio
 
 ### Community 2 - "AGENTS.md"
 Cohesion: 0.20
@@ -92,15 +92,15 @@ Nodes (5): claude-2 (3D model), gemini (Data, simulation, demo), gleb-claude (Ba
 
 ### Community 11 - "test_api.py"
 Cohesion: 0.09
-Nodes (41): app_env(), book(), reading(), room(), sensor_until(), test_availability_slots(), test_bad_input_gives_400_with_error(), test_board_disconnect_and_recovery_during_demo() (+33 more)
+Nodes (40): app_env(), book(), reading(), room(), sensor_until(), test_availability_slots(), test_bad_input_gives_400_with_error(), test_board_disconnect_and_recovery_during_demo() (+32 more)
 
 ### Community 12 - "db.py"
-Cohesion: 0.23
-Nodes (7): columns(), connect(), db_path(), init(), load_rooms(), upgrade(), test_search_finds_map_labels()
+Cohesion: 0.13
+Nodes (11): check_password(), hash_password(), new_token(), columns(), connect(), db_path(), init(), load_rooms() (+3 more)
 
 ### Community 13 - "main.py"
-Cohesion: 0.05
-Nodes (33): check_password(), hash_password(), new_token(), valid_email(), now(), to_local(), api_error(), BookingRequest (+25 more)
+Cohesion: 0.06
+Nodes (30): valid_email(), now(), to_local(), api_error(), BookingRequest, calendar(), cancel_booking(), create_booking() (+22 more)
 
 ### Community 14 - "api.js"
 Cohesion: 0.20
@@ -119,26 +119,26 @@ Cohesion: 0.11
 Nodes (36): ApiError, availability(), booking_out(), calendar(), can_rate(), create_booking(), current_bookings(), fmt() (+28 more)
 
 ### Community 20 - "webcam.py"
-Cohesion: 0.14
+Cohesion: 0.18
 Nodes (11): check_left_item(), main(), prep_96(), run_person_detect(), detect_left_items(), is_valid_new_object(), load_labels(), main() (+3 more)
 
 ## Knowledge Gaps
-- **7 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
+- **10 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
 - **Why does `API (gleb-claude; implemented in `app/`, tested in `tests/test_api.py`)` connect `booking.py` to `PLAN: Smart Campus Room Booking (Infineon challenge), building V`, `api.js`?**
-  _High betweenness centrality (0.330) - this node is a cross-community bridge._
+  _High betweenness centrality (0.322) - this node is a cross-community bridge._
 - **Are the 7 inferred relationships involving `ApiError` (e.g. with `api_error()` and `cancel_booking()`) actually correct?**
   _`ApiError` has 7 INFERRED edges - model-reasoned connections that need verification._
 - **Should `app.js` be split into smaller, more focused modules?**
   _Cohesion score 0.09362279511533243 - nodes in this community are weakly interconnected._
 - **Why does `q()` connect `api.js` to `booking.py`?**
-  _High betweenness centrality (0.149) - this node is a cross-community bridge._
+  _High betweenness centrality (0.146) - this node is a cross-community bridge._
 - **Should `gen_campus.py` be split into smaller, more focused modules?**
-  _Cohesion score 0.07928118393234672 - nodes in this community are weakly interconnected._
+  _Cohesion score 0.07777777777777778 - nodes in this community are weakly interconnected._
 - **Why does `building()` connect `api.js` to `booking.py`?**
-  _High betweenness centrality (0.138) - this node is a cross-community bridge._
+  _High betweenness centrality (0.135) - this node is a cross-community bridge._
 - **Should `test_api.py` be split into smaller, more focused modules?**
-  _Cohesion score 0.08896103896103896 - nodes in this community are weakly interconnected._
+  _Cohesion score 0.09090909090909091 - nodes in this community are weakly interconnected._

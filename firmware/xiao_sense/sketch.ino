@@ -1,18 +1,24 @@
 // Smart campus room sensor - Seeed XIAO ESP32S3 Sense (runs in the Velxio simulator and on the real board).
 //
 // Once per camera frame (about every 1-2 s in Velxio) it measures the room on the board itself and publishes one JSON
-// reading over MQTT to the topic
-// aau-hack26/rooms/<room>/readings on a public broker; the backend (app/mqtt_feed.py) subscribes to it:
-//   {"room_id":"Z.1.04","noise_db":47.0,"presence":true,"person_score":0.91,"left_items":0}
-//  - presence: Arshia's 96x96 person model (models/vww_96_int8.tflite, TensorFlow Lite Micro), majority of the
-//    last 3 frames so one odd frame doesn't flip it
+// reading over MQTT to the topic aau-hack26/rooms/<room>/readings on a public broker; the backend
+// (app/mqtt_feed.py) subscribes to it:
+//   {"room_id":"Z.1.04","noise_db":47.0,"presence":true,"person_score":0.91,"people":2,"left_items":0}
+// Three models, all TensorFlow Lite Micro, int8, on the board:
+//  - presence (every frame): Arshia's 96x96 person model (models/vww_96_int8.tflite in person_model.h)
+//  - people count (while someone is present, on the second core): Seeed's Swift-YOLO face detector, 96x96
+//    (models/face_96_int8.tflite in face_model.h); people = number of faces, at least 1 while present
+//  - left items (while the room is empty, on the second core): Seeed's Swift-YOLO COCO detector, 320x320, 80 classes
+//    (models/coco_320_int8.tflite in items_model.h); it counts forgettable things (bags, phones, umbrellas, books, ...).
+//    Items already there before people came belong to the room; left items = how many more there are after they left.
 //  - noise_db: PDM microphone level (approximate: silence ~30 dB, full scale ~90 dB)
-//  - left_items: while the room is empty and still, the board keeps a snapshot of it; after people leave, the frame
-//    is compared with that snapshot (camera nudges and lighting changes compensated) and changes that stay in place
-//    for a few seconds count as items, touching areas as one item
+// The two detectors are zlib-compressed in flash (firmware + models must fit Velxio's 3 MB app partition) and
+// unpacked into PSRAM at startup with the ROM decompressor.
+// Serial commands (Velxio: type into the serial monitor, press Send): items = list what the item detector sees;
+// snapshot = the items visible now belong to the room (left items back to 0).
 // In Velxio: Camera button = your webcam, Mic button = your microphone (off = test pattern / 440 Hz tone).
 // Libraries: Chirale_TensorFlowLite (builds TFLM from source, works on arduino-esp32 3.x), PubSubClient.
-// Files: sketch.ino + person_model.h.
+// Files: sketch.ino + person_model.h + face_model.h + items_model.h.
 #include <WiFi.h>
 #include <PubSubClient.h>
 #include <ESP_I2S.h>
@@ -24,15 +30,17 @@
 #include "tensorflow/lite/schema/schema_generated.h"
 #include "person_model.h"
 
-// People count (optional): Seeed's Swift-YOLO Nano person detector (models/swift_yolo_nano_person_192_int8.tflite)
-// runs in the background on the other CPU core and counts people every few seconds; the fast person model above
-// still decides presence every frame. The 1.9 MB model is stored zlib-compressed in count_model_1.h + _2.h (1.6 MB,
-// so the firmware still fits the 3 MB app flash) and unpacked into PSRAM at startup with the ROM decompressor.
-// Set COUNT_PEOPLE to 0 to go back to presence only (the count_model files are then not needed).
+// Switches: 0 turns a detector off (its model file is then not needed). Previous version (Swift-YOLO Nano count,
+// snapshot-diff left items): git tag board-v1.
 #define COUNT_PEOPLE 1
+#define FIND_ITEMS 1
 #if COUNT_PEOPLE
-#include "count_model_1.h"
-#include "count_model_2.h"
+#include "face_model.h"
+#endif
+#if FIND_ITEMS
+#include "items_model.h"
+#endif
+#if COUNT_PEOPLE || FIND_ITEMS
 #if __has_include("miniz.h")                 // the ROM decompressor's header moved between ESP-IDF versions
 #include "miniz.h"
 #elif __has_include("rom/miniz.h")
@@ -46,7 +54,17 @@ const char* ROOM_ID = "Z.1.04";
 const char* MQTT_HOST = "broker.hivemq.com";   // public broker: fine for a demo, use your own for real data
 const int MQTT_PORT = 1883;
 const float PERSON_THRESHOLD = 0.60;
-const float PRESENT_NOW = 0.70;             // a single frame this sure counts as present right away
+const float PRESENT_NOW = 0.70;              // a single frame this sure counts as present right away
+const float FACE_SCORE = 0.40;               // face detector score that counts as a person
+const float ITEM_SCORE = 0.30;               // objectness x class score that counts as an item
+const uint32_t RESULT_FRESH_MS = 120000;     // older detector results are not used
+const uint32_t ITEMS_BASELINE_MS = 300000;   // empty room: refresh the item baseline every 5 minutes
+
+// COCO classes people forget (index in the model's 80 classes).
+struct ItemClass { int id; const char* name; };
+const ItemClass ITEMS[] = {{24, "backpack"}, {25, "umbrella"}, {26, "handbag"}, {28, "suitcase"}, {39, "bottle"},
+                           {41, "cup"}, {63, "laptop"}, {67, "cell phone"}, {73, "book"}};
+const int N_ITEMS = sizeof(ITEMS) / sizeof(ITEMS[0]);
 
 // Seeed's camera pin map for the Sense board (same as Velxio's camera example)
 #define XCLK_GPIO_NUM 10
@@ -64,18 +82,7 @@ const float PRESENT_NOW = 0.70;             // a single frame this sure counts a
 #define HREF_GPIO_NUM 47
 #define PCLK_GPIO_NUM 13
 
-const int IMG = 96;                       // model input and camera frame: 96x96
-const int CELL = 4, GRID = IMG / CELL;    // left-item check on a 24x24 grid of 4x4-pixel cells
-const int EDGE_DIFF = 14;                 // a cell changed if its contrast to its neighbours moved this much
-const int CELL_DIFF = 45;                 // ... or its brightness moved this much (after the global exposure shift)
-const int MIN_ITEM_CELLS = 3;             // smaller blobs are webcam noise (JPEG artefacts)
-const float MAX_CHANGED = 0.30;           // more than 30% changed = view or lights changed, not items: new snapshot
-const int MAX_SHIFT = 3;                  // camera nudged by up to 3 px: compensated
-const int STEADY_CHECKS = 3;              // a change must stay in place this many checks in a row to be an item
-const int STILL_DIFF = 8;                 // scene counts as still if no cell's contrast moved more than this
-const float EMPTY_SCORE = 0.45;           // the snapshot is only taken from frames that clearly show nobody
-const int CALM_FOR_SNAPSHOT = 3;          // empty, calm checks in a row before the snapshot is refreshed
-const int CLEAN_TO_RESET = 5;             // after people left: clean checks in a row before snapshots resume
+const int IMG = 96;                          // camera frame and presence model input: 96x96
 
 I2SClass mic;
 bool camOk = false, micOk = false, modelOk = false;
@@ -83,15 +90,6 @@ bool camOk = false, micOk = false, modelOk = false;
 const int ARENA_SIZE = 160 * 1024;
 uint8_t* arena = nullptr;
 tflite::MicroInterpreter* interpreter = nullptr;
-
-uint8_t gray[IMG * IMG];                  // current frame, grayscale
-uint8_t baseGray[IMG * IMG];              // empty-room snapshot
-bool haveBaseline = false;
-bool manualSnapshot = false;              // taken with the serial command 'snapshot': kept until the next one
-bool occupiedSinceSnapshot = false;       // people were seen after the snapshot: compare, don't refresh
-int16_t edges[GRID * GRID], prevEdges[GRID * GRID];
-uint8_t steady[GRID * GRID];              // checks in a row each cell has been changed
-int emptyStreak = 0, calmStreak = 0, cleanStreak = 0, leftItems = 0;
 bool votes[3] = {false, false, false};
 int voteIdx = 0;
 
@@ -104,7 +102,7 @@ bool startCamera() {
   c.pin_xclk = XCLK_GPIO_NUM; c.pin_pclk = PCLK_GPIO_NUM; c.pin_vsync = VSYNC_GPIO_NUM; c.pin_href = HREF_GPIO_NUM;
   c.pin_sccb_sda = SIOD_GPIO_NUM; c.pin_sccb_scl = SIOC_GPIO_NUM; c.pin_pwdn = -1; c.pin_reset = -1;
   c.xclk_freq_hz = 20000000;
-  c.pixel_format = PIXFORMAT_RGB565;      // colour: the person model takes 96x96x3
+  c.pixel_format = PIXFORMAT_RGB565;      // colour: the models take RGB
   c.frame_size = FRAMESIZE_96X96;
   c.fb_count = 1;
   c.fb_location = CAMERA_FB_IN_DRAM;      // the simulator can't put frame buffers in PSRAM yet
@@ -131,14 +129,13 @@ bool startModel() {
   return true;
 }
 
-// Fills the model input (int8 RGB, pixel - 128) and the grayscale copy from one RGB565 frame.
-// rgb (optional) receives the frame as 8-bit RGB for the people counter.
+// Fills the presence model input (int8 RGB, pixel - 128) from one RGB565 frame; rgb (optional) receives 8-bit RGB
+// for the detectors.
 void prepare(const camera_fb_t* fb, uint8_t* rgb) {
   int8_t* in = interpreter ? interpreter->input(0)->data.int8 : nullptr;
   for (int i = 0; i < IMG * IMG; i++) {
     uint16_t p = (fb->buf[2 * i] << 8) | fb->buf[2 * i + 1];
     uint8_t r = (p >> 11) << 3, g = ((p >> 5) & 0x3F) << 2, b = (p & 0x1F) << 3;
-    gray[i] = (r * 77 + g * 150 + b * 29) >> 8;
     if (rgb) {
       rgb[3 * i] = r;
       rgb[3 * i + 1] = g;
@@ -152,59 +149,87 @@ void prepare(const camera_fb_t* fb, uint8_t* rgb) {
   }
 }
 
-#if COUNT_PEOPLE
-const int COUNT_IMG = 192;                   // counter input: the 96x96 frame scaled up 2x
-const float COUNT_SCORE = 40;                // detection score (0..100) that counts as a person
-const int COUNT_ARENA = 1600 * 1024;
-const uint32_t COUNT_FRESH_MS = 60000;       // older counts are not sent
-uint8_t countRgb[IMG * IMG * 3];             // frame handed to the counter
-volatile bool countBusy = false;             // the counter owns countRgb while true
-volatile int peopleCount = -1;
-volatile uint32_t countAt = 0;
-tflite::MicroInterpreter* counter = nullptr;
+float personScore() {
+  if (interpreter->Invoke() != kTfLiteOk) return -1;
+  TfLiteTensor* out = interpreter->output(0);
+  return (out->data.int8[1] - out->params.zero_point) * out->params.scale;   // index 1 = person
+}
 
-// Unpacks the count model into PSRAM.
-uint8_t* unpackModel() {
-  uint8_t* buf = (uint8_t*)heap_caps_aligned_alloc(16, COUNT_MODEL_BYTES, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+#if COUNT_PEOPLE || FIND_ITEMS
+// ---- detectors on the second core ----
+enum Job { JOB_NONE, JOB_FACES, JOB_ITEMS };
+uint8_t jobRgb[IMG * IMG * 3];               // frame handed to the worker
+volatile int job = JOB_NONE;                 // the worker owns jobRgb while this isn't JOB_NONE
+volatile int faces = -1, items = -1;         // latest results (-1 = none yet)
+volatile uint32_t facesAt = 0, itemsAt = 0;  // when the frame of that result was taken
+uint32_t jobFrameAt = 0;
+char itemList[160] = "";                     // what the item detector saw last, for the serial command 'items'
+
+// Unpacks a zlib-compressed model from flash into 16-byte aligned PSRAM.
+uint8_t* unpack(const unsigned char* z, size_t zBytes, size_t bytes) {
+  uint8_t* buf = (uint8_t*)heap_caps_aligned_alloc(16, bytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
   tinfl_decompressor* d = (tinfl_decompressor*)malloc(sizeof(tinfl_decompressor));   // ~11 KB: too big for the stack
   if (!buf || !d) return nullptr;
   tinfl_init(d);
-  const int flags = TINFL_FLAG_PARSE_ZLIB_HEADER | TINFL_FLAG_USING_NON_WRAPPING_OUTPUT_BUF;
-  size_t in1 = COUNT_MODEL_Z1_BYTES, out1 = COUNT_MODEL_BYTES;      // part 1, more input follows
-  tinfl_status st = tinfl_decompress(d, g_count_model_z1, &in1, buf, buf, &out1, flags | TINFL_FLAG_HAS_MORE_INPUT);
-  size_t in2 = COUNT_MODEL_Z2_BYTES, out2 = COUNT_MODEL_BYTES - out1;
-  if (st == TINFL_STATUS_NEEDS_MORE_INPUT && in1 == COUNT_MODEL_Z1_BYTES)
-    st = tinfl_decompress(d, g_count_model_z2, &in2, buf, buf + out1, &out2, flags);
+  size_t in = zBytes, out = bytes;
+  tinfl_status st = tinfl_decompress(d, z, &in, buf, buf, &out,
+                                     TINFL_FLAG_PARSE_ZLIB_HEADER | TINFL_FLAG_USING_NON_WRAPPING_OUTPUT_BUF);
   free(d);
-  if (st == TINFL_STATUS_DONE && out1 + out2 == COUNT_MODEL_BYTES) return buf;
-  Serial.printf("count model unpack failed (%d)\n", (int)st);
+  if (st == TINFL_STATUS_DONE && out == bytes) return buf;
   free(buf);
   return nullptr;
 }
 
-bool startCounter() {
-  uint8_t* model = unpackModel();
-  uint8_t* mem = (uint8_t*)heap_caps_aligned_alloc(16, COUNT_ARENA, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
-  if (!model || !mem) return false;
-  static tflite::MicroMutableOpResolver<13> ops;
-  ops.AddConv2D();
-  ops.AddPad();
-  ops.AddPadV2();
-  ops.AddAdd();
-  ops.AddConcatenation();
-  ops.AddMaxPool2D();
-  ops.AddResizeNearestNeighbor();
-  ops.AddLogistic();
-  ops.AddTranspose();
-  ops.AddReshape();
-  ops.AddSplitV();
-  ops.AddMul();
-  ops.AddQuantize();
-  static tflite::MicroInterpreter interp(tflite::GetModel(model), ops, mem, COUNT_ARENA);
-  if (interp.AllocateTensors() != kTfLiteOk) return false;
-  counter = &interp;
-  Serial.printf("count model arena used: %u bytes\n", (unsigned)interp.arena_used_bytes());
-  return true;
+// Builds an interpreter with the ops both Swift-YOLO detectors use.
+tflite::MicroInterpreter* startDetector(const unsigned char* z, size_t zBytes, size_t bytes, size_t arenaBytes,
+                                        const char* name) {
+  uint8_t* model = unpack(z, zBytes, bytes);
+  uint8_t* mem = (uint8_t*)heap_caps_aligned_alloc(16, arenaBytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+  if (!model || !mem) {
+    Serial.printf("%s: out of memory or unpack failed\n", name);
+    return nullptr;
+  }
+  static tflite::MicroMutableOpResolver<16> ops;
+  static bool opsReady = false;
+  if (!opsReady) {
+    ops.AddConv2D();
+    ops.AddDepthwiseConv2D();
+    ops.AddPad();
+    ops.AddPadV2();
+    ops.AddAdd();
+    ops.AddMul();
+    ops.AddConcatenation();
+    ops.AddMaxPool2D();
+    ops.AddResizeNearestNeighbor();
+    ops.AddLogistic();
+    ops.AddTranspose();
+    ops.AddReshape();
+    ops.AddSplitV();
+    ops.AddGather();
+    ops.AddQuantize();
+    opsReady = true;
+  }
+  auto* m = new tflite::MicroInterpreter(tflite::GetModel(model), ops, mem, arenaBytes);
+  if (m->AllocateTensors() != kTfLiteOk) {
+    Serial.printf("%s: AllocateTensors failed\n", name);
+    return nullptr;
+  }
+  Serial.printf("%s arena used: %u bytes\n", name, (unsigned)m->arena_used_bytes());
+  return m;
+}
+
+// Copies jobRgb into a detector's input, scaled to its size (nearest pixel).
+void fillInput(tflite::MicroInterpreter* m) {
+  TfLiteTensor* in = m->input(0);
+  const int size = in->dims->data[1];
+  const float s = in->params.scale;
+  const int zp = in->params.zero_point;
+  for (int y = 0; y < size; y++)
+    for (int x = 0; x < size; x++) {
+      const uint8_t* px = jobRgb + 3 * ((y * IMG / size) * IMG + x * IMG / size);
+      for (int c = 0; c < 3; c++)
+        in->data.int8[3 * (y * size + x) + c] = (int8_t)constrain((int)lroundf(px[c] / 255.0f / s) + zp, -128, 127);
+    }
 }
 
 // Overlap of two boxes given as centre x, centre y, width, height.
@@ -215,207 +240,94 @@ float iou(const float* a, const float* b) {
   return w * h / (a[2] * a[3] + b[2] * b[3] - w * h);
 }
 
-// People in countRgb: run the detector, keep boxes scoring COUNT_SCORE+, drop overlapping duplicates (NMS).
-int countPeople() {
-  TfLiteTensor* in = counter->input(0);
-  float s = in->params.scale;
-  int zp = in->params.zero_point;
-  for (int y = 0; y < COUNT_IMG; y++)
-    for (int x = 0; x < COUNT_IMG; x++)
-      for (int c = 0; c < 3; c++) {
-        int v = (int)lroundf(countRgb[3 * ((y / 2) * IMG + x / 2) + c] / 255.0f / s) + zp;
-        in->data.int8[3 * (y * COUNT_IMG + x) + c] = (int8_t)constrain(v, -128, 127);
-      }
-  if (counter->Invoke() != kTfLiteOk) return -1;
-  TfLiteTensor* out = counter->output(0);
+float bestScore = 0;                         // highest objectness of the last run, for the serial log
+
+// Runs a Swift-YOLO detector on jobRgb. Rows are [x, y, w, h, objectness, class scores...], scores 0..100.
+// Counts boxes per class (perClass may be null) after non-maximum suppression; returns the total or -1.
+int detect(tflite::MicroInterpreter* m, float minScore, const ItemClass* classes, int nClasses, int* perClass) {
+  fillInput(m);
+  if (m->Invoke() != kTfLiteOk) return -1;
+  TfLiteTensor* out = m->output(0);
   const int rows = out->dims->data[1], cols = out->dims->data[2];
-  const int MAX_BOXES = 32;
-  static float boxes[MAX_BOXES][5];
+  const float s = out->params.scale / 100.0f;    // scores 0..1
+  const int zp = out->params.zero_point;
+  const int MAX_BOXES = 48;
+  static float boxes[MAX_BOXES][6];              // x, y, w, h, score, class slot
   int nb = 0;
+  bestScore = 0;
   for (int r = 0; r < rows; r++) {
     const int8_t* d = out->data.int8 + r * cols;
-    float score = (d[4] - out->params.zero_point) * out->params.scale;
-    if (score < COUNT_SCORE) continue;
-    int at = nb < MAX_BOXES ? nb++ : -1;
-    if (at < 0) {                            // full: replace the weakest box if this one is stronger
-      int weakest = 0;
-      for (int i = 1; i < MAX_BOXES; i++) if (boxes[i][4] < boxes[weakest][4]) weakest = i;
-      if (boxes[weakest][4] >= score) continue;
-      at = weakest;
+    float obj = (d[4] - zp) * s;
+    bestScore = max(bestScore, obj);
+    if (obj < minScore) continue;
+    for (int k = 0; k < (classes ? nClasses : 1); k++) {
+      float score = classes ? obj * (d[5 + classes[k].id] - zp) * s : obj;
+      if (score < minScore) continue;
+      int at = nb < MAX_BOXES ? nb++ : -1;
+      if (at < 0) {                              // full: replace the weakest box if this one is stronger
+        int weakest = 0;
+        for (int i = 1; i < MAX_BOXES; i++) if (boxes[i][4] < boxes[weakest][4]) weakest = i;
+        if (boxes[weakest][4] >= score) continue;
+        at = weakest;
+      }
+      for (int c = 0; c < 4; c++) boxes[at][c] = (d[c] - zp) * out->params.scale;
+      boxes[at][4] = score;
+      boxes[at][5] = k;
     }
-    for (int k = 0; k < 4; k++) boxes[at][k] = (d[k] - out->params.zero_point) * out->params.scale;
-    boxes[at][4] = score;
   }
-  int people = 0;
+  if (perClass) memset(perClass, 0, sizeof(int) * nClasses);
+  int total = 0;
   static bool used[MAX_BOXES];
   memset(used, 0, sizeof used);
-  for (;;) {                                 // greedy NMS: take the best unused box, suppress its overlaps
+  for (;;) {                                     // greedy NMS per class
     int best = -1;
     for (int i = 0; i < nb; i++) if (!used[i] && (best < 0 || boxes[i][4] > boxes[best][4])) best = i;
     if (best < 0) break;
     used[best] = true;
-    people++;
-    for (int i = 0; i < nb; i++) if (!used[i] && iou(boxes[i], boxes[best]) > 0.45f) used[i] = true;
+    total++;
+    if (perClass) perClass[(int)boxes[best][5]]++;
+    for (int i = 0; i < nb; i++)
+      if (!used[i] && boxes[i][5] == boxes[best][5] && iou(boxes[i], boxes[best]) > 0.45f) used[i] = true;
   }
-  return people;
+  return total;
 }
 
-void counterTask(void*) {
+tflite::MicroInterpreter* faceModel = nullptr;
+tflite::MicroInterpreter* itemsModel = nullptr;
+
+void workerTask(void*) {
   for (;;) {
-    if (countBusy) {
+    int j = job;
+    if (j != JOB_NONE) {
       uint32_t t0 = millis();
-      int n = countPeople();
-      if (n >= 0) {
-        peopleCount = n;
-        countAt = millis();
+      if (j == JOB_FACES) {
+        int n = detect(faceModel, FACE_SCORE, nullptr, 0, nullptr);
+        if (n >= 0) {
+          faces = n;
+          facesAt = jobFrameAt;
+        }
+        Serial.printf("faces %d (best %.2f, %lums)\n", n, bestScore, (unsigned long)(millis() - t0));
+      } else {
+        int perClass[N_ITEMS];
+        int n = detect(itemsModel, ITEM_SCORE, ITEMS, N_ITEMS, perClass);
+        if (n >= 0) {
+          int len = 0;
+          itemList[0] = 0;
+          for (int k = 0; k < N_ITEMS; k++)
+            if (perClass[k] && len < (int)sizeof itemList - 24)
+              len += snprintf(itemList + len, sizeof itemList - len, "%s%d %s", len ? ", " : "", perClass[k],
+                              ITEMS[k].name);
+          items = n;
+          itemsAt = jobFrameAt;
+        }
+        Serial.printf("items %d [%s] (%lums)\n", n, itemList, (unsigned long)(millis() - t0));
       }
-      Serial.printf("people count %d (%lums)\n", n, (unsigned long)(millis() - t0));
-      countBusy = false;
+      job = JOB_NONE;
     }
-    vTaskDelay(pdMS_TO_TICKS(50));
+    vTaskDelay(pdMS_TO_TICKS(20));
   }
 }
 #endif
-
-float personScore() {
-  if (interpreter->Invoke() != kTfLiteOk) return -1;
-  TfLiteTensor* out = interpreter->output(0);
-  return (out->data.int8[1] - out->params.zero_point) * out->params.scale;   // index 1 = person
-}
-
-// Mean brightness of each 4x4 cell, read from img moved by (dx, dy) pixels (edges clamped).
-void cellMeans(const uint8_t* img, int dx, int dy, uint8_t* dst) {
-  for (int gy = 0; gy < GRID; gy++)
-    for (int gx = 0; gx < GRID; gx++) {
-      int sum = 0;
-      for (int y = 0; y < CELL; y++)
-        for (int x = 0; x < CELL; x++) {
-          int sx = constrain(gx * CELL + x + dx, 0, IMG - 1), sy = constrain(gy * CELL + y + dy, 0, IMG - 1);
-          sum += img[sy * IMG + sx];
-        }
-      dst[gy * GRID + gx] = sum / (CELL * CELL);
-    }
-}
-
-// Contrast of each cell to its 3x3 neighbourhood. Smooth lighting changes (exposure, daylight, soft shadows)
-// barely move it; an object's outline does.
-void cellEdges(const uint8_t* cells, int16_t* dst) {
-  for (int y = 0; y < GRID; y++)
-    for (int x = 0; x < GRID; x++) {
-      int sum = 0, n = 0;
-      for (int dy = -1; dy <= 1; dy++)
-        for (int dx = -1; dx <= 1; dx++) {
-          int nx = x + dx, ny = y + dy;
-          if (nx < 0 || ny < 0 || nx >= GRID || ny >= GRID) continue;
-          sum += cells[ny * GRID + nx];
-          n++;
-        }
-      dst[y * GRID + x] = cells[y * GRID + x] - sum / n;
-    }
-}
-
-// Camera offset (pixels) that best lines the frame up with the snapshot, so a nudged camera is not an item.
-// Compares brightness steps between neighbouring pixels, which exposure changes don't affect.
-void bestShift(int& bx, int& by) {
-  long best = -1;
-  for (int dy = -MAX_SHIFT; dy <= MAX_SHIFT; dy++)
-    for (int dx = -MAX_SHIFT; dx <= MAX_SHIFT; dx++) {
-      long cost = 0;
-      for (int y = MAX_SHIFT; y < IMG - MAX_SHIFT - 1; y += 2)
-        for (int x = MAX_SHIFT; x < IMG - MAX_SHIFT - 1; x += 2) {
-          int c = y * IMG + x, b = (y + dy) * IMG + x + dx;
-          cost += abs((gray[c + 1] - gray[c]) - (baseGray[b + 1] - baseGray[b])) +
-                  abs((gray[c + IMG] - gray[c]) - (baseGray[b + IMG] - baseGray[b]));
-        }
-      if (best < 0 || cost < best) { best = cost; bx = dx; by = dy; }
-    }
-}
-
-// Prints the empty-room snapshot as text art (24x24, dark ' ' to bright '@'), so you can see the reference.
-void showSnapshot() {
-  static uint8_t cells[GRID * GRID];
-  const char* shades = " .:-=+*#%@";
-  if (!haveBaseline) {
-    Serial.println("No snapshot yet");
-    return;
-  }
-  cellMeans(baseGray, 0, 0, cells);
-  Serial.printf("Snapshot (%s):\n", manualSnapshot ? "manual" : "automatic");
-  for (int y = 0; y < GRID; y++) {
-    char row[2 * GRID + 1];
-    for (int x = 0; x < GRID; x++) row[2 * x] = row[2 * x + 1] = shades[cells[y * GRID + x] * 10 / 256];
-    row[2 * GRID] = 0;
-    Serial.printf("|%s|\n", row);
-  }
-}
-
-void takeSnapshot() {
-  memcpy(baseGray, gray, sizeof baseGray);
-  memset(steady, 0, sizeof steady);
-  if (!haveBaseline) Serial.println("Empty-room baseline ready");
-  haveBaseline = true;
-}
-
-// Items left behind: cells that differ from the empty-room snapshot and have stayed that way for STEADY_CHECKS
-// checks (a person walking out or flickering light moves), grouped into blobs. One object usually shows up as
-// several fragments, so every changed cell is grown by one cell first and fragments that then touch count as one
-// item. Returns -1 when a large part of the picture changed (camera moved, lights switched): take a new snapshot.
-int countLeftItems() {
-  static uint8_t cur[GRID * GRID], base[GRID * GRID], mask[GRID * GRID], grown[GRID * GRID];
-  static int16_t baseEdges[GRID * GRID];
-  static uint16_t stack_[GRID * GRID];
-  int sx = 0, sy = 0;
-  bestShift(sx, sy);
-  cellMeans(gray, 0, 0, cur);
-  cellMeans(baseGray, sx, sy, base);
-  cellEdges(base, baseEdges);
-  long shift = 0;                          // auto-exposure brightens or darkens the whole frame: ignore that
-  for (int i = 0; i < GRID * GRID; i++) shift += (int)cur[i] - (int)base[i];
-  shift /= GRID * GRID;
-  int changed = 0;
-  for (int i = 0; i < GRID * GRID; i++) {
-    bool diff = abs(edges[i] - baseEdges[i]) > EDGE_DIFF || abs((int)cur[i] - (int)base[i] - (int)shift) > CELL_DIFF;
-    changed += diff;
-    steady[i] = diff ? min(steady[i] + 1, 255) : 0;
-    mask[i] = steady[i] >= STEADY_CHECKS;
-  }
-  if (changed > MAX_CHANGED * GRID * GRID) return -1;
-  for (int y = 0; y < GRID; y++)
-    for (int x = 0; x < GRID; x++) {
-      uint8_t g = 0;
-      for (int dy = -1; dy <= 1 && !g; dy++)
-        for (int dx = -1; dx <= 1 && !g; dx++) {
-          int nx = x + dx, ny = y + dy;
-          g = nx >= 0 && ny >= 0 && nx < GRID && ny < GRID && mask[ny * GRID + nx];
-        }
-      grown[y * GRID + x] = g;
-    }
-  int items = 0;
-  for (int i = 0; i < GRID * GRID; i++) {
-    if (!grown[i]) continue;
-    int top = 0, size = 0;                 // size = really changed cells inside the blob
-    bool atSide = false;                   // touches the left, right or top edge
-    stack_[top++] = i;
-    grown[i] = 0;
-    while (top) {
-      int p = stack_[--top], px = p % GRID, py = p / GRID;
-      size += mask[p];
-      atSide |= mask[p] && (px == 0 || px == GRID - 1 || py == 0);
-      for (int dy = -1; dy <= 1; dy++)
-        for (int dx = -1; dx <= 1; dx++) {
-          int nx = px + dx, ny = py + dy;
-          if (nx < 0 || ny < 0 || nx >= GRID || ny >= GRID || !grown[ny * GRID + nx]) continue;
-          grown[ny * GRID + nx] = 0;
-          stack_[top++] = ny * GRID + nx;
-        }
-    }
-    // A change at the side or top edge is a person walking out or half in view (the person model misses those),
-    // not an object put down; the bottom edge is the desk, so it still counts there.
-    if (size >= MIN_ITEM_CELLS && !atSide) items++;
-  }
-  if (items) Serial.printf("left-item check: %d item(s), %d cells changed, camera shift %d,%d px\n", items, changed, sx, sy);
-  return items;
-}
 
 // Approximate sound level: RMS of ~32 ms of 16 kHz audio.
 float noiseDb() {
@@ -461,37 +373,53 @@ void setup() {
   mic.setPinsPdmRx(42, 41);
   micOk = mic.begin(I2S_MODE_PDM_RX, 16000, I2S_DATA_BIT_WIDTH_16BIT, I2S_SLOT_MODE_MONO);
   Serial.println(micOk ? "MIC OK" : "MIC FAILED");
+#if COUNT_PEOPLE
+  faceModel = startDetector(g_face_model_z, FACE_MODEL_Z_BYTES, FACE_MODEL_BYTES, 512 * 1024, "face model");
+  Serial.println(faceModel ? "FACES OK" : "FACES FAILED (presence only)");
+#endif
+#if FIND_ITEMS
+  itemsModel = startDetector(g_items_model_z, ITEMS_MODEL_Z_BYTES, ITEMS_MODEL_BYTES, 3 * 1024 * 1024, "items model");
+  Serial.println(itemsModel ? "ITEMS OK" : "ITEMS FAILED (no left items)");
+#endif
+#if COUNT_PEOPLE || FIND_ITEMS
+  if (faceModel || itemsModel)
+    xTaskCreatePinnedToCore(workerTask, "detect", 16384, nullptr, 1, nullptr, 0);   // loop() runs on core 1
+#endif
   WiFi.mode(WIFI_STA);
   WiFi.begin("Velxio-GUEST");   // Velxio's built-in open network; use your own SSID on the real board
   for (int i = 0; i < 40 && WiFi.status() != WL_CONNECTED; i++) delay(250);
   Serial.println(WiFi.status() == WL_CONNECTED ? "WIFI OK" : "WIFI FAILED");
-#if COUNT_PEOPLE
-  if (startCounter()) {
-    xTaskCreatePinnedToCore(counterTask, "count", 16384, nullptr, 1, nullptr, 0);   // loop() runs on core 1
-    Serial.println("COUNT OK");
-  } else {
-    Serial.println("COUNT FAILED (presence only)");
-  }
-#endif
-  topic =String("aau-hack26/rooms/") + ROOM_ID + "/readings";
+  topic = String("aau-hack26/rooms/") + ROOM_ID + "/readings";
   mqtt.setServer(MQTT_HOST, MQTT_PORT);
 }
 
+// Left items from item counts: items seen while nobody has come yet belong to the room (baseline); after people
+// were present and left, every extra item counts. When the extra items are gone the room is clean again.
+int itemsBefore = 0, leftItems = 0;
+bool occupied = false;                       // people were seen since the baseline
+uint32_t leftAt = 0;                         // when presence last ended
+
 void loop() {
-  // no pause: one reading per frame, as fast as the person model runs
+  // no pause: one reading per frame, as fast as the presence model runs
   String json = String("{\"room_id\":\"") + ROOM_ID + "\"";
   float db = micOk ? noiseDb() : -1;
   if (db >= 0) json += ",\"noise_db\":" + String(db, 1);
 
   camera_fb_t* fb = camOk ? esp_camera_fb_get() : nullptr;
   if (fb && modelOk) {
-#if COUNT_PEOPLE
-    // the counter is idle and someone was here last check: give it this frame (an empty room needs no count, and
-    // skipping it keeps the CPU free for the left-item check)
     static bool wasPresent = false;
-    bool feed = counter && !countBusy && wasPresent;
-    prepare(fb, feed ? countRgb : nullptr);
-    if (feed) countBusy = true;
+#if COUNT_PEOPLE || FIND_ITEMS
+    // hand this frame to the idle worker: faces while someone is here; items once people have left (and every few
+    // minutes in an empty room for the baseline). An item check is slow, so it doesn't run all the time: a face
+    // count has to wait for a running item check.
+    bool itemsDue = items < 0 || occupied || millis() - itemsAt > ITEMS_BASELINE_MS;
+    int next = wasPresent ? (faceModel ? JOB_FACES : JOB_NONE) : (itemsModel && itemsDue ? JOB_ITEMS : JOB_NONE);
+    bool feed = job == JOB_NONE && next != JOB_NONE;
+    prepare(fb, feed ? jobRgb : nullptr);
+    if (feed) {
+      jobFrameAt = millis();
+      job = next;
+    }
 #else
     prepare(fb, nullptr);
 #endif
@@ -509,73 +437,48 @@ void loop() {
     votes[voteIdx++ % 3] = score >= PERSON_THRESHOLD;
     // one clear frame is enough to say "someone is here"; leaving needs 2 of the last 3 frames below the threshold
     bool present = score >= PRESENT_NOW || (votes[0] + votes[1] + votes[2]) >= 2;
-#if COUNT_PEOPLE
+    if (wasPresent && !present) leftAt = millis();
     wasPresent = present;
-#endif
 
-    static uint8_t cells[GRID * GRID];
-    memcpy(prevEdges, edges, sizeof edges);
-    cellMeans(gray, 0, 0, cells);
-    cellEdges(cells, edges);
-    int motion = 0;                        // largest contrast change since the last check
-    for (int i = 0; i < GRID * GRID; i++) motion = max(motion, abs(edges[i] - prevEdges[i]));
-
-    // Serial commands (Velxio: type into the serial monitor and press Send):
-    //   snapshot = take the empty-room picture now and keep it;  show = print it;  auto = back to automatic snapshots
+#if FIND_ITEMS
+    static uint32_t usedItemsAt = 0;
     if (Serial.available()) {
       String cmd = Serial.readStringUntil('\n');
       cmd.trim();
-      if (cmd == "snapshot" && present) {
-        Serial.println("Someone is in view: snapshot NOT taken. Leave the view and try again.");
+      if (cmd == "items") {
+        Serial.printf("Item detector: %d item(s) [%s]; room baseline %d; left %d\n", items, itemList, itemsBefore,
+                      leftItems);
       } else if (cmd == "snapshot") {
-        takeSnapshot();
-        manualSnapshot = true;
-        occupiedSinceSnapshot = false;
-        leftItems = cleanStreak = 0;
-        Serial.println("Snapshot taken: left items are compared with this picture until the next 'snapshot'.");
-        showSnapshot();
-      } else if (cmd == "show") {
-        showSnapshot();
-      } else if (cmd == "auto") {
-        manualSnapshot = false;
-        Serial.println("Automatic snapshots again (refreshed whenever the room is empty and still).");
+        itemsBefore = max((int)items, 0);
+        occupied = false;
+        leftItems = 0;
+        Serial.printf("The %d item(s) visible now belong to the room; left items back to 0.\n", itemsBefore);
       } else if (cmd.length()) {
-        Serial.println("Commands: snapshot, show, auto");
+        Serial.println("Commands: items, snapshot");
       }
     }
-
     if (present) {
-      if (haveBaseline) occupiedSinceSnapshot = true;
-      emptyStreak = calmStreak = cleanStreak = 0;
-      leftItems = 0;
-      memset(steady, 0, sizeof steady);
-    } else {
-      emptyStreak++;
-      calmStreak = (score < EMPTY_SCORE && motion <= STILL_DIFF) ? calmStreak + 1 : 0;
-      if (!occupiedSinceSnapshot) {
-        // nobody has been here since the snapshot: keep it fresh (daylight, moved chairs) while the room is calm
-        if (!manualSnapshot && calmStreak >= CALM_FOR_SNAPSHOT) takeSnapshot();
-      } else if (emptyStreak >= 2) {
-        int k = countLeftItems();
-        if (k < 0) {                       // view or lighting changed
-          if (manualSnapshot) Serial.println("View changed a lot since the snapshot: type 'snapshot' again");
-          else takeSnapshot();
-          k = 0;
-        }
-        leftItems = k;
-        cleanStreak = k == 0 ? cleanStreak + 1 : 0;
-        if (cleanStreak >= CLEAN_TO_RESET) occupiedSinceSnapshot = false;
+      occupied = true;
+      leftItems = 0;                         // whoever is here may still pick their things up
+    } else if (items >= 0 && itemsAt != usedItemsAt && millis() - itemsAt < RESULT_FRESH_MS) {
+      usedItemsAt = itemsAt;                 // a new item count from a frame without people
+      if (!occupied) {
+        itemsBefore = items;
+      } else if ((int32_t)(itemsAt - leftAt) >= 0) {
+        leftItems = max(0, (int)items - itemsBefore);
+        if (leftItems == 0) occupied = false;   // clean again: the next count is the new baseline
       }
     }
+    json += ",\"left_items\":" + String(leftItems);
+#endif
     json += ",\"presence\":" + String(present ? "true" : "false");
     json += ",\"person_score\":" + String(score, 2);
-    json += ",\"left_items\":" + String(leftItems);
 #if COUNT_PEOPLE
-    // the count lags a few seconds behind, so presence decides 0 vs. some; the counter says how many
-    if (peopleCount >= 0 && millis() - countAt < COUNT_FRESH_MS)
-      json += ",\"people\":" + String(present ? max((int)peopleCount, 1) : 0);
+    // the face count lags a few seconds behind, so presence decides 0 vs. some and the faces say how many
+    if (faces >= 0 && millis() - facesAt < RESULT_FRESH_MS)
+      json += ",\"people\":" + String(present ? max((int)faces, 1) : 0);
 #endif
-    Serial.printf("person=%.2f (%lums) present=%d left=%d\n", score, (unsigned long)ms, present, leftItems);
+    Serial.printf("person=%.2f (%lums) present=%d\n", score, (unsigned long)ms, present);
   } else if (fb) {
     esp_camera_fb_return(fb);
   }
