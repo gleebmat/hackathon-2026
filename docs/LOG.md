@@ -134,7 +134,7 @@ tested in the browser.
 `arshia/room-display-page`). Every feature tried against the running backend (sound, break with and without a
 booking, selfie from a webcam stream and the no-camera fallback, SOS, EN/DE, 800x480 and 480x320 windows); the
 fire-alarm detector tested with generated alarm beeps (noise and a single beep don't trigger it).
-- Page: a swipeable ring of five cards for the 4.3" screen (room status in the middle, two cards each side), plain
+- Page: one sideways-scrolling row of big buttons for the 4.3" screen (room status first), plain
   campus-system look with the AAU logo, break reminder every 45 min and a fire-alarm alert for deaf students (both
   without a button), a real café soundscape; details in PLAN "Room display".
 - Display window may use camera and microphone without a prompt (`--use-fake-ui-for-media-stream`).
