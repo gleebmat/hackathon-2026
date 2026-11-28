@@ -617,3 +617,15 @@ def test_only_rooms_under_55_seats_can_be_booked(app_env, monkeypatch):
     assert big["id"] not in [r["id"] for r in suggested]
     assert book(a, room=small["id"], seats=1).status_code == 201
     assert room(a, big["id"])["status"] == "unbookable" and room(a, big["id"])["seats_free"] == 0
+
+
+def test_offline_board_room_shows_no_made_up_people(app_env, time_now, monkeypatch):
+    monkeypatch.setenv("SIMULATE", "1")   # other rooms get simulated walk-ins, the board room never
+    c = TestClient(main.app)
+    for step in range(0, 24 * 60, 5):
+        time_now["t"] = NOW.replace(hour=0, minute=0) + timedelta(minutes=step)
+        state = room(c, "V.1.07a")
+        assert state["people"] == 0 and state["status"] == "free", time_now["t"]
+    time_now["t"] = NOW
+    book(user(1), start="2026-11-27T10:00", seats=3)
+    assert room(c, "V.1.07a")["people"] == 3                           # booked people still count

@@ -143,6 +143,9 @@ fire-alarm detector tested with generated alarm beeps (noise and a single beep d
 - Gleb (28 Nov): quiet room removed (page, API, tests); SOS = simulated police call (133), ended on the display;
   the room's own soundscape no longer counts as room noise.
   Display features stay on the display: the website endpoints for emergencies are gone.
+- First final version (28 Nov): Arshia's display home row merged; fixed the board room showing made-up walk-ins
+  ("Shared") while its board is offline. Checked: 79 tests, website flows (book, cancel, favourites, assistant,
+  search, calendar), display actions, public tunnel.
 
 ---
 
