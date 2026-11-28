@@ -1,6 +1,7 @@
 // Smart campus room sensor - Seeed XIAO ESP32S3 Sense (runs in the Velxio simulator and on the real board).
 //
-// Camera: with frame_key.h in the project (tools/make_frame_key.py), every 320x240 JPEG frame (~5-10 KB) goes
+// Camera: raw RGB565 frames (the simulator's own JPEG output is cut off after the top third), encoded to JPEG here.
+// With frame_key.h in the project (tools/make_frame_key.py), every JPEG frame (~5-10 KB) goes
 // encrypted (AES-128-CTR) over MQTT to aau-hack26/rooms/<room>/frame, a few per second. The backend
 // (app/vision.py) runs YOLO11n on it: people count and left items, on the website about a second later.
 // Without frame_key.h the board decides presence itself with Arshia's 96x96 person model (person_model.h),
@@ -51,12 +52,12 @@ const float VOTE_SCORE = 0.60;               // ... or 2 of the last 3 frames at
 #define HREF_GPIO_NUM 47
 #define PCLK_GPIO_NUM 13
 
-const int FW = 320, FH = 240;                // camera frame (QVGA)
+int FW = 0, FH = 0;                          // camera frame size, the biggest that fits (see startCamera)
 const int IMG = 96;                          // fallback model input
 
 I2SClass mic;
 bool camOk = false, micOk = false, modelOk = false;
-uint8_t* rgb = nullptr;                      // decoded frame for the fallback model, 320x240x3 BGR (PSRAM)
+uint8_t* rgb = nullptr;                      // frame as 3 bytes per pixel (BGR) for the fallback model (PSRAM)
 uint8_t* sealed = nullptr;                   // encrypted frame: 16-byte counter block + JPEG (PSRAM)
 const size_t SEALED_MAX = 64 * 1024;
 
@@ -75,15 +76,26 @@ bool startCamera() {
   c.pin_xclk = XCLK_GPIO_NUM; c.pin_pclk = PCLK_GPIO_NUM; c.pin_vsync = VSYNC_GPIO_NUM; c.pin_href = HREF_GPIO_NUM;
   c.pin_sccb_sda = SIOD_GPIO_NUM; c.pin_sccb_scl = SIOC_GPIO_NUM; c.pin_pwdn = -1; c.pin_reset = -1;
   c.xclk_freq_hz = 20000000;
-  c.pixel_format = PIXFORMAT_JPEG;
-  c.frame_size = FRAMESIZE_QVGA;
-  c.jpeg_quality = 12;
+  c.pixel_format = PIXFORMAT_RGB565;
   c.fb_count = 1;
   c.fb_location = CAMERA_FB_IN_DRAM;      // the simulator can't put frame buffers in PSRAM yet
   c.grab_mode = CAMERA_GRAB_LATEST;
-  rgb = (uint8_t*)heap_caps_malloc(FW * FH * 3, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+  rgb = (uint8_t*)heap_caps_malloc(320 * 240 * 3, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
   sealed = (uint8_t*)heap_caps_malloc(SEALED_MAX, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
-  return rgb && sealed && esp_camera_init(&c) == ESP_OK;
+  if (!rgb || !sealed) return false;
+  // the raw frame must fit in internal RAM: take the biggest size that does
+  const framesize_t sizes[] = {FRAMESIZE_QVGA, FRAMESIZE_HQVGA, FRAMESIZE_QQVGA};
+  const int widths[] = {320, 240, 160}, heights[] = {240, 176, 120};
+  for (int i = 0; i < 3; i++) {
+    c.frame_size = sizes[i];
+    if (esp_camera_init(&c) == ESP_OK) {
+      FW = widths[i];
+      FH = heights[i];
+      return true;
+    }
+    esp_camera_deinit();
+  }
+  return false;
 }
 
 bool startModel() {
@@ -103,7 +115,7 @@ bool startModel() {
   return true;
 }
 
-// Fallback model score for a JPEG frame: centre 240x240 square averaged down to 96x96 (int8 RGB, pixel - 128).
+// Fallback model score for a frame: centre 240x240 square averaged down to 96x96 (int8 RGB, pixel - 128).
 float personScore(camera_fb_t* fb) {
   if (!fmt2rgb888(fb->buf, fb->len, fb->format, rgb)) return -1;
   int8_t* in = interpreter->input(0)->data.int8;
@@ -156,9 +168,15 @@ bool mqttReady() {
 }
 
 #if SEND_FRAMES
-// Encrypts the JPEG (AES-128-CTR, fresh random counter block) and streams it to the frame topic.
-bool sendFrame(camera_fb_t* fb) {
-  if (fb->len + 16 > SEALED_MAX || !mqttReady()) return false;
+// Encodes the frame as JPEG, encrypts it (AES-128-CTR, fresh random counter block) and streams it to the frame topic.
+bool sendFrame(camera_fb_t* fb, size_t& jpgLen) {
+  uint8_t* jpg = nullptr;
+  jpgLen = 0;
+  if (!mqttReady() || !frame2jpg(fb, 80, &jpg, &jpgLen)) return false;
+  if (jpgLen + 16 > SEALED_MAX) {
+    free(jpg);
+    return false;
+  }
   uint8_t nonce[16], block[16];
   esp_fill_random(nonce, 16);
   memcpy(sealed, nonce, 16);
@@ -166,9 +184,10 @@ bool sendFrame(camera_fb_t* fb) {
   mbedtls_aes_init(&aes);
   mbedtls_aes_setkey_enc(&aes, FRAME_KEY, 128);
   size_t off = 0;
-  mbedtls_aes_crypt_ctr(&aes, fb->len, &off, nonce, block, fb->buf, sealed + 16);
+  mbedtls_aes_crypt_ctr(&aes, jpgLen, &off, nonce, block, jpg, sealed + 16);
   mbedtls_aes_free(&aes);
-  const size_t n = fb->len + 16;
+  free(jpg);
+  const size_t n = jpgLen + 16;
   return mqtt.beginPublish(frameTopic.c_str(), n, false) && mqtt.write(sealed, n) == n && mqtt.endPublish();
 }
 #endif
@@ -177,7 +196,8 @@ void setup() {
   Serial.begin(115200);
   delay(300);
   camOk = startCamera();
-  Serial.println(camOk ? "CAM OK (320x240 JPEG)" : "CAM FAILED");
+  if (camOk) Serial.printf("CAM OK (%dx%d)\n", FW, FH);
+  else Serial.println("CAM FAILED");
   if (!SEND_FRAMES) {
     modelOk = startModel();
     Serial.println(modelOk ? "MODEL OK (on-board presence)" : "MODEL FAILED");
@@ -209,9 +229,10 @@ void loop() {
   if (fb) {
 #if SEND_FRAMES
     const uint32_t t0 = millis();
-    const bool ok = sendFrame(fb);
+    size_t jpgLen;
+    const bool ok = sendFrame(fb, jpgLen);
     ok ? sent++ : failed++;
-    Serial.printf("frame %u bytes -> %s (%lums, %lu sent, %lu failed)\n", (unsigned)fb->len, ok ? "sent" : "FAILED",
+    Serial.printf("frame %u bytes -> %s (%lums, %lu sent, %lu failed)\n", (unsigned)jpgLen, ok ? "sent" : "FAILED",
                   (unsigned long)(millis() - t0), (unsigned long)sent, (unsigned long)failed);
 #else
     if (modelOk) {
