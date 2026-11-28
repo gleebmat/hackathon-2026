@@ -27,6 +27,8 @@ Presence, noise, ghost release and left items tested end to end with a webcam. T
 
 - 28 Nov: 3D map rebuilt from campusplan.aau.at's floor-plan data (real rooms and numbers, building O = Nexus,
   bridges Z-S, no overlaps), compass, main entrance, offices toggle.
+- 28 Nov: page addresses for every view (room, My bookings, map building/floor, day; Back/Forward work); database
+  writes queued in-process (`db.WRITE_LOCK`): no more "database is locked" with many devices at once.
 
 **Next:** physical-board test.
 

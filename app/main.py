@@ -54,9 +54,11 @@ async def validation_error(_request: Request, exc: RequestValidationError) -> JS
 def get_conn():
     """One write-locked transaction per request, committed before the response is sent.
 
-    BEGIN IMMEDIATE serialises writers, so two people can't book the last seat at the same moment.
+    BEGIN IMMEDIATE serialises writers, so two people can't book the last seat at the same moment; db.WRITE_LOCK
+    queues them in this process, so many devices at once wait their turn instead of timing out.
     """
     conn = db.connect()
+    db.WRITE_LOCK.acquire()
     try:
         conn.execute("BEGIN IMMEDIATE")
         try:
@@ -68,6 +70,7 @@ def get_conn():
             raise
         conn.execute("COMMIT")
     finally:
+        db.WRITE_LOCK.release()
         conn.close()
 
 
@@ -482,6 +485,7 @@ def post_reading(body: Reading, conn: Conn, x_token: str | None = Header(None)):
 def in_transaction(work) -> bool:
     """Runs work(conn) in its own write transaction (for the MQTT and vision threads). False if it was rejected."""
     conn = db.connect()
+    db.WRITE_LOCK.acquire()
     try:
         conn.execute("BEGIN IMMEDIATE")
         try:
@@ -494,6 +498,7 @@ def in_transaction(work) -> bool:
     except ApiError:
         return False
     finally:
+        db.WRITE_LOCK.release()
         conn.close()
 
 

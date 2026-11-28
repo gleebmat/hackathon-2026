@@ -3,6 +3,7 @@
 import json
 import os
 import sqlite3
+import threading
 from pathlib import Path
 
 from app.auth import hash_password
@@ -67,6 +68,12 @@ DEMO_PASSWORD = "demo"
 
 def db_path() -> str:
     return os.environ.get("DB_PATH", str(ROOT / "campus.db"))
+
+
+# One writer at a time, queued in this process (requests, MQTT and vision threads all run in it). SQLite would also
+# serialise them, but its waiting is polling with growing sleeps: under many devices some requests then waited 10 s
+# and failed with "database is locked". Take this lock before BEGIN IMMEDIATE and release it after COMMIT/ROLLBACK.
+WRITE_LOCK = threading.Lock()
 
 
 def connect() -> sqlite3.Connection:

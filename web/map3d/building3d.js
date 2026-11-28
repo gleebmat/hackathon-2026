@@ -21,7 +21,8 @@ const SLAB = 0.35;
  * @param el     container element (the canvas fills it)
  * @param input  campus.json ({buildings: [...]}) or a single building
  * @param opts   {controls: true}: draws a small building / floor selector inside the container. Pass
- *               {controls: false} if the page has its own buttons (they should call setBuilding / setFloor).
+ *               {controls: false} if the page has its own buttons (they should call setBuilding / setFloor);
+ *               {onSelect({building, floor})} is called whenever the built-in selector changes (floor null = all).
  */
 export function createBuilding(el, input, opts = {}) {
   const entranceLabel = opts.labels?.entrance ?? "Main entrance";
@@ -574,12 +575,12 @@ export function createBuilding(el, input, opts = {}) {
     onRoomClick(cb) { clickCb = cb; },
     onRoomHover(cb) { hoverCb = cb; },
   };
-  if (opts.controls !== false) mountControls(el, api, opts.labels);
+  if (opts.controls !== false) mountControls(el, api, opts.labels, opts.onSelect);
   return api;
 }
 
 // Built-in building / floor selector, so any page that embeds the map can switch floors without its own UI.
-function mountControls(el, api, labels = {}) {
+function mountControls(el, api, labels = {}, onSelect = null) {
   const L = { all: "All", allBuildings: "All buildings", allFloors: "All floors", everyFloor: "Show every floor",
     floor: "Floor {n}", floorTitle: "Floor {n} (floors above are hidden)", ...labels };
   if (getComputedStyle(el).position === "static") el.style.position = "relative";
@@ -656,6 +657,7 @@ function mountControls(el, api, labels = {}) {
     for (const f of floors) {
       button(fRow, L.floor.replace("{n}", f), floor === f, L.floorTitle.replace("{n}", f), () => { floor = f; api.setFloor(f); render(); });
     }
+    onSelect?.({ building, floor });   // e.g. the page keeps the selection in its address
   };
   // keep the selector in sync when the page calls the API directly
   for (const [name, after] of [["setBuilding", (id) => { building = id ?? null; floor = api.floor(); }],
