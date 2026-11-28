@@ -240,6 +240,8 @@ float iou(const float* a, const float* b) {
   return w * h / (a[2] * a[3] + b[2] * b[3] - w * h);
 }
 
+float bestScore = 0;                         // highest objectness of the last run, for the serial log
+
 // Runs a Swift-YOLO detector on jobRgb. Rows are [x, y, w, h, objectness, class scores...], scores 0..100.
 // Counts boxes per class (perClass may be null) after non-maximum suppression; returns the total or -1.
 int detect(tflite::MicroInterpreter* m, float minScore, const ItemClass* classes, int nClasses, int* perClass) {
@@ -252,9 +254,11 @@ int detect(tflite::MicroInterpreter* m, float minScore, const ItemClass* classes
   const int MAX_BOXES = 48;
   static float boxes[MAX_BOXES][6];              // x, y, w, h, score, class slot
   int nb = 0;
+  bestScore = 0;
   for (int r = 0; r < rows; r++) {
     const int8_t* d = out->data.int8 + r * cols;
     float obj = (d[4] - zp) * s;
+    bestScore = max(bestScore, obj);
     if (obj < minScore) continue;
     for (int k = 0; k < (classes ? nClasses : 1); k++) {
       float score = classes ? obj * (d[5 + classes[k].id] - zp) * s : obj;
@@ -302,7 +306,7 @@ void workerTask(void*) {
           faces = n;
           facesAt = jobFrameAt;
         }
-        Serial.printf("faces %d (%lums)\n", n, (unsigned long)(millis() - t0));
+        Serial.printf("faces %d (best %.2f, %lums)\n", n, bestScore, (unsigned long)(millis() - t0));
       } else {
         int perClass[N_ITEMS];
         int n = detect(itemsModel, ITEM_SCORE, ITEMS, N_ITEMS, perClass);
