@@ -50,7 +50,8 @@ def public_url(request_base: str) -> str:
 
 
 def qr_svg(data: str) -> str:
-    return segno.make(data, error="m").svg_inline(scale=6, border=2, dark="#111", light="#fff")
+    """SVG with a viewBox and no fixed size: the page sizes it with CSS."""
+    return segno.make(data, error="m").svg_inline(border=2, dark="#111", light="#fff", omitsize=True)
 
 
 def sound(room_id: str) -> dict:
