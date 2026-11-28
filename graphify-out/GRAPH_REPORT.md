@@ -1,7 +1,7 @@
 # Graph Report - hackathon-2026  (2026-11-28)
 
 ## Corpus Check
-- 38 files · ~75,577 words
+- 38 files · ~75,610 words
 - Verdict: corpus is large enough that graph structure adds value.
 - Unclassified: 10 file(s) not represented in the graph (top: .tflite 4, (none) 2, .example 1)
 
@@ -11,7 +11,7 @@
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `e37d94a6`
+- Built from commit: `8adc532b`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -41,9 +41,9 @@
 5. `ApiError` - 21 edges
 6. `createPicker()` - 21 edges
 7. `room()` - 20 edges
-8. `esc()` - 18 edges
-9. `now()` - 18 edges
-10. `openRoom()` - 16 edges
+8. `now()` - 18 edges
+9. `esc()` - 18 edges
+10. `request()` - 16 edges
 
 ## Surprising Connections (you probably didn't know these)
 - `API (gleb-claude; implemented in `app/`, tested in `tests/test_api.py`)` --references--> `building()`  [INFERRED]
