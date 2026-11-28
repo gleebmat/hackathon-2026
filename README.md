@@ -39,12 +39,17 @@ heavy recognition runs on the laptop, so results reach the website in about **1 
   because the broker is public. The key is `firmware/xiao_sense/frame_key.h` (gitignored), made once with
   `python tools/make_frame_key.py`; the same file must be in the Velxio project, and the backend reads it too (or
   `FRAME_KEY`). Without the key file the board falls back to Arshia's 96x96 person model on the board (yes/no only).
-- **Detection on the laptop:** `app/vision.py` runs **YOLO11n** (Ultralytics, COCO classes, exported to
-  `models/yolo11n_320.onnx`, onnxruntime on the CPU, ~20 ms per frame) on the newest frame only, so nothing queues
-  up. It counts **people** (score 0.45+) and things people forget: **backpack, umbrella, handbag, suitcase, bottle,
-  cup, laptop, cell phone, book** (0.35+).
-- **Steady results:** over the last 3 frames the count is their median, the room is empty only when none of them
-  shows a person, and **left items** = such things seen in at least 2 of them while nobody is in the room. While the
+- **Detection on the laptop:** `app/vision.py` runs **YOLO11s** (Ultralytics, COCO classes, exported to
+  `models/yolo11s_640.onnx`, onnxruntime on the CPU, ~150 ms per frame) on the newest frame only, so nothing queues
+  up. The 320x240 frame is upscaled to 640, so small and far people are still found (12 of 12 and 32 of 32 on
+  crowd test pictures, where YOLO11n at 320 found none). It counts **people** (score 0.45+) and things people forget:
+  **backpack, umbrella, handbag, suitcase, bottle, cup, laptop, cell phone, book** (0.50+), but only **within about
+  3 m**: the distance is estimated from the box size and the thing's typical size (`ITEM_MAX_M`, default 3.5;
+  `CAMERA_FOV`, default 65 degrees). The backend console prints what the camera sees whenever it changes
+  (`camera: Z.1.04: 0 people, left items 1 | this frame: 0 people, items backpack 0.81 at ~1.9 m`).
+- **Steady results:** the count is the median of the last 3 frames, the room is empty only when none of them shows
+  a person, and **left items** = such things seen in 3 of the last 4 frames after nobody was seen for 3 frames
+  (about 3-4 s after the last person leaves). While the
   camera detector counts a room, the board's own presence is ignored and only its noise reading is used.
 - **Noise:** the PDM microphone (RMS mapped to about 30-90 dB), sent as JSON to `aau-hack26/rooms/Z.1.04/readings`:
   `{"room_id":"Z.1.04","noise_db":37.2}`. The backend (`app/mqtt_feed.py`) subscribes to both topics. Readings
@@ -66,8 +71,8 @@ sketch: after changing it here, paste it into Velxio and save. Copy Velxio's `fr
    `FRAMES ON`, `MIC OK`, `WIFI OK`, then one `frame N bytes -> sent` line per frame.
 3. Open http://localhost:8000 and search `z104`. Z.1.04 shows **LIVE**, the noise and "1 person here now". Book it
    and step out of the webcam: after 5 s the booking is marked ghost (violet on the map) and after 15 s it's
-   released. Two people in view show as 2 about a second later. Leave a bag, phone or bottle and step out: a
-   couple of seconds later the panel shows "🎒 Something left behind".
+   released. Two people in view show as 2 about a second later. Leave a bag, phone or bottle within ~3 m and
+   step out: a few seconds later the panel shows "🎒 Something left behind".
 
 **Troubleshooting**
 - *Count stays empty but frames are sent:* the backend has no key or a different one (it logs "Camera frames off" or
@@ -81,8 +86,9 @@ sketch: after changing it here, paste it into Velxio and save. Copy Velxio's `fr
 **Placement: how to get reliable results**
 - *People:* YOLO finds whole or partial people from any side, as long as they are not tiny in the 320x240 picture.
   Good light helps; a backlit person (window behind) is harder.
-- *Left items:* things YOLO knows (bag, backpack, umbrella, phone, bottle, cup, laptop, book), clearly visible and
-  not tiny in the picture. Any of them in view while nobody is in the room counts as left behind.
+- *Left items:* things YOLO knows (bag, backpack, umbrella, phone, bottle, cup, laptop, book), clearly visible,
+  within ~3 m of the camera. Any of them in view while nobody is in the room counts as left behind; the backend
+  console says what was seen and how far away it seemed.
 
 ## Board limits (the brief for choosing models)
 
@@ -109,7 +115,9 @@ Everything below was measured in Velxio on 28 Nov; any new model has to fit it.
 | Count | Swift-YOLO person 192 | 89 M | found only 2 of 4 people |
 | Count | Swift-YOLO face 96 (until 28 Nov) | 22 M | a few seconds, but needs faces towards the camera: missed people standing |
 | Count + items | Swift-YOLO COCO 320 on the board (patched) | 189 M | 80 classes incl. person; ~95 s per result in Velxio: too slow |
-| Count + items | **YOLO11n 320 on the laptop (in use)** | 3.3 G FLOPs | ~20 ms on a laptop CPU; 2/2 people on test photos and steady 1 person live in Velxio; ~1 s from camera to website |
+| Count + items | YOLO11n 320 on the laptop | 3.3 G FLOPs | ~20 ms; fine for 1-2 people, but 0 of 12 on crowd pictures; few items |
+| Count + items | **YOLO11s 640 on the laptop (in use)** | 21.5 G FLOPs | ~150 ms; 8/8, 12/12, 32/32 on crowd pictures; on coco128 at webcam size 2x the items of 11n at 320 |
+| Count + items | YOLO11m 640 on the laptop | 68 G FLOPs | ~400 ms; a few more items, no better count |
 | Items | EfficientDet-Lite0/2, SSD MobileNet | 400 M+ | too big; custom post-processing op |
 | Items | FOMO 96x96 (Edge Impulse) | ~5 M | fastest, but no pretrained one for these classes: needs training |
 

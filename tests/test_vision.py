@@ -24,14 +24,16 @@ def test_key_is_read_from_the_firmware_header(tmp_path, monkeypatch):
     assert vision.frame_key() == b"\xff" * 16
 
 
-def test_count_keeps_one_box_per_object():
-    out = np.zeros((1, 84, 4), dtype=np.float32)
+def test_count_keeps_one_box_per_object_and_only_near_items():
+    out = np.zeros((1, 84, 5), dtype=np.float32)
     out[0, :4, 0] = out[0, :4, 1] = [100, 100, 50, 120]   # the same person found twice
     out[0, :4, 2] = [250, 100, 50, 120]                    # a second person
-    out[0, :4, 3] = [200, 250, 40, 40]                     # a backpack
+    out[0, :4, 3] = [200, 200, 40, 40]                     # a backpack about 3 m away
+    out[0, :4, 4] = [300, 200, 10, 10]                     # a backpack-sized blob ~11 m away: not in the room
     out[0, 4, :3] = [0.9, 0.8, 0.7]
-    out[0, 4 + 24, 3] = 0.6
-    assert vision.count(out) == (2, {"backpack": 1})
+    out[0, 4 + 24, 3:] = 0.6
+    people, items = vision.count(out, 320)
+    assert people == 2 and [i[0] for i in items] == ["backpack"] and items[0][2] <= 3.5
 
 
 def test_smoothing_does_not_flicker():
@@ -41,8 +43,8 @@ def test_smoothing_does_not_flicker():
     assert r.add(2, 0) == (1, 0)
     assert r.add(2, 1) == (2, 0)          # items don't count while people are inside
     r.add(0, 1)
-    r.add(0, 1)
-    assert r.add(0, 1) == (0, 1)          # everyone gone, the bag stayed
+    assert r.add(0, 1) == (1, 0)          # just left: a person was seen in the last 3 frames
+    assert r.add(0, 1) == (0, 1)          # nobody for 3 frames, the bag stayed
     assert r.add(0, 0) == (0, 1)          # one frame without it is not enough to clear it
     assert r.add(0, 0) == (0, 0)
 

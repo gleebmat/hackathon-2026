@@ -78,7 +78,7 @@ not work on arduino-esp32 3.x) and `PubSubClient`. The sketch publishes one read
 **Tested in Velxio with a webcam (28 Nov):**
 | Feature | How | Result |
 |---|---|---|
-| Presence + people count + left items | the board sends encrypted 320x240 JPEG frames (~0.6 s apart in Velxio) over MQTT; the backend runs YOLO11n (`app/vision.py`, ~20 ms) and smooths over 3 frames | steady count, ~1 s to the website; left items = forgettable things in view while nobody is there |
+| Presence + people count + left items | the board sends encrypted 320x240 JPEG frames (~0.6 s apart in Velxio) over MQTT; the backend runs YOLO11s at 640 (`app/vision.py`, ~150 ms) and smooths over 3 frames | steady count, ~1 s to the website; left items = forgettable things in view while nobody is there |
 
 **Left items (on the board).** No photo comparison any more (that version is the git tag `board-v1`). The COCO
 detector counts forgettable objects while the room is empty; the count before people came is the baseline, and after

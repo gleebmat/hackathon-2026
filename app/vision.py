@@ -1,17 +1,19 @@
 """People count and left items from the board's camera, detected on the laptop.
 
-The board (firmware/xiao_sense) sends a 320x240 JPEG about once a second over MQTT to aau-hack26/rooms/<room>/frame,
-encrypted with AES-128-CTR (payload = 16-byte counter block + ciphertext) because the broker is public. Here YOLO11n
-(models/yolo11n_320.onnx, COCO classes, ~10-20 ms on a laptop CPU) counts people and forgettable things in it; only the
-newest frame per room is processed, so results never queue up.
-Smoothing over the last 3 frames: the count is their median (a missed frame doesn't flicker), a room is empty only
-when none of them shows a person, and things count as left behind when the room is empty and they show up in at
-least 2 of them.
+The board (firmware/xiao_sense) sends a 320x240 JPEG about every 0.6 s over MQTT to aau-hack26/rooms/<room>/frame,
+encrypted with AES-128-CTR (payload = 16-byte counter block + ciphertext) because the broker is public. Here YOLO11s
+(models/yolo11s_640.onnx, COCO classes, the frame upscaled to 640 so small and far people are found, ~150 ms on a
+laptop CPU) counts people and forgettable things; only the newest frame per room is processed, so nothing queues up.
+Items only count when they are within ITEM_MAX_M metres (default 3.5): the distance is estimated from the box size
+and the object's typical real size, for a webcam with a CAMERA_FOV degrees (default 65) wide view.
+Smoothing: the people count is the median of the last 3 frames and the room is empty only when none of them shows a
+person; things count as left behind when nobody was seen in the last 3 frames and they show up in 3 of the last 4.
 Key: FRAME_KEY (32 hex characters) or firmware/xiao_sense/frame_key.h, made by tools/make_frame_key.py.
 """
 
 import io
 import logging
+import math
 import os
 import re
 import threading
@@ -26,15 +28,16 @@ from app import db
 
 log = logging.getLogger(__name__)
 
-MODEL = db.ROOT / "models" / "yolo11n_320.onnx"
+MODEL = db.ROOT / "models" / "yolo11s_640.onnx"
 KEY_HEADER = db.ROOT / "firmware" / "xiao_sense" / "frame_key.h"
-SIZE = 320
 PERSON = 0
-ITEMS = {24: "backpack", 25: "umbrella", 26: "handbag", 28: "suitcase", 39: "bottle", 41: "cup", 63: "laptop",
-         67: "cell phone", 73: "book"}
+# COCO class -> (name, typical size of its longest side in metres)
+ITEMS = {24: ("backpack", 0.45), 25: ("umbrella", 0.9), 26: ("handbag", 0.35), 28: ("suitcase", 0.65),
+         39: ("bottle", 0.25), 41: ("cup", 0.10), 63: ("laptop", 0.33), 67: ("cell phone", 0.15), 73: ("book", 0.24)}
 PERSON_SCORE = 0.45
-ITEM_SCORE = 0.35
-WINDOW = 3
+ITEM_SCORE = 0.50
+ITEM_MAX_M = float(os.environ.get("ITEM_MAX_M", "3.5"))
+CAMERA_FOV = float(os.environ.get("CAMERA_FOV", "65"))
 
 
 def frame_key() -> bytes | None:
@@ -49,24 +52,24 @@ def decrypt(key: bytes, payload: bytes) -> bytes:
     return dec.update(data) + dec.finalize()
 
 
-def letterbox(img: Image.Image) -> np.ndarray:
-    """RGB image -> 1x3x320x320 float input, scaled to fit with grey bars (as YOLO was trained)."""
-    scale = SIZE / max(img.size)
+def letterbox(img: Image.Image, size: int) -> tuple[np.ndarray, float]:
+    """RGB image -> 1x3xSxS float input scaled to fit with grey bars (as YOLO was trained), and the scale used."""
+    scale = size / max(img.size)
     w, h = round(img.width * scale), round(img.height * scale)
-    canvas = Image.new("RGB", (SIZE, SIZE), (114, 114, 114))
-    canvas.paste(img.resize((w, h)), ((SIZE - w) // 2, (SIZE - h) // 2))
-    return (np.asarray(canvas, dtype=np.float32) / 255).transpose(2, 0, 1)[None]
+    canvas = Image.new("RGB", (size, size), (114, 114, 114))
+    canvas.paste(img.resize((w, h), Image.BILINEAR), ((size - w) // 2, (size - h) // 2))
+    return (np.asarray(canvas, dtype=np.float32) / 255).transpose(2, 0, 1)[None], scale
 
 
-def nms_count(boxes: np.ndarray, scores: np.ndarray, iou: float = 0.45) -> int:
-    """Number of boxes left after non-maximum suppression (boxes as centre x, centre y, w, h)."""
+def nms(boxes: np.ndarray, scores: np.ndarray, iou: float = 0.45) -> list[int]:
+    """Indexes of the boxes kept by non-maximum suppression (boxes as centre x, centre y, w, h)."""
     x1, y1 = boxes[:, 0] - boxes[:, 2] / 2, boxes[:, 1] - boxes[:, 3] / 2
     x2, y2 = boxes[:, 0] + boxes[:, 2] / 2, boxes[:, 1] + boxes[:, 3] / 2
     area = boxes[:, 2] * boxes[:, 3]
-    order, kept = scores.argsort()[::-1], 0
+    order, kept = scores.argsort()[::-1], []
     while order.size:
         i, rest = order[0], order[1:]
-        kept += 1
+        kept.append(int(i))
         w = np.clip(np.minimum(x2[i], x2[rest]) - np.maximum(x1[i], x1[rest]), 0, None)
         h = np.clip(np.minimum(y2[i], y2[rest]) - np.maximum(y1[i], y1[rest]), 0, None)
         inter = w * h
@@ -74,16 +77,24 @@ def nms_count(boxes: np.ndarray, scores: np.ndarray, iou: float = 0.45) -> int:
     return kept
 
 
-def count(output: np.ndarray) -> tuple[int, dict[str, int]]:
-    """YOLO output 1x84xN (box + 80 class scores) -> people and {item name: count}."""
+def count(output: np.ndarray, frame_width: float) -> tuple[int, list[tuple[str, float, float]]]:
+    """YOLO output 1x84xN (box + 80 class scores), boxes in pixels of a frame frame_width wide ->
+    people, and the items within ITEM_MAX_M as (name, score, metres away)."""
     rows = output[0].T
     cls, score = rows[:, 4:].argmax(1), rows[:, 4:].max(1)
-    people = nms_count(rows[(cls == PERSON) & (score >= PERSON_SCORE), :4], score[(cls == PERSON) & (score >= PERSON_SCORE)])
-    items = {}
-    for c, name in ITEMS.items():
+    sel = (cls == PERSON) & (score >= PERSON_SCORE)
+    people = len(nms(rows[sel, :4], score[sel])) if sel.any() else 0
+    focal = frame_width / 2 / math.tan(math.radians(CAMERA_FOV) / 2)   # in pixels
+    items = []
+    for c, (name, metres) in ITEMS.items():
         sel = (cls == c) & (score >= ITEM_SCORE)
-        if sel.any():
-            items[name] = nms_count(rows[sel, :4], score[sel])
+        if not sel.any():
+            continue
+        boxes, scores = rows[sel, :4], score[sel]
+        for i in nms(boxes, scores):
+            distance = metres * focal / max(boxes[i, 2], boxes[i, 3], 1)
+            if distance <= ITEM_MAX_M:
+                items.append((name, round(float(scores[i]), 2), round(distance, 1)))
     return people, items
 
 
@@ -91,16 +102,16 @@ class Room:
     """Last frames of one room -> a steady reading."""
 
     def __init__(self):
-        self.people = deque(maxlen=WINDOW)
-        self.items = deque(maxlen=WINDOW)
+        self.people = deque(maxlen=3)
+        self.items = deque(maxlen=4)
 
     def add(self, people: int, items: int) -> tuple[int, int]:
         self.people.append(people)
         self.items.append(items)
-        if not any(self.people):
-            seen = sorted(n for n in self.items if n)
-            return 0, (seen[0] if len(seen) >= 2 else 0)
-        return max(1, sorted(self.people)[len(self.people) // 2]), 0
+        if any(self.people):
+            return max(1, sorted(self.people)[len(self.people) // 2]), 0
+        seen = [n for n in self.items if n]
+        return 0, (min(seen) if len(seen) >= 3 else 0)
 
 
 class Vision:
@@ -110,11 +121,18 @@ class Vision:
         import onnxruntime   # imported here so the backend and tests run without it when vision is off
         self.session = onnxruntime.InferenceSession(str(MODEL), providers=["CPUExecutionProvider"])
         self.input = self.session.get_inputs()[0].name
+        self.size = self.session.get_inputs()[0].shape[2]
         self.key, self.record = key, record
         self.latest: dict[str, bytes] = {}
         self.rooms: dict[str, Room] = defaultdict(Room)
+        self.shown: dict[str, tuple] = {}
         self.wake = threading.Event()
         self.lock = threading.Lock()
+        if not log.handlers:   # uvicorn doesn't show app loggers: print what the camera sees to the console
+            handler = logging.StreamHandler()
+            handler.setFormatter(logging.Formatter("%(asctime)s camera: %(message)s", "%H:%M:%S"))
+            log.addHandler(handler)
+            log.setLevel(logging.INFO)
         threading.Thread(target=self.run, daemon=True, name="vision").start()
 
     def submit(self, room_id: str, payload: bytes) -> None:
@@ -122,9 +140,11 @@ class Vision:
             self.latest[room_id] = payload
         self.wake.set()
 
-    def detect(self, jpeg: bytes) -> tuple[int, dict[str, int]]:
+    def detect(self, jpeg: bytes) -> tuple[int, list[tuple[str, float, float]]]:
         img = Image.open(io.BytesIO(jpeg)).convert("RGB")
-        return count(self.session.run(None, {self.input: letterbox(img)})[0])
+        x, scale = letterbox(img, self.size)
+        out = self.session.run(None, {self.input: x})[0]
+        return count(out, img.width * scale)
 
     def run(self) -> None:
         while True:
@@ -136,14 +156,17 @@ class Vision:
                 try:
                     people, items = self.detect(decrypt(self.key, payload))
                 except Exception:   # wrong key, cut-off frame: skip it
-                    log.warning("Frame from %s could not be read", room_id)
+                    log.warning("frame from %s could not be read (wrong key?)", room_id)
                     continue
-                shown_people, left = self.rooms[room_id].add(people, sum(items.values()))
-                log.info("%s: %d people, items %s -> people %d, left %d", room_id, people, items, shown_people, left)
+                shown = self.rooms[room_id].add(people, len(items))
+                if (shown, [i[0] for i in items]) != self.shown.get(room_id):
+                    self.shown[room_id] = (shown, [i[0] for i in items])
+                    log.info("%s: %d people, left items %d | this frame: %d people, items %s", room_id, *shown,
+                             people, ", ".join(f"{n} {s:.2f} at ~{d} m" for n, s, d in items) or "none")
                 try:
-                    self.record(room_id, shown_people, left)
+                    self.record(room_id, *shown)
                 except Exception:
-                    log.exception("Vision result for %s not stored", room_id)
+                    log.exception("result for %s not stored", room_id)
 
 
 def start(record: Callable[[str, int, int], None]) -> Vision | None:

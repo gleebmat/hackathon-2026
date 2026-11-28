@@ -55,7 +55,7 @@ and left items (yes/no) reach the website. 50 tests pass. Runbook: `README.md`.
 
 **28 Nov: accurate detection (branch `gleb/accurate-detection`)**
 - Board on-device detection was too slow/inaccurate in Velxio (~1 min per result; Velxio's JPEG frames are also cut
-  off after the top third). Now the board sends encrypted 320x240 frames over MQTT and `app/vision.py` runs YOLO11n
+  off after the top third). Now the board sends encrypted 320x240 frames over MQTT and `app/vision.py` runs YOLO11s (640)
   on the laptop: steady people count and left items about 1 s after the camera sees them.
 - Backend: no private ("full") booking while people are in the room now. UI: an empty room always reads "Nobody here".
 
