@@ -1,8 +1,9 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" translate="no">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="google" content="notranslate">
   <title>Room V · Book a room</title>
   <script>
     try {
@@ -33,41 +34,44 @@
   <header class="topbar">
     <a class="brand" href="./">
       <span class="brand-mark">V</span>
-      <span><span class="brand-name">Room V</span><br><span class="brand-sub">Find it. Book it. Study.</span></span>
+      <span><span class="brand-name">Room V</span><br><span class="brand-sub" data-i18n="brand_sub">Find it. Book it. Study.</span></span>
     </a>
 
     <div class="search" id="search">
       <div class="search-field">
         <svg class="icon"><use href="#i-search"/></svg>
-        <input id="search-input" type="search" placeholder="Search a room: 107a, Atrium, Seminarraum…" autocomplete="off"
-               role="combobox" aria-expanded="false" aria-controls="search-list" aria-autocomplete="list" aria-label="Search a room">
+        <input id="search-input" type="search" data-i18n-ph="search_ph" data-i18n-aria="search_aria" autocomplete="off"
+               role="combobox" aria-expanded="false" aria-controls="search-list" aria-autocomplete="list">
         <kbd class="kbd">/</kbd>
       </div>
       <ul class="suggestions hidden" id="search-list" role="listbox"></ul>
     </div>
 
     <div class="top-actions">
+      <span class="lang-switch top-lang" id="top-lang"></span>
       <button class="btn mine-btn" id="mine-btn" type="button">
-        <svg class="icon"><use href="#i-cal"/></svg><span class="label">My bookings</span><span class="count" id="mine-count">0</span>
+        <svg class="icon"><use href="#i-cal"/></svg><span class="label" data-i18n="my_bookings">My bookings</span><span class="count" id="mine-count">0</span>
       </button>
       <div class="menu-wrap">
-        <button class="avatar" id="avatar" type="button" aria-haspopup="true" aria-expanded="false" title="Profile">?</button>
+        <button class="avatar" id="avatar" type="button" aria-haspopup="true" aria-expanded="false" data-i18n-title="profile">?</button>
         <div class="menu hidden" id="menu">
           <div class="menu-user"><strong id="user-name"></strong><span class="muted small" id="user-email"></span></div>
-          <div class="menu-label">Colour theme</div>
+          <div class="menu-label" data-i18n="colour_theme">Colour theme</div>
           <div class="swatches" id="swatches">
             <button class="swatch" data-theme="violet" title="Violet" style="background:linear-gradient(135deg,#6d5dfc,#22d3ee)"></button>
             <button class="swatch" data-theme="ocean" title="Ocean" style="background:linear-gradient(135deg,#0ea5e9,#34d399)"></button>
             <button class="swatch" data-theme="sunset" title="Sunset" style="background:linear-gradient(135deg,#f43f5e,#fb923c)"></button>
             <button class="swatch" data-theme="mint" title="Mint" style="background:linear-gradient(135deg,#10b981,#a3e635)"></button>
           </div>
-          <div class="menu-label">Mode</div>
+          <div class="menu-label" data-i18n="mode">Mode</div>
           <div class="segmented" id="modes">
-            <button type="button" data-mode="auto">Auto</button>
-            <button type="button" data-mode="light">Light</button>
-            <button type="button" data-mode="dark">Dark</button>
+            <button type="button" data-mode="auto" data-i18n="mode_auto">Auto</button>
+            <button type="button" data-mode="light" data-i18n="mode_light">Light</button>
+            <button type="button" data-mode="dark" data-i18n="mode_dark">Dark</button>
           </div>
-          <button class="btn" id="logout" type="button">Log out</button>
+          <div class="menu-label" data-i18n="language">Language</div>
+          <div class="segmented lang-switch" id="menu-lang"></div>
+          <button class="btn" id="logout" type="button" data-i18n="logout">Log out</button>
         </div>
       </div>
     </div>
@@ -77,11 +81,11 @@
     <section class="map-card">
       <div class="building" id="building"></div>
       <div class="map-legend" aria-hidden="true">
-        <span><i style="background:var(--free)"></i>Free</span>
-        <span><i style="background:var(--shared)"></i>Shared</span>
-        <span><i style="background:var(--full)"></i>Full</span>
-        <span><i style="background:var(--ghost)"></i>Ghost</span>
-        <span><i style="background:#9aa0a6"></i>Closed</span>
+        <span><i style="background:var(--free)"></i><span data-i18n="legend_free">Free</span></span>
+        <span><i style="background:var(--shared)"></i><span data-i18n="legend_shared">Shared</span></span>
+        <span><i style="background:var(--full)"></i><span data-i18n="legend_full">Full</span></span>
+        <span><i style="background:var(--ghost)"></i><span data-i18n="legend_ghost">Ghost</span></span>
+        <span><i style="background:#9aa0a6"></i><span data-i18n="legend_closed">Closed</span></span>
       </div>
     </section>
 
@@ -92,38 +96,52 @@
       <div class="cal">
         <div class="cal-month">
           <div class="month-head">
-            <button class="nav-sm m-prev" type="button" aria-label="Previous month">‹</button>
+            <button class="nav-sm m-prev" type="button" data-i18n-aria="prev_month">‹</button>
             <b class="m-title"></b>
-            <button class="nav-sm m-next" type="button" aria-label="Next month">›</button>
+            <button class="nav-sm m-next" type="button" data-i18n-aria="next_month">›</button>
           </div>
           <div class="grid7 m-grid"></div>
         </div>
         <div class="cal-time">
-          <div class="cal-row"><span class="lbl">When</span><button class="anytime" type="button">Any time</button></div>
-          <div class="cal-row"><span class="lbl">From</span>
-            <div class="time"><button type="button" class="t-dn" aria-label="Earlier">‹</button><output class="t-out"></output><button type="button" class="t-up" aria-label="Later">›</button></div>
+          <div class="cal-row"><span class="lbl" data-i18n="when">When</span><button class="anytime" type="button" data-i18n="any_time">Any time</button></div>
+          <div class="cal-row"><span class="lbl" data-i18n="from">From</span>
+            <div class="time"><button type="button" class="t-dn" data-i18n-aria="earlier">‹</button><output class="t-out"></output><button type="button" class="t-up" data-i18n-aria="later">›</button></div>
           </div>
-          <div class="cal-row"><span class="lbl">For</span><div class="durs"></div></div>
+          <div class="cal-row"><span class="lbl" data-i18n="for">For</span><div class="durs"></div></div>
         </div>
       </div>
 
-      <h2 class="picker-title">Rooms today</h2>
+      <h2 class="picker-title"></h2>
       <div class="stage">
-        <button class="arrow prev" type="button" aria-label="Previous rooms"><svg class="icon"><use href="#i-prev"/></svg></button>
+        <button class="arrow prev" type="button" data-i18n-aria="prev_rooms"><svg class="icon"><use href="#i-prev"/></svg></button>
         <div class="picks"></div>
-        <button class="arrow next" type="button" aria-label="Next rooms"><svg class="icon"><use href="#i-next"/></svg></button>
+        <button class="arrow next" type="button" data-i18n-aria="next_rooms"><svg class="icon"><use href="#i-next"/></svg></button>
       </div>
       <div class="dots"></div>
     </section>
   </main>
 
+  <footer class="site-footer" id="footer"></footer>
 
   <dialog class="drawer" id="mine-drawer" aria-labelledby="mine-title">
     <div class="drawer-head">
-      <div><h2 id="mine-title">My bookings</h2><span class="muted small">Up to 4 hours per day</span></div>
-      <button class="icon-btn" type="button" data-close aria-label="Close"><svg class="icon"><use href="#i-close"/></svg></button>
+      <div><h2 id="mine-title" data-i18n="my_bookings">My bookings</h2><span class="muted small" data-i18n="up_to_4h">Up to 4 hours per day</span></div>
+      <button class="icon-btn" type="button" data-close data-i18n-aria="close"><svg class="icon"><use href="#i-close"/></svg></button>
     </div>
     <div class="drawer-body" id="mine-body"></div>
+  </dialog>
+
+  <dialog class="help-dialog" id="help-dialog" aria-labelledby="help-title">
+    <div class="drawer-head">
+      <h2 id="help-title" data-i18n="shortcuts">Keyboard shortcuts</h2>
+      <button class="icon-btn" type="button" data-close data-i18n-aria="close"><svg class="icon"><use href="#i-close"/></svg></button>
+    </div>
+    <dl class="shortcuts">
+      <dt><kbd class="kbd">/</kbd></dt><dd data-i18n="sc_search">Search a room</dd>
+      <dt><kbd class="kbd">Esc</kbd></dt><dd data-i18n="sc_close">Close the room panel or a dialog</dd>
+      <dt><kbd class="kbd">L</kbd></dt><dd data-i18n="sc_lang">Switch language</dd>
+      <dt><kbd class="kbd">?</kbd></dt><dd data-i18n="sc_help">Show this help</dd>
+    </dl>
   </dialog>
 
   <div class="toasts" id="toasts" aria-live="polite"></div>

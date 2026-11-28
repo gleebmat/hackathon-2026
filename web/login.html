@@ -1,8 +1,9 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" translate="no">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="google" content="notranslate">
   <title>Room V · Log in</title>
   <script>
     try {
@@ -13,62 +14,73 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Nunito+Sans:opsz,wght@6..12,400..900&display=swap">
+  <link rel="preload" as="image" href="img/login.jpg">
   <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
   <div class="auth">
     <section class="auth-art">
       <div class="brand"><span class="brand-mark">V</span><span class="brand-name">Room V</span></div>
-      <h1>Rooms across campus,<br>free when you need them.</h1>
-      <a class="credit" href="https://commons.wikimedia.org/wiki/File:Alpen-Adria_Universit%C3%A4t_Klagenfurt,_Zentraltrakt_Ost,_K%C3%A4rnten.jpg" target="_blank" rel="noopener">Photo: Naturpuur, CC BY-SA 4.0, via Wikimedia Commons</a>
+      <h1 data-i18n-html="login_h1">Rooms across campus,<br>free when you need them.</h1>
+      <a class="credit" href="https://carinthia.com/" target="_blank" rel="noopener" data-i18n="photo_credit">Photo: carinthia.com</a>
     </section>
 
     <main class="auth-main">
+      <div class="auth-lang lang-switch" id="auth-lang"></div>
       <div class="card auth-card">
-        <h2 id="auth-title">Welcome back 👋</h2>
-        <p class="muted">Log in with your student account.</p>
+        <h2 id="auth-title" data-i18n="welcome_back">Welcome back 👋</h2>
+        <p class="muted" data-i18n="login_sub">Log in with your student account.</p>
         <div class="tabs" role="tablist">
-          <button type="button" class="active" data-tab="login" role="tab">Log in</button>
-          <button type="button" data-tab="register" role="tab">Sign up</button>
+          <button type="button" class="active" data-tab="login" role="tab" data-i18n="tab_login">Log in</button>
+          <button type="button" data-tab="register" role="tab" data-i18n="tab_register">Sign up</button>
         </div>
         <form class="form" id="auth-form" novalidate>
-          <label class="hidden" id="name-field">Name
-            <input class="text-input" id="name" type="text" autocomplete="name" maxlength="60" placeholder="What should we call you?">
+          <label class="hidden" id="name-field"><span data-i18n="name">Name</span>
+            <input class="text-input" id="name" type="text" autocomplete="name" maxlength="60" data-i18n-ph="name_ph">
           </label>
-          <label>Student email
+          <label><span data-i18n="student_email">Student email</span>
             <input class="text-input" id="email" type="email" autocomplete="username" required placeholder="you@edu.aau.at">
           </label>
-          <label>Password
-            <input class="text-input" id="password" type="password" autocomplete="current-password" required placeholder="At least 4 characters">
+          <label><span data-i18n="password">Password</span>
+            <input class="text-input" id="password" type="password" autocomplete="current-password" required data-i18n-ph="password_ph">
           </label>
           <div class="alert hidden" id="auth-error" role="alert"></div>
-          <button class="btn btn-primary btn-lg" id="auth-submit" type="submit">Log in</button>
+          <button class="btn btn-primary btn-lg" id="auth-submit" type="submit" data-i18n="tab_login">Log in</button>
         </form>
         <div class="demo">
-          <span class="muted small">Demo accounts (password <b>demo</b>), click to fill in:</span>
+          <span class="muted small" data-i18n-html="demo_accounts">Demo accounts (password <b>demo</b>), click to fill in:</span>
           <div class="demo-list" id="demo-list"></div>
         </div>
       </div>
     </main>
   </div>
+  <footer class="site-footer" id="footer"></footer>
 
   <script type="module">
     import * as api from "./js/api.js";
+    import { t, applyStatic, langSwitch } from "./js/i18n.js";
+    import { renderFooter } from "./js/footer.js";
 
     const $ = (id) => document.getElementById(id);
     let tab = "login";
+    const back = () => location.replace(`./${location.search}`);   // keeps ?room=… from a shared link
+
+    document.title = t("title_login");
+    applyStatic();
+    langSwitch($("auth-lang"));
+    renderFooter($("footer"), { compact: true });
 
     try {
       await api.me();
-      location.replace("./");
+      back();
     } catch {}
 
     function setTab(next) {
       tab = next;
       for (const b of document.querySelectorAll("[data-tab]")) b.classList.toggle("active", b.dataset.tab === tab);
       $("name-field").classList.toggle("hidden", tab === "login");
-      $("auth-title").textContent = tab === "login" ? "Welcome back 👋" : "Join Room V ✨";
-      $("auth-submit").textContent = tab === "login" ? "Log in" : "Create account";
+      $("auth-title").textContent = t(tab === "login" ? "welcome_back" : "join");
+      $("auth-submit").textContent = t(tab === "login" ? "tab_login" : "create_account");
       $("password").autocomplete = tab === "login" ? "current-password" : "new-password";
       $("auth-error").classList.add("hidden");
     }
@@ -95,7 +107,7 @@
       try {
         if (tab === "login") await api.login(email, password);
         else await api.register(email, password, $("name").value.trim() || undefined);
-        location.replace("./");
+        back();
       } catch (err) {
         $("auth-error").textContent = err.message;
         $("auth-error").classList.remove("hidden");

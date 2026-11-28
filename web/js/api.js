@@ -1,10 +1,11 @@
 // The only place the UI talks to the backend (contract: docs/PLAN.md, "API").
 // The session is a cookie set by /api/login, so no token is stored here.
-// Every failed call throws an ApiError with the backend's {error, suggestions}.
+// Every failed call throws an ApiError with the backend's {error, suggestions} (error translated to German if chosen).
+import { tError, tRoom } from "./i18n.js";
 
 export class ApiError extends Error {
   constructor(status, body) {
-    super(body?.error || `Request failed (${status})`);
+    super(tError(body?.error || `Request failed (${status})`));
     this.status = status;
     this.suggestions = body?.suggestions || [];
   }
@@ -34,9 +35,11 @@ export const login = (email, password) => request("POST", "/api/login", { email,
 export const register = (email, password, name) => request("POST", "/api/register", { email, password, name });
 export const logout = () => request("POST", "/api/logout");
 
-export const rooms = () => request("GET", "/api/rooms");
-export const room = (id) => request("GET", `/api/rooms/${encodeURIComponent(id)}`);
-export const search = (text, limit = 8) => request("GET", `/api/search?${q({ q: text, limit })}`);
+// Room names in the chosen language (the backend sends the English room types).
+const named = (r) => ({ ...r, name: tRoom(r.name) });
+export const rooms = () => request("GET", "/api/rooms").then((list) => list.map(named));
+export const room = (id) => request("GET", `/api/rooms/${encodeURIComponent(id)}`).then(named);
+export const search = (text, limit = 8) => request("GET", `/api/search?${q({ q: text, limit })}`).then((list) => list.map(named));
 export const availability = (id, date) =>
   request("GET", `/api/rooms/${encodeURIComponent(id)}/availability?${q({ date })}`);
 

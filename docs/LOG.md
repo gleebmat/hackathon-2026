@@ -16,8 +16,11 @@ Presence, noise, ghost release and left items tested end to end with a webcam. T
 - 28 Nov: left items rewritten against false alarms (rolling empty-room snapshot, camera-shift and lighting
   compensation, changes must stay put for 3 checks, edge changes ignored). Details in `docs/PLAN.md`.
 
-- 28 Nov: people count with Swift-YOLO Nano (tag `board-v1`), then replaced by Seeed's face detector (fast) and a
-  COCO object detector for left items (no photo comparison). Model comparison in `README.md`.
+- 28 Nov: people count with Swift-YOLO Nano (tag `board-v1`), then Seeed's face detector and a COCO object
+  detector on the board; superseded by gleb-claude's YOLO11s on the laptop (#28).
+
+- 28 Nov: website in English and German, footer (AAU links, team contacts), share links, .ics export, shortcuts,
+  new login photo.
 
 **Next:** physical-board test.
 

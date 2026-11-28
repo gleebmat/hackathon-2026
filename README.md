@@ -22,6 +22,12 @@ uvicorn app.main:app --reload
 Open http://localhost:8000 and log in as `student1@edu.aau.at` / `demo` (also `student2..4`).
 API docs: http://localhost:8000/docs. The map alone: http://localhost:8000/map3d/. Tests: `python -m pytest tests`.
 
+- **Website:** English and German (switch top right, in the profile menu, the footer, or press `L`; strings live in
+  `web/js/i18n.js`, backend errors and room types are translated there too). Footer with AAU links (website,
+  CAMPUSonline, Moodle, campus map, IT Service Desk), how booking works and the team's contacts (`web/js/footer.js`).
+  Rooms can be shared as links (`/?room=Z.1.04`, "Copy link" in the room panel), bookings exported to a calendar
+  (`.ics`, "Calendar" in My bookings), and `?` shows the keyboard shortcuts. Login photo: carinthia.com
+  (`web/img/login.jpg`).
 - **Port:** any free port works (`uvicorn app.main:app --port 8011` is fine too). The board doesn't talk to the
   port: it publishes to an MQTT broker and the backend subscribes, so only the browser URL changes.
 - **Database:** a local SQLite file (`campus.db`, or `DB_PATH`), gitignored. Accounts, sessions, bookings and
