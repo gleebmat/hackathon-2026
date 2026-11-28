@@ -28,6 +28,9 @@ API docs: http://localhost:8000/docs. The map alone: http://localhost:8000/map3d
   Rooms can be shared as links (`/?room=Z.1.04`, "Copy link" in the room panel), bookings exported to a calendar
   (`.ics`, "Calendar" in My bookings), and `?` shows the keyboard shortcuts. Login photo: carinthia.com
   (`web/img/login.jpg`).
+- **Booking rules:** only rooms with **fewer than 55 seats** can be booked (`BOOKABLE_BELOW` in `app/booking.py`); lecture
+  halls, the Aula and the atrium show live status only. People sitting in a room without a booking take seats from
+  sharers but **don't block booking the whole room** (a private booking just moves them out).
 - **Port:** any free port works (`uvicorn app.main:app --port 8011` is fine too). The board doesn't talk to the
   port: it publishes to an MQTT broker and the backend subscribes, so only the browser URL changes.
 - **Database:** a local SQLite file (`campus.db`, or `DB_PATH`), gitignored. Accounts, sessions, bookings and
