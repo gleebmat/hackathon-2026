@@ -53,9 +53,10 @@ PILLAR_SIZE = 1.2          # m
 # spot in the building (not in a room, a doorway or another machine), its back against the nearest wall.
 MACHINES = [("coffee", -23.6, -2.6), ("coffee", -23.6, -1.2), ("coffee", 122.9, 31.6), ("coffee", 250.5, 9.3),
             ("coffee", 117.6, 71.2), ("vending", 120.2, 71.2), ("vending", 122.9, 71.2),
-            ("coffee", 120.9, 140.2, "outer")]   # "outer": against the building's wall, not a room's
+            ("coffee", 121.56, 142.9, (0, 1))]   # a direction given: placed exactly there, facing that way
 MACHINE_FLOOR = 1
-MACHINE_GAP = 0.42         # m from the wall to the machine's centre: its back touches the wall
+MACHINE_GAP = 0.42         # m from a room's wall to the machine's centre: its back touches the wall
+OUTER_WALL_GAP = 0.57      # from a building wall (drawn 0.3 m thick on the outline): back touches its inner face
 # Corrections: parts of a floor left out of the model (building, floor, outline). Z floor 1: the strip of storage,
 # prep rooms and toilets behind HS 1 and HS 2 reads as thick wall; the hall ends right behind the halls.
 CUTS = [("Z", 1, [(116.4, 66.0), (145.5, 66.0), (145.5, 71.33), (132.09, 70.97), (132.1, 70.74), (127.37, 70.61),
@@ -201,7 +202,7 @@ def outside_doors(b, doors, everything):
 def place_machines(buildings):
     """Puts each machine at the free spot nearest to where it roughly is, its back to the nearest wall."""
     placed = []
-    for kind, x, z, *where in MACHINES:
+    for kind, x, z, *fixed in MACHINES:
         want = Point(x, z)
         b = min(buildings, key=lambda b: block_union(b, MACHINE_FLOOR).distance(want))
         here = block_union(b, MACHINE_FLOOR)
@@ -214,9 +215,13 @@ def place_machines(buildings):
         free = walkable.buffer(-0.6, join_style=2)
         if keep_clear:
             free = free.difference(unary_union(keep_clear))
+        if fixed:
+            placed.append({"kind": kind, "building": b["id"], "floor": MACHINE_FLOOR, "x": x, "z": z,
+                           "dir": list(fixed[0])})
+            continue
         spot = want if free.contains(want) else nearest_points(free, want)[0]
         # back against the nearest wall, facing the corridor (if that spot is free too)
-        edge = here.boundary if where == ["outer"] else walkable.boundary
+        edge = walkable.boundary
         at = edge.project(spot)
         wall = edge.interpolate(at)
         p0, p1 = edge.interpolate(at - 0.4), edge.interpolate(at + 0.4)
@@ -224,7 +229,8 @@ def place_machines(buildings):
         nx, nz = -(p1.y - p0.y) / n, (p1.x - p0.x) / n
         if not walkable.contains(Point(wall.x + nx * 0.3, wall.y + nz * 0.3)):
             nx, nz = -nx, -nz
-        snug = Point(wall.x + nx * MACHINE_GAP, wall.y + nz * MACHINE_GAP)
+        gap = OUTER_WALL_GAP if here.boundary.distance(wall) < 0.05 else MACHINE_GAP
+        snug = Point(wall.x + nx * gap, wall.y + nz * gap)
         if walkable.buffer(-0.3, join_style=2).contains(snug) and not any(k.contains(snug) for k in keep_clear):
             spot = snug
         placed.append({"kind": kind, "building": b["id"], "floor": MACHINE_FLOOR, "x": round(spot.x, 2),

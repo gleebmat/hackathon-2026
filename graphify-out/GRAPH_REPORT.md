@@ -1,7 +1,7 @@
 # Graph Report - hackathon-2026  (2026-11-28)
 
 ## Corpus Check
-- 37 files · ~85,334 words
+- 37 files · ~85,375 words
 - Verdict: corpus is large enough that graph structure adds value.
 - Unclassified: 10 file(s) not represented in the graph (top: .tflite 4, (none) 2, .example 1)
 
@@ -11,7 +11,7 @@
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `df2f79f4`
+- Built from commit: `4293c07c`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
