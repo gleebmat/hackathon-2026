@@ -7,9 +7,8 @@
 <!--
   The board room's touch display (app/display.py opens it as a small window: /display.html?room=Z.1.04&token=...).
   Laid out for the Infineon E84 kit's 4.3" 800x480 panel and scaled to whatever window it gets.
-  Home: a ring of five cards you swipe through. The middle one is big; two smaller ones sit on each side and any card
-  can be brought to the middle (swipe, tap it, arrow keys). Plain campus-system look: Arial, square boxes, grey lines,
-  AAU blue.
+  Home: one row of big buttons that scrolls sideways (finger, mouse drag, wheel, the arrows or arrow keys), the room's
+  status first. Plain campus-system look: Arial, square boxes, grey lines, AAU blue.
   Shown without a button: a break-and-water reminder every 45 minutes of study, and a fire-alarm alert for deaf
   students when the microphone hears a smoke alarm's beeps (~3 kHz, three in a row). Sound is analysed in the page and
   never recorded or sent.
@@ -52,38 +51,35 @@
   .langbtn { height: 46px; min-width: 52px; padding: 0 10px; border: 1px solid var(--line); background: var(--white); font-size: 17px; font-weight: bold; color: var(--aau); }
   .sos { height: 48px; padding: 0 16px; background: var(--sos); color: #fff; font-size: 20px; font-weight: bold; display: inline-flex; align-items: center; gap: 8px; }
 
-  /* home: the ring of cards */
+  /* home: one row of big buttons that scrolls sideways; the room's status comes first */
   #home { position: absolute; top: 64px; left: 0; right: 0; bottom: 0; }
-  .ring { position: absolute; left: 0; right: 0; top: 0; height: 372px; touch-action: none; }
-  .item { position: absolute; background: var(--white); border: 1px solid var(--line); text-align: left; overflow: hidden;
-          display: flex; flex-direction: column; transition: left .28s ease, top .28s ease, width .28s ease, height .28s ease; }
+  .strip { position: absolute; left: 0; right: 0; top: 0; height: 362px; display: flex; gap: 14px; padding: 12px 16px;
+           overflow-x: auto; overflow-y: hidden; scroll-snap-type: x mandatory; scroll-padding: 0 16px; scroll-behavior: smooth;
+           scrollbar-width: none; overscroll-behavior-x: contain; }
+  .strip::-webkit-scrollbar { display: none; }
+  .strip.dragging { scroll-snap-type: none; scroll-behavior: auto; }
+  .item { flex: 0 0 236px; scroll-snap-align: start; background: var(--white); border: 1px solid var(--line); text-align: left;
+          display: flex; flex-direction: column; overflow: hidden; }
+  .item:active { background: #f6f8f9; }
   .item .hd { background: var(--head-bg); border-bottom: 1px solid var(--line); padding: 8px 12px; display: flex; align-items: center; gap: 8px;
               font-size: 15px; font-weight: bold; text-transform: uppercase; letter-spacing: .03em; color: var(--aau-dark); white-space: nowrap; }
   .item .hd svg { font-size: 18px; }
-  .item .bd { flex: 1; min-height: 0; padding: 14px 14px 12px; display: flex; flex-direction: column; gap: 8px; }
-  .item h2 { margin: 0; font-size: 30px; line-height: 1.1; }
+  .item .bd { flex: 1; min-height: 0; padding: 16px 16px 14px; display: flex; flex-direction: column; gap: 8px; }
+  .item .big { font-size: 56px; color: var(--aau); margin-bottom: 4px; }
+  .item h2 { margin: 0; font-size: 32px; line-height: 1.1; }
   .item p { margin: 0; font-size: 17px; line-height: 1.35; color: var(--muted); }
-  .item .open { margin-top: auto; height: 54px; background: var(--aau); color: #fff; font-size: 19px; font-weight: bold; display: flex; align-items: center; justify-content: center; gap: 8px; }
-  /* side cards: smaller, only the essentials */
-  .item.p1 .bd { padding: 12px; } .item.p1 h2 { font-size: 22px; } .item.p1 p { font-size: 15px; }
-  .item.p2 .hd span, .item.p1 .open, .item.p2 .open, .item.p2 p { display: none; }
-  .item.p2 .hd { justify-content: center; padding: 8px 4px; }
-  .item.p2 .bd { padding: 12px 6px; align-items: center; text-align: center; }
-  .item.p2 h2 { font-size: 17px; }
-  .item:not(.p0) { background: #fafafa; }
-  /* the room card */
+  .item .open { margin-top: auto; height: 56px; background: var(--aau); color: #fff; font-size: 20px; font-weight: bold; display: flex; align-items: center; justify-content: center; gap: 8px; }
+  /* the room card: wider, first in the row */
+  .room { flex-basis: 300px; }
   .room .state { display: flex; align-items: center; gap: 10px; }
-  .room .dot { width: 16px; height: 16px; border-radius: 50%; flex: none; }
-  .room.p0 h2 { font-size: 44px; }
+  .room .dot { width: 18px; height: 18px; border-radius: 50%; flex: none; }
+  .room h2 { font-size: 46px; }
   .room .water { margin-top: auto; border-top: 1px solid var(--line-soft); padding-top: 10px; display: flex; gap: 8px; align-items: center; font-size: 16px; color: var(--muted); }
   .room .water svg { font-size: 20px; color: var(--aau); }
-  .room.p1 .water, .room.p2 .water, .room.p2 .dot, .room.p0 .hd .short, .room:not(.p0) .hd .long { display: none; }
-  .room.p2 h2 { font-size: 16px; }
-  .pager { position: absolute; left: 0; right: 0; bottom: 6px; height: 30px; display: flex; align-items: center; justify-content: center; gap: 14px; }
-  .pager .arrow { width: 44px; height: 30px; border: 1px solid var(--line); background: var(--white); display: grid; place-items: center; font-size: 20px; color: var(--aau); }
-  .pager .dots { display: flex; gap: 6px; }
-  .pager .dots i { width: 10px; height: 10px; border: 1px solid var(--aau); }
-  .pager .dots i.on { background: var(--aau); }
+  .pager { position: absolute; left: 0; right: 0; bottom: 8px; height: 40px; display: flex; align-items: center; justify-content: center; gap: 16px; }
+  .pager .arrow { width: 64px; height: 40px; border: 1px solid var(--line); background: var(--white); display: grid; place-items: center; font-size: 22px; color: var(--aau); }
+  .pager .track { width: 220px; height: 6px; background: var(--line-soft); position: relative; }
+  .pager .thumb { position: absolute; top: 0; height: 6px; background: var(--aau); }
 
   /* feature sheets */
   .sheet { position: absolute; top: 64px; left: 0; right: 0; bottom: 0; padding: 0 14px 14px; display: flex; flex-direction: column; background: var(--bg); }
@@ -186,10 +182,10 @@
   <div class="offline hidden" id="offline" role="alert"></div>
 
   <main id="home">
-    <div class="ring" id="ring" role="group" aria-roledescription="carousel"></div>
+    <div class="strip" id="strip" role="list"></div>
     <div class="pager">
       <button class="arrow" id="prev"></button>
-      <span class="dots" id="dots" aria-hidden="true"></span>
+      <span class="track" aria-hidden="true"><span class="thumb" id="thumb"></span></span>
       <button class="arrow" id="next"></button>
     </div>
   </main>
@@ -330,7 +326,7 @@
     en: {
       lang_btn: "DE", lang_aria: "Deutsch", sos: "SOS", sos_aria: "Emergency", back: "Back", done: "Done", cancel: "Cancel",
       prev: "Previous", next: "Next", open: "Open",
-      state_label: "This room now", room_short: "Room",
+      state_label: "This room now",
       st_free: "Free", st_partial: "Shared", st_full: "Booked", st_ghost: "Booked", st_closed: "Closed", st_unbookable: "Open",
       st_break: "On break", ghost_sub: "Nobody here: the booking may be released soon.",
       people_0: "Nobody here right now.", people_1: "1 person here.", people_n: "{n} people here.",
@@ -366,7 +362,7 @@
     de: {
       lang_btn: "EN", lang_aria: "English", sos: "SOS", sos_aria: "Notfall", back: "Zurück", done: "Fertig", cancel: "Abbrechen",
       prev: "Zurück", next: "Weiter", open: "Öffnen",
-      state_label: "Dieser Raum jetzt", room_short: "Raum",
+      state_label: "Dieser Raum jetzt",
       st_free: "Frei", st_partial: "Geteilt", st_full: "Gebucht", st_ghost: "Gebucht", st_closed: "Geschlossen", st_unbookable: "Offen",
       st_break: "Pause", ghost_sub: "Niemand da: Die Buchung wird bald freigegeben.",
       people_0: "Gerade niemand da.", people_1: "1 Person da.", people_n: "{n} Personen da.",
@@ -494,39 +490,22 @@
   }
   setInterval(clock, 1000);
 
-  /* ---------- home: a ring of five cards; the middle one is big, two on each side ---------- */
+  /* ---------- home: one row of big buttons that scrolls sideways; the room's status comes first ---------- */
   const ITEMS = [
-    { id: "book", icon: "qr" }, { id: "sound", icon: "music" }, { id: "room", icon: "door" },
+    { id: "room", icon: "door" }, { id: "book", icon: "qr" }, { id: "sound", icon: "music" },
     { id: "selfie", icon: "camera" }, { id: "break", icon: "coffee" }
   ];
-  const N = ITEMS.length;
-  // slot geometry for positions -2..2 (left, top, width, height), centred on x = 400
-  const SLOT = {
-    "-2": [8, 62, 84, 248], "-1": [104, 34, 150, 304], "0": [266, 8, 268, 356], "1": [546, 34, 150, 304], "2": [708, 62, 84, 248]
-  };
-  const HOME = ITEMS.findIndex((x) => x.id === "room");
-  let current = HOME;
-  const ring = $("ring");
-  ITEMS.forEach((it, i) => {
-    const el = document.createElement("button");
-    el.className = "item" + (it.id === "room" ? " room" : ""); el.dataset.i = i;
-    el.setAttribute("aria-roledescription", "slide");
-    ring.appendChild(el);
-    $("dots").appendChild(document.createElement("i"));
+  const strip = $("strip");
+  ITEMS.forEach((it) => {
+    const el = document.createElement(it.id === "room" ? "div" : "button");
+    el.className = "item" + (it.id === "room" ? " room" : ""); el.dataset.id = it.id;
+    el.setAttribute("role", "listitem");
+    if (it.id !== "room") el.addEventListener("click", () => { if (!dragMoved) openCard(it.id); });
+    strip.appendChild(el);
   });
-  const pos = (i) => ((i - current + N + 2) % N) - 2;
-  function layout() {
-    [...ring.children].forEach((el, i) => {
-      const p = pos(i), [l, tp, w, h] = SLOT[p];
-      el.style.left = l + "px"; el.style.top = tp + "px"; el.style.width = w + "px"; el.style.height = h + "px";
-      el.classList.toggle("p0", p === 0); el.classList.toggle("p1", Math.abs(p) === 1); el.classList.toggle("p2", Math.abs(p) === 2);
-      el.tabIndex = p === 0 ? 0 : -1;
-    });
-    [...$("dots").children].forEach((d, i) => d.classList.toggle("on", i === current));
-  }
   function itemHtml(it) {
     if (it.id === "room") {
-      const head = `<div class="hd">${ic("door")}<span class="long">${t("state_label")}</span><span class="short">${t("room_short")}</span></div>`;
+      const head = `<div class="hd">${ic("door")}<span>${t("state_label")}</span></div>`;
       if (!S) return `${head}<div class="bd"><h2>…</h2></div>`;
       let st = S.status, sub;
       const brk = breakUntil();
@@ -546,34 +525,48 @@
     const brk = breakUntil();
     if (it.id === "break" && brk) p = t("t_break_on", { m: Math.ceil((brk - new Date()) / 60000) });
     return `<div class="hd">${ic(it.icon)}<span>${t("t_" + it.id)}</span></div>
-      <div class="bd"><h2>${t("t_" + it.id)}</h2><p>${p}</p><span class="open">${t("open")} ${ic("arrow")}</span></div>`;
+      <div class="bd"><span class="big">${ic(it.icon)}</span><h2>${t("t_" + it.id)}</h2><p>${p}</p><span class="open">${t("open")} ${ic("arrow")}</span></div>`;
   }
   function renderRing() {
     ITEMS.forEach((it, i) => {
-      const el = ring.children[i], html = itemHtml(it);
+      const el = strip.children[i], html = itemHtml(it);
+      // only touch the DOM on a real change: a re-layout can make the browser snap the row back mid-scroll
       if (el.dataset.html !== html) { el.dataset.html = html; el.innerHTML = html; }
       el.setAttribute("aria-label", it.id === "room" ? `${t("state_label")}: ${el.querySelector("h2").textContent}` : t("t_" + it.id));
     });
-    layout();
+    pager();
   }
-  const rotate = (d) => { current = (current + d + N) % N; layout(); };
-  $("prev").addEventListener("click", () => rotate(-1));
-  $("next").addEventListener("click", () => rotate(1));
+  // scroll position bar + arrows (the row scrolls like a list: nothing jumps across the screen)
+  function pager() {
+    const max = strip.scrollWidth - strip.clientWidth, track = 220, w = Math.max(40, track * strip.clientWidth / strip.scrollWidth);
+    $("thumb").style.width = w + "px";
+    $("thumb").style.left = (max > 0 ? (track - w) * strip.scrollLeft / max : 0) + "px";
+    $("prev").disabled = strip.scrollLeft <= 2; $("next").disabled = strip.scrollLeft >= max - 2;
+  }
+  strip.addEventListener("scroll", pager);
+  const step = () => strip.children[2].offsetLeft - strip.children[1].offsetLeft;
+  const scrollByCards = (n) => strip.scrollBy({ left: n * step(), behavior: "smooth" });
+  $("prev").addEventListener("click", () => scrollByCards(-1));
+  $("next").addEventListener("click", () => scrollByCards(1));
+  strip.addEventListener("wheel", (e) => { if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) { e.preventDefault(); strip.scrollLeft += e.deltaY; } }, { passive: false });
 
-  // swipe (finger or mouse); a short tap on a side card brings it to the middle, on the middle card opens it
-  let downX = null, downItem = null;
-  ring.addEventListener("pointerdown", (e) => { downX = e.clientX; downItem = e.target.closest(".item"); });
-  ring.addEventListener("pointerup", (e) => {
-    if (downX === null) return;
-    const k = screen.getBoundingClientRect().width / 800, dx = (e.clientX - downX) / k;
-    downX = null;
-    if (Math.abs(dx) > 40) { rotate(dx < 0 ? 1 : -1); return; }
-    if (!downItem) return;
-    const i = +downItem.dataset.i, p = pos(i);
-    if (p === 0) { if (ITEMS[i].id !== "room") openCard(ITEMS[i].id); } else rotate(p);
+  // mouse drag scrolls too (fingers and touchpads scroll natively); a drag doesn't count as a tap
+  let dragX = null, dragStart = 0, dragMoved = false;
+  strip.addEventListener("pointerdown", (e) => {
+    dragMoved = false;
+    if (e.pointerType !== "mouse") return;
+    dragX = e.clientX; dragStart = strip.scrollLeft;
   });
-  ring.addEventListener("keydown", (e) => {
-    if (e.key === "Enter" || e.key === " ") { e.preventDefault(); if (ITEMS[current].id !== "room") openCard(ITEMS[current].id); }
+  addEventListener("pointermove", (e) => {
+    if (dragX === null) return;
+    const dx = (e.clientX - dragX) / (screen.getBoundingClientRect().width / 800);
+    if (Math.abs(dx) > 8) { dragMoved = true; strip.classList.add("dragging"); }
+    if (dragMoved) strip.scrollLeft = dragStart - dx;
+  });
+  addEventListener("pointerup", () => {
+    if (dragX === null) return;
+    dragX = null;
+    if (dragMoved) { strip.classList.remove("dragging"); setTimeout(() => { dragMoved = false; }, 0); }
   });
 
   /* ---------- sheets ---------- */
@@ -581,6 +574,7 @@
   function openCard(id) {
     closeSheet();
     openSheet = id;
+    $("home").dataset.last = id;
     $("home").classList.add("hidden");
     $("sheet-" + id).classList.remove("hidden");
     if (id === "selfie") camStart();
@@ -592,7 +586,7 @@
     $("sheet-" + openSheet).classList.add("hidden");
     $("home").classList.remove("hidden");
     openSheet = null;
-    ring.children[current].focus({ preventScroll: true });
+    strip.querySelector(`[data-id="${$("home").dataset.last}"]`)?.focus({ preventScroll: true });
   }
   document.querySelectorAll("[data-back]").forEach((b) => b.addEventListener("click", closeSheet));
 
@@ -975,8 +969,8 @@
   addEventListener("keydown", (e) => {
     if (!$("sosAsk").classList.contains("hidden")) { if (e.key === "Escape") $("sosNo").click(); return; }
     if (openSheet) { if (e.key === "Escape") closeSheet(); return; }
-    if (e.key === "ArrowRight") rotate(1);
-    else if (e.key === "ArrowLeft") rotate(-1);
+    if (e.key === "ArrowRight") scrollByCards(1);
+    else if (e.key === "ArrowLeft") scrollByCards(-1);
     if (DEMO && (e.key === "w" || e.key === "W")) showReminder(15);
     if (DEMO && (e.key === "f" || e.key === "F")) { Alarm.raise(); setTimeout(() => Alarm.clear(), 15000); }
   });
@@ -987,7 +981,7 @@
   setInterval(() => {
     if (Date.now() - lastTouch < IDLE_MS || countdownT || !$("sosAsk").classList.contains("hidden")) return;
     if (openSheet) closeSheet();
-    if (current !== HOME) { current = HOME; layout(); }
+    strip.scrollTo({ left: 0, behavior: "smooth" });
     lastTouch = Date.now();
   }, 5000);
 
@@ -995,7 +989,7 @@
   applyText();
   poll(); setInterval(poll, 1500);
   Alarm.start();
-  window.roomDisplay = { showReminder, Alarm, Synth, rotate };   // for demos and tests
+  window.roomDisplay = { showReminder, Alarm, Synth, scrollByCards };   // for demos and tests
 })();
 </script>
 </body>

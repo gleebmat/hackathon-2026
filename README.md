@@ -57,7 +57,7 @@ API docs: http://localhost:8000/docs. The map alone: http://localhost:8000/map3d
 - **Room display (board room):** the board has no display or speaker, so when it runs the backend opens a small
   window (Edge or Chrome) that acts as its touch display: book-a-room QR, soundscapes, selfie QR (your webcam),
   take a break, SOS (simulated police call), a break reminder every 45 min and a fire-alarm alert for deaf students
-  (from the alarm's sound); a swipeable ring of cards sized for the E84 kit's 4.3" 800x480 screen
+  (from the alarm's sound); a sideways-scrolling row of big buttons sized for the E84 kit's 4.3" 800x480 screen
   (`web/display.html`, API in `docs/PLAN.md`, "Room display"). It closes when the board stops. Chrome somewhere else:
   set `DISPLAY_BROWSER`. Without the board: `$env:DISPLAY_TOKEN='dev-display'`, start the backend, open
   http://localhost:8000/display.html?room=Z.1.04&token=dev-display.
