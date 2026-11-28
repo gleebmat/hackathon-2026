@@ -96,8 +96,8 @@ tested in the browser.
 - Palette (chosen by Martha, THEME block at the top of `css/style.css`): `--bg #f3f5f8`, `--surface #f9fbff`,
   `--surface-2 #eef1f5`, `--border #e1e5ec`, `--text #2a2420`, `--muted #6d685d`, `--brand`/`--accent #2f5be0`;
   status `--free #23865a`, `--shared #c98512`, `--full #b42318`, `--ghost #8b5cf6`, `--closed #94a3b8`;
-  `--star #c98512`. No gradients; radii 7–14 px.
-- Fonts: Bricolage Grotesque (headings, room ids), Instrument Sans (text), IBM Plex Mono (times).
+  `--star #c98512`. No gradients; crisp corners from three tokens only (3, 4, 6 px; only status dots are round).
+- One font everywhere: Instrument Sans (bold for headings, tabular numbers for times).
 - Our own line icons (SVG sprite in `index.html`) instead of every emoji.
 - Roomie, the assistant: a small `r.` tile bottom right that opens a compact panel (no section on the page).
 - Rooms that can't be booked (55+ seats) open a small info card on the map, not the booking panel.

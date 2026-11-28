@@ -458,7 +458,7 @@ function mountControls(el, api, labels = {}) {
   let building = null, floor = null;
   const row = () => {
     const r = document.createElement("div");
-    r.style.cssText = "display:flex;gap:3px;flex-wrap:wrap;padding:3px;border-radius:10px;" +
+    r.style.cssText = "display:flex;gap:3px;flex-wrap:wrap;padding:3px;border-radius:4px;" +
       "background:rgba(249,251,255,.94);box-shadow:0 0 0 1px #e1e5ec;pointer-events:auto";
     box.appendChild(r);
     return r;
@@ -468,7 +468,7 @@ function mountControls(el, api, labels = {}) {
     const b = document.createElement("button");
     b.textContent = text;
     b.title = title ?? "";
-    b.style.cssText = "border:0;border-radius:7px;padding:6px 9px;cursor:pointer;font:inherit;" +
+    b.style.cssText = "border:0;border-radius:3px;padding:6px 9px;cursor:pointer;font:inherit;" +
       (on ? "background:#2f5be0;color:#fff" : "background:transparent;color:#6d685d");
     b.onclick = click;
     parent.appendChild(b);
