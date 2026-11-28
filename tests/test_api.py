@@ -21,7 +21,6 @@ def time_now(monkeypatch):
 @pytest.fixture
 def app_env(tmp_path, monkeypatch, time_now):
     monkeypatch.setenv("DB_PATH", str(tmp_path / "test.db"))
-    monkeypatch.setenv("NOISE_FEED", "0")
     monkeypatch.setenv("MQTT_FEED", "0")
     monkeypatch.delenv("READINGS_TOKEN", raising=False)
     monkeypatch.setenv("SIMULATE", "0")
@@ -392,7 +391,6 @@ def test_rooms_come_from_the_campus_map(tmp_path, monkeypatch, time_now):
     path = tmp_path / "campus.json"
     path.write_text(json.dumps(campus), encoding="utf-8")
     monkeypatch.setenv("DB_PATH", str(tmp_path / "test.db"))
-    monkeypatch.setenv("NOISE_FEED", "0")
     monkeypatch.setenv("MQTT_FEED", "0")
     monkeypatch.setattr(db, "CAMPUS_JSON", path)
     with TestClient(main.app) as c:
@@ -450,7 +448,6 @@ def test_old_database_is_upgraded(tmp_path, monkeypatch, time_now):
     """)
     old.close()
     monkeypatch.setenv("DB_PATH", str(path))
-    monkeypatch.setenv("NOISE_FEED", "0")
     monkeypatch.setenv("MQTT_FEED", "0")
     monkeypatch.setenv("SIMULATE", "0")
     monkeypatch.setattr(db, "CAMPUS_JSON", tmp_path / "missing.json")

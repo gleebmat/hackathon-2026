@@ -154,16 +154,12 @@ def simulated(room: sqlite3.Row, current: list[sqlite3.Row], now: datetime) -> t
     return round(noise, 1), people
 
 
-def room_state(conn: sqlite3.Connection, room: sqlite3.Row, now: datetime, live: dict) -> dict:
+def room_state(conn: sqlite3.Connection, room: sqlite3.Row, now: datetime) -> dict:
     """What the room looks like right now: status, noise, people, free seats and current bookings."""
     current = current_bookings(conn, room["id"], now)
     seen = sensor(conn, room["id"], now)
-    feed = live.get(room["id"])
-    feed_live = bool(feed and feed.get("live"))
     sim_noise, sim_people = simulated(room, current, now)
-    if feed_live:
-        noise_db = feed["noise_db"]
-    elif seen["noise_db"] is not None:
+    if seen["noise_db"] is not None:
         noise_db = seen["noise_db"]
     else:
         noise_db = sim_noise
@@ -203,7 +199,7 @@ def room_state(conn: sqlite3.Connection, room: sqlite3.Row, now: datetime, live:
 
 
 def room_problem(conn: sqlite3.Connection, room: sqlite3.Row, start: datetime, end: datetime, mode: str,
-                 seats: int, purpose: str, now: datetime, live: dict) -> str | None:
+                 seats: int, purpose: str, now: datetime) -> str | None:
     """Why this room can't take the booking, or None if it can."""
     if room["closed"]:
         return "Room is closed"
@@ -216,7 +212,7 @@ def room_problem(conn: sqlite3.Connection, room: sqlite3.Row, start: datetime, e
         return "Room is booked exclusively for that time"
     if {PURPOSE_CLASS[purpose], *(PURPOSE_CLASS[b["purpose"]] for b in others)} >= {"quiet", "loud"}:
         return "Quiet and loud bookings can't share a room"
-    state = room_state(conn, room, now, live) if start <= now < end else None
+    state = room_state(conn, room, now) if start <= now < end else None
     t = start
     while t < end:
         used = sum(b["seats"] for b in others if b["start"] < fmt(t + SLOT) and b["end"] > fmt(t))
@@ -245,7 +241,7 @@ def validate_times(start: datetime, hours: float, now: datetime) -> datetime:
     return end
 
 
-def create_booking(conn: sqlite3.Connection, user_id: int, req: dict, now: datetime, live: dict) -> dict:
+def create_booking(conn: sqlite3.Connection, user_id: int, req: dict, now: datetime) -> dict:
     room = get_room(conn, req["room_id"])
     start, hours, mode, seats, purpose = req["start"], req["hours"], req["mode"], req["seats"], req["purpose"]
     custom = (req.get("custom_purpose") or "").strip() or None
@@ -264,7 +260,7 @@ def create_booking(conn: sqlite3.Connection, user_id: int, req: dict, now: datet
     if used + hours > MAX_HOURS_PER_DAY:
         raise ApiError(400, f"Daily limit is {MAX_HOURS_PER_DAY:g} h; you have {MAX_HOURS_PER_DAY - used:g} h left "
                             f"on {start.date()}")
-    problem = room_problem(conn, room, start, end, mode, seats, purpose, now, live)
+    problem = room_problem(conn, room, start, end, mode, seats, purpose, now)
     if problem:
         raise ApiError(409, problem)
     cur = conn.execute(
@@ -278,11 +274,11 @@ def create_booking(conn: sqlite3.Connection, user_id: int, req: dict, now: datet
 
 
 def suggest(conn: sqlite3.Connection, start: datetime, hours: float, mode: str, seats: int, purpose: str,
-            now: datetime, live: dict, exclude: str | None = None) -> list[dict]:
+            now: datetime, exclude: str | None = None) -> list[dict]:
     """Rooms that can take this booking: quietest first for quiet study, otherwise the tightest fit."""
     end = start + timedelta(hours=hours)
-    fits = [room_state(conn, room, now, live) for room in listed_rooms(conn)
-            if room["id"] != exclude and room_problem(conn, room, start, end, mode, seats, purpose, now, live) is None]
+    fits = [room_state(conn, room, now) for room in listed_rooms(conn)
+            if room["id"] != exclude and room_problem(conn, room, start, end, mode, seats, purpose, now) is None]
     if PURPOSE_CLASS[purpose] == "quiet":
         return sorted(fits, key=lambda r: (r["noise_db"], r["capacity"], r["id"]))
     return sorted(fits, key=lambda r: (r["capacity"] - seats, r["noise_db"], r["id"]))
@@ -317,10 +313,10 @@ def search(conn: sqlite3.Connection, q: str) -> list[sqlite3.Row]:
     return [room for _, _, room in sorted(ranked, key=lambda x: (x[0], x[1]))]
 
 
-def availability(conn: sqlite3.Connection, room: sqlite3.Row, day: date, now: datetime, live: dict) -> list[dict]:
+def availability(conn: sqlite3.Connection, room: sqlite3.Row, day: date, now: datetime) -> list[dict]:
     t, close = datetime.combine(day, OPEN), datetime.combine(day + timedelta(days=1), OPEN)
     bookings = overlapping(conn, room["id"], t, close)
-    people_now = room_state(conn, room, now, live)["people"]
+    people_now = room_state(conn, room, now)["people"]
     slots = []
     while t < close:
         end = t + SLOT
@@ -351,11 +347,11 @@ def free_hours(slots: list[dict]) -> float:
     return sum(1 for s in slots if s["status"] in ("free", "partial")) / 2
 
 
-def calendar(conn: sqlite3.Connection, day: date, now: datetime, live: dict) -> dict:
+def calendar(conn: sqlite3.Connection, day: date, now: datetime) -> dict:
     """Every listed room's slots for one day, in one call (the picker's calendar)."""
     rooms = {}
     for room in listed_rooms(conn):
-        slots = availability(conn, room, day, now, live)
+        slots = availability(conn, room, day, now)
         rooms[room["id"]] = {"free_hours": free_hours(slots), "slots": slots}
     return {"date": day.isoformat(), "open": f"{OPEN:%H:%M}", "close": "24:00", "rooms": rooms}
 
