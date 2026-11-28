@@ -121,7 +121,9 @@ async function createView() {
     ]);
     state.view = createBuilding(el, campus, { labels: {
       all: t("map_all"), allBuildings: t("map_all_buildings"), allFloors: t("map_all_floors"),
-      everyFloor: t("map_every_floor"), floor: t("map_floor"), floorTitle: t("map_floor_title") } });
+      everyFloor: t("map_every_floor"), floor: t("map_floor"), floorTitle: t("map_floor_title"),
+      entrance: t("map_entrance"), compass: t("map_compass").split(","), compassTitle: t("map_compass_title"),
+      offices: t("map_offices"), officesTitle: t("map_offices_title") } });
     el.classList.add("is-3d");
   } catch {
     state.view = createPlan(el, (await api.building()) || layoutBuilding(state.rooms));
