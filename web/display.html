@@ -7,145 +7,139 @@
 <!--
   The board room's touch display (app/display.py opens it as a small window: /display.html?room=Z.1.04&token=...).
   Laid out for the Infineon E84 kit's 4.3" 800x480 panel and scaled to whatever window it gets.
-  One big swipeable card per feature (fewer, larger touch targets), arrows + dots + keyboard as well as swiping.
+  One large card per feature (swipe, arrows, dots or keyboard). Quiet, academic look: paper and ink, serif headings,
+  hairline rules, numbered sections, one accent colour; red only for SOS.
   API: docs/PLAN.md, "Room display". The selfie uses this computer's webcam; without one, the board camera's frame.
 -->
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400..700&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400..700&family=Newsreader:opsz,wght@6..72,400..600&display=swap">
 <style>
   :root {
-    --bg: #0b0f14; --surface: #161c24; --surface-2: #212a35; --line: #3a4656;
-    --text: #ffffff; --muted: #b9c4d0; --focus: #ffd54a;
-    --free: #3ddc84; --shared: #ffb020; --full: #ff6b6b; --ghost: #b69cff; --closed: #9aa7b6;
-    --accent: #6ea8ff; --red: #e5383b; --red-ink: #ffffff; --amber: #ffb020;
-    --radius: 22px;
+    --paper: #f4f1ea; --card: #fbfaf6; --ink: #17171a; --ink-2: #3b3a36; --muted: #5f5a50;
+    --rule: #d8d2c4; --rule-strong: #b9b1a0; --accent: #22408f; --accent-soft: #e3e8f4;
+    --free: #1d7a4c; --shared: #9a5a00; --full: #a3231b; --ghost: #5f43c9; --closed: #6b7280; --break: #9a5a00;
+    --sos: #b3261e; --focus: #c2410c;
+    --serif: "Newsreader", Georgia, "Times New Roman", serif;
+    --sans: "Instrument Sans", system-ui, "Segoe UI", sans-serif;
   }
   * { box-sizing: border-box; }
-  html, body { margin: 0; height: 100%; background: #000; overflow: hidden; }
-  body { font-family: "Instrument Sans", system-ui, "Segoe UI", sans-serif; color: var(--text); }
+  html, body { margin: 0; height: 100%; background: #2a2925; overflow: hidden; }
+  body { font-family: var(--sans); color: var(--ink); }
   button { font: inherit; color: inherit; border: 0; background: none; cursor: pointer; padding: 0; }
-  button:focus-visible, [tabindex]:focus-visible { outline: 4px solid var(--focus); outline-offset: 3px; }
+  button:focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; }
+  button:disabled { opacity: .35; cursor: default; }
   .hidden { display: none !important; }
-  svg.i { width: 1em; height: 1em; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; flex: none; }
+  svg.i { width: 1em; height: 1em; stroke: currentColor; fill: none; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; flex: none; }
+  .serif { font-family: var(--serif); font-weight: 500; letter-spacing: -.01em; }
+  .label { font-size: 16px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
 
-  /* fixed 800x480 screen, scaled to fit the window */
-  #screen {
-    position: absolute; left: 0; top: 0; width: 800px; height: 480px; transform-origin: 0 0;
-    background: var(--bg); overflow: hidden; user-select: none; -webkit-user-select: none; touch-action: pan-x;
-  }
+  /* the fixed 800x480 screen, scaled to the window */
+  #screen { position: absolute; left: 0; top: 0; width: 800px; height: 480px; transform-origin: 0 0;
+            background: var(--paper); overflow: hidden; user-select: none; -webkit-user-select: none; }
 
   /* top bar */
-  .bar { height: 76px; display: flex; align-items: center; gap: 12px; padding: 0 14px 0 20px; border-bottom: 2px solid var(--surface-2); }
-  .room { flex: 1; min-width: 0; }
-  .room b { display: block; font-size: 26px; line-height: 1.1; }
-  .status { display: inline-flex; align-items: center; gap: 8px; font-size: 18px; color: var(--muted); margin-top: 2px; white-space: nowrap; }
-  .status .dot { width: 14px; height: 14px; border-radius: 50%; background: var(--closed); flex: none; }
-  .badge { font-size: 17px; font-weight: 700; padding: 8px 14px; border-radius: 999px; background: var(--surface-2); display: inline-flex; gap: 8px; align-items: center; }
-  .clock { font-size: 22px; font-weight: 600; color: var(--muted); font-variant-numeric: tabular-nums; }
-  .langbtn { min-width: 64px; height: 56px; border-radius: 14px; background: var(--surface-2); font-size: 18px; font-weight: 700; }
-  .sos {
-    height: 56px; min-width: 118px; padding: 0 18px; border-radius: 14px; background: var(--red); color: var(--red-ink);
-    font-size: 22px; font-weight: 800; letter-spacing: .04em; display: inline-flex; align-items: center; justify-content: center; gap: 8px;
-    box-shadow: 0 0 0 3px #ff9a9b55;
-  }
+  .bar { height: 64px; display: flex; align-items: center; gap: 14px; padding: 0 12px 0 24px; border-bottom: 1px solid var(--rule); }
+  .room { flex: 1; min-width: 0; display: flex; align-items: baseline; gap: 16px; }
+  .room b { font-family: var(--serif); font-size: 30px; font-weight: 500; }
+  .status { display: flex; align-items: center; gap: 8px; font-size: 16px; color: var(--ink-2); min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .status .dot { width: 10px; height: 10px; border-radius: 50%; flex: none; }
+  .tag { font-size: 16px; font-weight: 600; padding: 6px 12px; border: 1px solid var(--accent); color: var(--accent); border-radius: 999px; display: inline-flex; gap: 6px; align-items: center; white-space: nowrap; }
+  .clock { font-size: 20px; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+  .ghostbtn { height: 48px; min-width: 56px; padding: 0 12px; border-radius: 10px; border: 1px solid var(--rule-strong); font-size: 16px; font-weight: 600; }
+  .sos { height: 48px; padding: 0 18px; border-radius: 10px; background: var(--sos); color: #fff; font-size: 18px; font-weight: 700;
+         letter-spacing: .06em; display: inline-flex; align-items: center; gap: 8px; }
 
   /* home: carousel */
-  #home { position: absolute; top: 76px; left: 0; right: 0; bottom: 0; }
-  .track {
-    position: absolute; left: 0; right: 0; top: 18px; height: 318px;
-    display: flex; gap: 24px; padding: 0 120px; overflow-x: auto; scroll-snap-type: x mandatory;
-    scrollbar-width: none; scroll-behavior: smooth; overscroll-behavior-x: contain;
-  }
+  #home { position: absolute; top: 64px; left: 0; right: 0; bottom: 0; }
+  .track { position: absolute; left: 0; right: 0; top: 24px; height: 304px; display: flex; gap: 28px; padding: 0 120px;
+           overflow-x: auto; scroll-snap-type: x mandatory; scrollbar-width: none; scroll-behavior: smooth; overscroll-behavior-x: contain; }
   .track::-webkit-scrollbar { display: none; }
-  .track.dragging { scroll-snap-type: none; scroll-behavior: auto; cursor: grabbing; }
-  .card {
-    flex: 0 0 560px; height: 318px; scroll-snap-align: center; border-radius: var(--radius);
-    background: var(--surface); border: 2px solid var(--line); padding: 26px 30px; text-align: left;
-    display: flex; flex-direction: column; gap: 10px; position: relative; transition: transform .25s, opacity .25s;
-  }
-  .card:not(.current) { opacity: .55; transform: scale(.94); }
-  .card .icon { width: 76px; height: 76px; border-radius: 20px; display: grid; place-items: center; font-size: 42px; }
-  .card h2 { margin: 6px 0 0; font-size: 38px; line-height: 1.1; }
-  .card p { margin: 0; font-size: 21px; color: var(--muted); line-height: 1.35; }
-  .card .cta {
-    margin-top: auto; align-self: stretch; height: 64px; border-radius: 16px; display: flex; align-items: center; justify-content: center;
-    gap: 10px; font-size: 24px; font-weight: 700; color: #0b0f14;
-  }
-  .card.on { border-color: var(--ghost); background: #221b3a; }
-  .nav {
-    position: absolute; top: 141px; width: 72px; height: 72px; border-radius: 50%; background: var(--surface-2);
-    border: 2px solid var(--line); display: grid; place-items: center; font-size: 34px; z-index: 2;
-  }
-  .nav.prev { left: 22px; } .nav.next { right: 22px; }
-  .nav:disabled { opacity: .25; cursor: default; }
-  .dots { position: absolute; left: 0; right: 0; bottom: 14px; display: flex; justify-content: center; gap: 10px; }
-  .dots button { width: 48px; height: 36px; display: grid; place-items: center; }
-  .dots button span { width: 14px; height: 14px; border-radius: 50%; background: var(--line); transition: width .2s; }
-  .dots button[aria-current="true"] span { width: 34px; border-radius: 7px; background: var(--text); }
-  .hint { position: absolute; bottom: 52px; left: 0; right: 0; text-align: center; font-size: 15px; color: var(--muted); }
+  .track.dragging { scroll-snap-type: none; scroll-behavior: auto; }
+  .card { flex: 0 0 560px; height: 304px; scroll-snap-align: center; background: var(--card); border: 1px solid var(--rule);
+          border-radius: 4px; padding: 26px 32px 28px; text-align: left; display: flex; flex-direction: column; position: relative;
+          box-shadow: 0 1px 0 #00000008, 0 12px 30px -22px #3a2e1a55; transition: opacity .3s, transform .3s; }
+  .card:not(.current) { opacity: .45; transform: scale(.95); }
+  .card .num { display: flex; justify-content: space-between; align-items: center; padding-bottom: 12px; border-bottom: 1px solid var(--rule); }
+  .card .num svg { font-size: 30px; color: var(--accent); }
+  .card h2 { font-family: var(--serif); font-weight: 500; font-size: 42px; line-height: 1.05; margin: 18px 0 8px; letter-spacing: -.015em; }
+  .card p { margin: 0; font-size: 20px; line-height: 1.4; color: var(--muted); max-width: 470px; }
+  .card .cta { margin-top: auto; height: 60px; border-radius: 6px; background: var(--ink); color: var(--card); font-size: 20px; font-weight: 600;
+               display: flex; align-items: center; justify-content: space-between; padding: 0 22px; }
+  .card .cta svg { font-size: 24px; }
+  .card.on { border-color: var(--accent); }
+  .card.on .cta { background: var(--accent); }
+  .nav { position: absolute; top: 144px; width: 64px; height: 64px; border-radius: 50%; background: var(--card); border: 1px solid var(--rule-strong);
+         display: grid; place-items: center; font-size: 28px; z-index: 2; box-shadow: 0 6px 16px -10px #3a2e1a66; }
+  .nav.prev { left: 24px; } .nav.next { right: 24px; }
+  .nav:disabled { opacity: 0; pointer-events: none; }
+  .dots { position: absolute; left: 0; right: 0; bottom: 18px; display: flex; justify-content: center; gap: 4px; }
+  .dots button { width: 44px; height: 44px; display: grid; place-items: center; }
+  .dots button span { width: 22px; height: 3px; background: var(--rule-strong); transition: background .2s, width .2s; }
+  .dots button[aria-current="true"] span { width: 34px; background: var(--ink); }
 
   /* feature sheets */
-  .sheet { position: absolute; top: 76px; left: 0; right: 0; bottom: 0; background: var(--bg); padding: 14px 22px 18px; display: flex; flex-direction: column; }
-  .sheet-head { display: flex; align-items: center; gap: 18px; margin-bottom: 14px; }
-  .back { height: 60px; padding: 0 22px 0 14px; border-radius: 16px; background: var(--surface-2); font-size: 22px; font-weight: 700; display: inline-flex; align-items: center; gap: 6px; }
-  .back svg { font-size: 30px; }
-  .sheet-head h2 { margin: 0; font-size: 32px; }
-  .sheet-body { flex: 1; min-height: 0; display: flex; gap: 26px; align-items: center; }
-  .big { height: 84px; border-radius: 18px; font-size: 28px; font-weight: 700; display: inline-flex; align-items: center; justify-content: center; gap: 12px; padding: 0 26px; }
-  .primary { background: var(--accent); color: #0b0f14; }
-  .secondary { background: var(--surface-2); border: 2px solid var(--line); }
-  .lead { font-size: 24px; line-height: 1.35; margin: 0; }
-  .muted { color: var(--muted); }
-
-  .qr { background: #fff; border-radius: 18px; padding: 14px; flex: none; display: grid; place-items: center; }
+  .sheet { position: absolute; top: 64px; left: 0; right: 0; bottom: 0; padding: 0 24px 22px; display: flex; flex-direction: column; }
+  .sheet-head { height: 84px; flex: none; display: flex; align-items: center; gap: 18px; border-bottom: 1px solid var(--rule); margin-bottom: 20px; }
+  .back { height: 52px; padding: 0 18px 0 12px; border-radius: 10px; border: 1px solid var(--rule-strong); font-size: 18px; font-weight: 600; display: inline-flex; align-items: center; gap: 6px; flex: none; }
+  .back svg { font-size: 24px; }
+  .sheet-head .num { font-size: 16px; font-weight: 600; letter-spacing: .08em; color: var(--accent); flex: none; }
+  .sheet-head h2 { margin: 0; font-family: var(--serif); font-weight: 500; font-size: 34px; letter-spacing: -.01em; flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .sheet-body { flex: 1; min-height: 0; display: flex; gap: 32px; align-items: center; }
+  .lead { font-size: 22px; line-height: 1.4; margin: 0; color: var(--ink-2); }
+  .small { font-size: 16px; color: var(--muted); margin: 0; overflow-wrap: anywhere; }
+  .btn { height: 64px; border-radius: 8px; font-size: 21px; font-weight: 600; display: inline-flex; align-items: center; justify-content: center; gap: 10px; padding: 0 24px; }
+  .btn svg { font-size: 24px; }
+  .btn.ink { background: var(--ink); color: var(--card); }
+  .btn.accent { background: var(--accent); color: #fff; }
+  .btn.line { border: 1px solid var(--rule-strong); background: var(--card); }
+  .round { width: 56px; height: 56px; border-radius: 50%; border: 1px solid var(--rule-strong); background: var(--card); font-size: 26px; display: grid; place-items: center; flex: none; }
+  .qr { background: #fff; border: 1px solid var(--rule); padding: 12px; flex: none; display: grid; place-items: center; }
   .qr img, .qr svg { display: block; width: 100%; height: 100%; }
+  .col { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 16px; }
+  hr.rule { border: 0; border-top: 1px solid var(--rule); margin: 0; width: 100%; }
 
-  /* sounds */
-  .sounds { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; width: 100%; }
-  .snd { height: 104px; border-radius: 18px; background: var(--surface); border: 3px solid var(--line); font-size: 22px; font-weight: 700; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; }
-  .snd svg { font-size: 32px; }
-  .snd[aria-pressed="true"] { border-color: var(--free); background: #123222; }
-  .snd small { font-size: 15px; font-weight: 600; color: var(--free); }
-  .volrow { display: flex; align-items: center; gap: 16px; margin-top: 16px; }
-  .round { width: 72px; height: 72px; border-radius: 50%; background: var(--surface-2); border: 2px solid var(--line); font-size: 36px; font-weight: 700; display: grid; place-items: center; flex: none; }
-  .meter { flex: 1; height: 22px; border-radius: 11px; background: var(--surface-2); overflow: hidden; border: 2px solid var(--line); }
-  .meter i { display: block; height: 100%; background: var(--free); }
-  .volval { width: 92px; font-size: 26px; font-weight: 700; text-align: right; font-variant-numeric: tabular-nums; }
+  /* sounds: eight large tiles */
+  .sounds { flex: 1; display: grid; grid-template-columns: repeat(4, 1fr); grid-template-rows: repeat(2, 1fr); gap: 12px; }
+  .snd { border: 1px solid var(--rule); background: var(--card); border-radius: 6px; padding: 16px 16px 14px; text-align: left;
+         display: flex; flex-direction: column; justify-content: space-between; min-width: 0; }
+  .snd svg { font-size: 36px; color: var(--accent); }
+  .snd span { font-size: 21px; font-weight: 600; line-height: 1.15; hyphens: auto; overflow-wrap: break-word; }
+  .snd small { display: block; font-size: 15px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; margin-top: 4px; }
+  .snd[aria-pressed="true"] { background: var(--ink); color: var(--card); border-color: var(--ink); }
+  .snd[aria-pressed="true"] svg { color: var(--card); }
+  .vol { display: flex; align-items: center; gap: 10px; flex: none; }
+  .vol output { width: 64px; text-align: center; font-size: 20px; font-weight: 600; font-variant-numeric: tabular-nums; }
 
   /* selfie */
-  .cam { width: 420px; height: 315px; border-radius: 18px; background: #000; position: relative; overflow: hidden; flex: none; border: 2px solid var(--line); }
+  .cam { width: 380px; height: 285px; background: #111; position: relative; overflow: hidden; flex: none; border: 1px solid var(--rule-strong); }
   .cam video, .cam img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
   .cam video { transform: scaleX(-1); }
-  .cam .count { position: absolute; inset: 0; display: grid; place-items: center; font-size: 150px; font-weight: 800; text-shadow: 0 4px 30px #000; }
+  .cam .count { position: absolute; inset: 0; display: grid; place-items: center; font-family: var(--serif); font-size: 160px; color: #fff; text-shadow: 0 4px 30px #000a; }
   .cam .flash { position: absolute; inset: 0; background: #fff; opacity: 0; pointer-events: none; transition: opacity .4s; }
   .cam .flash.go { opacity: 1; transition: none; }
-  .cam .camnote { position: absolute; inset: 0; display: grid; place-items: center; text-align: center; padding: 30px; font-size: 20px; color: var(--muted); }
-  .col { flex: 1; display: flex; flex-direction: column; gap: 14px; justify-content: center; }
+  .cam .camnote { position: absolute; inset: 0; display: grid; place-items: center; text-align: center; padding: 36px; font-size: 18px; color: #d6d0c4; line-height: 1.4; }
 
   /* break */
-  .stepper { display: flex; align-items: center; gap: 22px; }
-  .minutes { font-size: 76px; font-weight: 800; color: var(--amber); width: 260px; text-align: center; font-variant-numeric: tabular-nums; line-height: 1; }
-  .minutes small { font-size: 30px; font-weight: 700; }
-  .chips { display: flex; gap: 12px; }
-  .chip { height: 60px; min-width: 88px; border-radius: 14px; background: var(--surface-2); border: 2px solid var(--line); font-size: 22px; font-weight: 700; }
-  .chip[aria-pressed="true"] { border-color: var(--amber); color: var(--amber); }
-  .left { font-size: 112px; font-weight: 800; color: var(--amber); font-variant-numeric: tabular-nums; line-height: 1; }
+  .numeral { font-family: var(--serif); font-weight: 500; font-size: 110px; line-height: .9; font-variant-numeric: tabular-nums; letter-spacing: -.03em; }
+  .numeral small { font-family: var(--sans); font-size: 22px; font-weight: 600; letter-spacing: .04em; margin-left: 6px; color: var(--muted); }
 
   /* emergency */
-  .modal { position: absolute; inset: 0; background: rgb(0 0 0 / 82%); display: grid; place-items: center; z-index: 10; }
-  .mcard { width: 640px; background: var(--surface); border: 3px solid var(--red); border-radius: 24px; padding: 28px 32px; text-align: center; display: flex; flex-direction: column; align-items: center; gap: 14px; }
-  .mcard .warn { font-size: 64px; color: var(--red); line-height: 1; }
-  .mcard h2 { margin: 0; font-size: 34px; }
-  .mcard .row { display: flex; gap: 18px; width: 100%; margin-top: 6px; }
-  .mcard .row .big { flex: 1; }
-  .danger { background: var(--red); color: var(--red-ink); }
-  .pulse { animation: pulse 1.4s ease-in-out infinite; }
-  @keyframes pulse { 50% { transform: scale(1.12); opacity: .75; } }
-  .banner { position: absolute; left: 0; right: 0; bottom: 0; height: 64px; background: var(--red); color: #fff; display: flex; align-items: center; justify-content: center; gap: 12px; font-size: 22px; font-weight: 700; z-index: 5; }
+  .modal { position: absolute; inset: 0; background: rgb(23 23 26 / 72%); display: grid; place-items: center; z-index: 10; }
+  .mcard { width: 600px; background: var(--card); border-top: 6px solid var(--sos); padding: 28px 36px 30px; display: flex; flex-direction: column; gap: 14px; box-shadow: 0 30px 60px -20px #000a; }
+  .mcard .kicker { color: var(--sos); display: flex; align-items: center; gap: 8px; }
+  .mcard .kicker svg { font-size: 22px; }
+  .mcard h2 { margin: 0; font-family: var(--serif); font-weight: 500; font-size: 36px; line-height: 1.1; }
+  .mcard .row { display: flex; gap: 14px; margin-top: 8px; }
+  .mcard .row .btn { flex: 1; }
+  .btn.danger { background: var(--sos); color: #fff; }
+  .pulse { animation: pulse 1.6s ease-in-out infinite; }
+  @keyframes pulse { 50% { opacity: .45; } }
+  .banner { position: absolute; left: 0; right: 0; bottom: 0; height: 56px; background: var(--sos); color: #fff; display: flex; align-items: center; justify-content: center; gap: 10px; font-size: 18px; font-weight: 600; z-index: 5; }
 
-  .toast { position: absolute; left: 50%; bottom: 22px; transform: translateX(-50%); max-width: 700px; background: #fff; color: #0b0f14; font-size: 21px; font-weight: 600; padding: 14px 22px; border-radius: 16px; z-index: 20; box-shadow: 0 10px 30px #0008; text-align: center; }
-  .offline { position: absolute; left: 0; right: 0; top: 76px; background: var(--amber); color: #0b0f14; font-size: 18px; font-weight: 700; text-align: center; padding: 6px; z-index: 6; }
+  .toast { position: absolute; left: 50%; bottom: 20px; transform: translateX(-50%); width: max-content; max-width: 680px; background: var(--ink); color: var(--card);
+           font-size: 18px; line-height: 1.35; padding: 14px 22px; border-radius: 8px; z-index: 20; box-shadow: 0 14px 30px -12px #000a; text-align: center; }
+  .offline { position: absolute; left: 0; right: 0; top: 64px; background: #f2d9a6; color: var(--ink); font-size: 16px; font-weight: 600; text-align: center; padding: 6px; z-index: 6; border-bottom: 1px solid #d9b56b; }
 
   @media (prefers-reduced-motion: reduce) {
     *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
@@ -155,10 +149,10 @@
 <body>
 <div id="screen">
   <header class="bar">
-    <div class="room"><b id="label">Room</b><span class="status" id="status"><span class="dot"></span><span id="statusText">…</span></span></div>
-    <span class="badge hidden" id="quietBadge"></span>
+    <div class="room"><b id="label">Room</b><span class="status"><span class="dot" id="dot"></span><span id="statusText">…</span></span></div>
+    <span class="tag hidden" id="quietTag"></span>
     <span class="clock" id="clock" aria-hidden="true">--:--</span>
-    <button class="langbtn" id="lang"></button>
+    <button class="ghostbtn" id="lang"></button>
     <button class="sos" id="sos"></button>
   </header>
 
@@ -168,41 +162,39 @@
     <button class="nav prev" id="prev"></button>
     <div class="track" id="track" role="group" aria-roledescription="carousel"></div>
     <button class="nav next" id="next"></button>
-    <div class="hint" id="hint"></div>
     <div class="dots" id="dots" role="tablist"></div>
   </main>
 
-  <!-- 1. book -->
+  <!-- 01 book -->
   <section class="sheet hidden" id="sheet-book" aria-labelledby="h-book">
-    <div class="sheet-head"><button class="back" data-back></button><h2 id="h-book" data-t="book_title"></h2></div>
+    <div class="sheet-head"><button class="back" data-back></button><span class="num">01</span><h2 id="h-book" data-t="book_title"></h2></div>
     <div class="sheet-body">
-      <div class="qr" style="width:300px;height:300px"><img id="bookQr" alt=""></div>
+      <div class="qr" style="width:290px;height:290px"><img id="bookQr" alt=""></div>
       <div class="col">
         <p class="lead" data-t="book_lead"></p>
-        <p class="lead muted" id="bookNow"></p>
-        <p class="muted" style="font-size:17px;word-break:break-all;margin:0" id="bookUrl"></p>
+        <hr class="rule">
+        <p class="label" data-t="book_now_label"></p>
+        <p class="lead serif" style="font-size:30px;margin-top:-10px" id="bookNow"></p>
+        <p class="small" id="bookUrl"></p>
       </div>
     </div>
   </section>
 
-  <!-- 2. soundscapes -->
+  <!-- 02 soundscapes -->
   <section class="sheet hidden" id="sheet-sound" aria-labelledby="h-sound">
-    <div class="sheet-head"><button class="back" data-back></button><h2 id="h-sound" data-t="sound_title"></h2></div>
-    <div style="flex:1">
-      <div class="sounds" id="sounds"></div>
-      <div class="volrow">
-        <button class="round" id="volDown">−</button>
-        <div class="meter" aria-hidden="true"><i id="volBar"></i></div>
-        <button class="round" id="volUp">+</button>
-        <span class="volval" id="volVal" aria-live="polite"></span>
+    <div class="sheet-head">
+      <button class="back" data-back></button><span class="num">02</span><h2 id="h-sound" data-t="sound_title"></h2>
+      <div class="vol" role="group" id="volGroup">
+        <button class="round" id="volDown">−</button><output id="volVal" aria-live="polite"></output><button class="round" id="volUp">+</button>
       </div>
     </div>
+    <div class="sounds" id="sounds"></div>
   </section>
 
-  <!-- 3. selfie -->
+  <!-- 03 selfie -->
   <section class="sheet hidden" id="sheet-selfie" aria-labelledby="h-selfie">
-    <div class="sheet-head"><button class="back" data-back></button><h2 id="h-selfie" data-t="selfie_title"></h2></div>
-    <div class="sheet-body">
+    <div class="sheet-head"><button class="back" data-back></button><span class="num">03</span><h2 id="h-selfie" data-t="selfie_title"></h2></div>
+    <div class="sheet-body" style="align-items:stretch">
       <div class="cam" id="cam">
         <video id="video" autoplay playsinline muted></video>
         <img id="shot" class="hidden" alt="">
@@ -210,43 +202,48 @@
         <div class="count hidden" id="count" aria-live="assertive"></div>
         <div class="flash" id="flash"></div>
       </div>
-      <div class="col" id="selfieCtrl">
+      <div class="col" id="selfieCtrl" style="justify-content:space-between">
         <p class="lead" data-t="selfie_lead"></p>
-        <button class="big primary" id="shoot"></button>
+        <button class="btn ink" style="height:76px" id="shoot"></button>
       </div>
-      <div class="col hidden" id="selfieDone" style="align-items:center;text-align:center;gap:10px">
-        <div class="qr" style="width:164px;height:164px;padding:10px" id="selfieQr"></div>
-        <p class="lead" style="font-size:18px" id="selfieExp"></p>
-        <div style="display:flex;gap:14px;width:100%">
-          <button class="big secondary" style="flex:1;height:64px;font-size:24px" id="retake"></button>
-          <button class="big primary" style="flex:1;height:64px;font-size:24px" data-back data-t="done"></button>
+      <div class="col hidden" id="selfieDone" style="align-items:center;gap:12px">
+        <div class="qr" style="width:176px;height:176px;padding:10px" id="selfieQr"></div>
+        <p class="small" style="text-align:center;color:var(--ink-2)" id="selfieExp"></p>
+        <div style="display:flex;gap:12px;width:100%;margin-top:auto">
+          <button class="btn line" style="flex:1" id="retake"></button>
+          <button class="btn ink" style="flex:1" data-back data-t="done"></button>
         </div>
       </div>
     </div>
   </section>
 
-  <!-- 4. break -->
+  <!-- 04 break -->
   <section class="sheet hidden" id="sheet-break" aria-labelledby="h-break">
-    <div class="sheet-head"><button class="back" data-back></button><h2 id="h-break" data-t="break_title"></h2></div>
-    <div class="sheet-body" id="breakSetup" style="flex-direction:column;align-items:stretch;gap:16px">
-      <p class="lead muted" style="font-size:20px" data-t="break_lead"></p>
-      <div style="display:flex;align-items:center;justify-content:space-between">
-        <div class="stepper">
-          <button class="round" id="bDown">−</button>
-          <div class="minutes" id="bMin" aria-live="polite"></div>
-          <button class="round" id="bUp">+</button>
+    <div class="sheet-head"><button class="back" data-back></button><span class="num">04</span><h2 id="h-break" data-t="break_title"></h2></div>
+    <div class="sheet-body" id="breakSetup">
+      <div style="width:330px;flex:none;display:flex;flex-direction:column;align-items:center;gap:22px">
+        <div class="numeral" id="bMin" aria-live="polite"></div>
+        <div style="display:flex;gap:18px;align-items:center">
+          <button class="round" style="width:72px;height:72px;font-size:32px" id="bDown">−</button>
+          <span class="label" style="width:110px;text-align:center" data-t="minutes_label"></span>
+          <button class="round" style="width:72px;height:72px;font-size:32px" id="bUp">+</button>
         </div>
-        <div class="chips" id="chips"></div>
       </div>
-      <button class="big" style="background:var(--amber);color:#0b0f14" id="bStart"></button>
+      <div class="col" style="align-self:stretch;justify-content:space-between;border-left:1px solid var(--rule);padding-left:32px">
+        <div style="display:flex;flex-direction:column;gap:12px">
+          <p class="lead" data-t="break_lead"></p>
+          <p class="small" id="bBackBy"></p>
+        </div>
+        <button class="btn ink" id="bStart"></button>
+      </div>
     </div>
-    <div class="sheet-body hidden" id="breakActive" style="flex-direction:column;justify-content:center;gap:12px;text-align:center">
-      <p class="lead muted" data-t="break_held"></p>
-      <div class="left" id="bLeft" role="timer"></div>
+    <div class="sheet-body hidden" id="breakActive" style="flex-direction:column;justify-content:center;gap:10px;text-align:center">
+      <p class="label" data-t="break_held"></p>
+      <div class="numeral" style="font-size:120px" id="bLeft" role="timer"></div>
       <p class="lead" id="bUntil"></p>
-      <div style="display:flex;gap:16px;justify-content:center">
-        <button class="big secondary" style="min-width:200px" id="bMore"></button>
-        <button class="big" style="min-width:260px;background:var(--free);color:#0b0f14" id="bBack"></button>
+      <div style="display:flex;gap:14px;justify-content:center;margin-top:8px">
+        <button class="btn line" style="min-width:180px" id="bMore"></button>
+        <button class="btn ink" style="min-width:240px" id="bBack"></button>
       </div>
     </div>
   </section>
@@ -254,21 +251,21 @@
   <!-- emergency -->
   <div class="modal hidden" id="sosAsk" role="alertdialog" aria-modal="true" aria-labelledby="sosAskTitle">
     <div class="mcard">
-      <div class="warn" id="sosAskIcon"></div>
+      <p class="label kicker" id="sosAskKicker"></p>
       <h2 id="sosAskTitle" data-t="sos_ask"></h2>
-      <p class="lead muted" style="font-size:21px" data-t="sos_ask_lead"></p>
+      <p class="lead" style="font-size:20px" data-t="sos_ask_lead"></p>
       <div class="row">
-        <button class="big secondary" id="sosNo" data-t="cancel"></button>
-        <button class="big danger" id="sosYes" data-t="sos_yes"></button>
+        <button class="btn line" id="sosNo" data-t="cancel"></button>
+        <button class="btn danger" id="sosYes" data-t="sos_yes"></button>
       </div>
     </div>
   </div>
   <div class="modal hidden" id="sosOpen" role="alertdialog" aria-modal="true" aria-labelledby="sosOpenTitle">
     <div class="mcard">
-      <div class="warn pulse" id="sosOpenIcon"></div>
+      <p class="label kicker pulse" id="sosOpenKicker"></p>
       <h2 id="sosOpenTitle" data-t="sos_open"></h2>
-      <p class="lead" id="sosOpenText"></p>
-      <button class="big secondary" style="width:100%" id="sosHide" data-t="sos_hide"></button>
+      <p class="lead" style="font-size:20px" id="sosOpenText"></p>
+      <div class="row"><button class="btn line" id="sosHide" data-t="sos_hide"></button></div>
     </div>
   </div>
   <div class="banner hidden" id="sosBanner" role="alert"></div>
@@ -289,33 +286,34 @@
   const T = {
     en: {
       lang_btn: "DE", lang_aria: "Deutsch", sos: "SOS", sos_aria: "Emergency",
-      prev: "Previous", next: "Next", hint: "Swipe or use the arrows", back: "Back", done: "Done", cancel: "Cancel",
-      st_free: "Free", st_partial: "Shared", st_full: "Booked", st_ghost: "Nobody here: booking may be released",
+      prev: "Previous", next: "Next", back: "Back", done: "Done", cancel: "Cancel",
+      st_free: "Free", st_partial: "Shared", st_full: "Booked", st_ghost: "Booked, nobody here",
       st_closed: "Closed", st_unbookable: "Live status only", st_break: "On break until {t}",
       people_0: "nobody here", people_1: "1 person here", people_n: "{n} people here",
-      quiet_badge: "Quiet room",
-      c_book: "Book this room", c_book_p: "Scan a QR code with your phone to book it.", c_book_cta: "Show QR code",
+      quiet_tag: "Quiet room",
+      c_book: "Book this room", c_book_p: "Scan a QR code with your phone to reserve it.", c_book_cta: "Show the QR code",
       c_sound: "Soundscapes", c_sound_p: "Rain, ocean, forest and more, to help you focus.", c_sound_cta: "Choose a sound",
-      c_sound_on: "Playing: {s}",
-      c_selfie: "Group selfie", c_selfie_p: "Take a photo and download it with a QR code.", c_selfie_cta: "Open camera",
-      c_break: "Take a break", c_break_p: "Step out without losing the room.", c_break_cta: "Start a break",
-      c_break_on: "On break: {m} min left",
+      c_sound_on: "Now playing: {s}.",
+      c_selfie: "Group selfie", c_selfie_p: "Take a photo together and download it by QR code.", c_selfie_cta: "Open the camera",
+      c_break: "Take a break", c_break_p: "Step out for a while without losing the room.", c_break_cta: "Plan a break",
+      c_break_on: "On break: {m} min left.",
       c_quiet: "Quiet room", c_quiet_p_off: "Ask everyone to keep silent. The website shows it too.",
-      c_quiet_p_on: "On. Others see this room as a silent room.", c_quiet_cta_off: "Turn on", c_quiet_cta_on: "Turn off",
+      c_quiet_p_on: "On. Others see this as a silent study room.", c_quiet_cta_off: "Turn on", c_quiet_cta_on: "Turn off",
       book_title: "Book this room", book_lead: "Point your phone camera at the code. It opens this room on the booking website.",
-      book_free: "Free right now.", book_until: "Booked until {t}.",
-      sound_title: "Soundscapes", playing: "Playing", vol: "Volume", vol_down: "Quieter", vol_up: "Louder",
-      s_off: "Off", s_rain: "Rain", s_ocean: "Ocean", s_forest: "Forest", s_cafe: "Café", s_white: "White noise",
+      book_now_label: "Right now", book_free: "Free", book_until: "Booked until {t}",
+      sound_title: "Soundscapes", playing: "Playing", vol_down: "Quieter", vol_up: "Louder",
+      s_off: "Silence", s_rain: "Rain", s_ocean: "Ocean", s_forest: "Forest", s_cafe: "Café", s_white: "White noise",
       s_pink: "Pink noise", s_brown: "Brown noise",
-      selfie_title: "Group selfie", selfie_lead: "Get everyone in the picture. The photo is taken after 3 seconds.",
-      shoot: "Take photo", retake: "Retake", selfie_exp: "Scan to download. The photo is deleted at {t}.",
-      cam_none: "No webcam found. The room camera takes the photo.", cam_starting: "Starting the camera…",
+      selfie_title: "Group selfie", selfie_lead: "Get everyone into the picture. The photo is taken three seconds after you press the button.",
+      shoot: "Take the photo", retake: "Retake", selfie_exp: "Scan to download. Deleted at {t}.",
+      cam_none: "No webcam found. The room camera will take the photo.", cam_starting: "Starting the camera…",
       selfie_fail: "Couldn't take the photo: {e}",
-      break_title: "Take a break", break_lead: "The room stays yours while everyone steps out. It isn't released as empty.",
-      min: "min", start_break: "Start break", break_held: "The room is held for you", back_by: "Back by {t}",
-      more5: "+5 min", im_back: "I'm back", minus: "Less", plus: "More",
-      sos_ask: "Call emergency services?", sos_ask_lead: "Campus security is told that there is an emergency in this room.",
-      sos_yes: "Yes, call now", sos_open: "Help has been called", sos_open_text: "Reported at {t}. Stay calm and stay in the room if it is safe.",
+      break_title: "Take a break", break_lead: "The room stays yours while everyone steps out. It won't be released as empty.",
+      minutes_label: "minutes", start_break: "Start the break", break_held: "The room is held for you", back_by: "Back by {t}",
+      more5: "+5 min", im_back: "I'm back", minus: "Five minutes less", plus: "Five minutes more",
+      sos_kicker: "Emergency", sos_ask: "Call emergency services?", sos_ask_lead: "Campus security is told that there is an emergency in this room.",
+      sos_yes: "Yes, call now", sos_open_kicker: "Emergency reported", sos_open: "Help has been called",
+      sos_open_text: "Reported at {t}. Stay calm, and stay in the room if it is safe.",
       sos_hide: "Hide this message", sos_banner: "Emergency reported at {t}. Help is on the way.",
       offline: "No connection to the server. Retrying…", no_token: "This display isn't paired with the room (token missing).",
       err_no_booking: "Nobody has booked this room right now, so there's nothing to hold. Book it first.",
@@ -323,33 +321,34 @@
     },
     de: {
       lang_btn: "EN", lang_aria: "English", sos: "SOS", sos_aria: "Notfall",
-      prev: "Zurück", next: "Weiter", hint: "Wischen oder Pfeile benutzen", back: "Zurück", done: "Fertig", cancel: "Abbrechen",
-      st_free: "Frei", st_partial: "Geteilt", st_full: "Gebucht", st_ghost: "Niemand da: Buchung wird ggf. freigegeben",
+      prev: "Zurück", next: "Weiter", back: "Zurück", done: "Fertig", cancel: "Abbrechen",
+      st_free: "Frei", st_partial: "Geteilt", st_full: "Gebucht", st_ghost: "Gebucht, niemand da",
       st_closed: "Geschlossen", st_unbookable: "Nur Live-Status", st_break: "Pause bis {t}",
       people_0: "niemand da", people_1: "1 Person da", people_n: "{n} Personen da",
-      quiet_badge: "Ruheraum",
-      c_book: "Raum buchen", c_book_p: "QR-Code mit dem Handy scannen und buchen.", c_book_cta: "QR-Code zeigen",
+      quiet_tag: "Ruheraum",
+      c_book: "Raum buchen", c_book_p: "QR-Code mit dem Handy scannen und reservieren.", c_book_cta: "QR-Code zeigen",
       c_sound: "Klangwelten", c_sound_p: "Regen, Meer, Wald und mehr, zum Konzentrieren.", c_sound_cta: "Klang wählen",
-      c_sound_on: "Läuft: {s}",
-      c_selfie: "Gruppen-Selfie", c_selfie_p: "Foto machen und per QR-Code herunterladen.", c_selfie_cta: "Kamera öffnen",
-      c_break: "Pause machen", c_break_p: "Kurz raus, ohne den Raum zu verlieren.", c_break_cta: "Pause starten",
+      c_sound_on: "Es läuft: {s}.",
+      c_selfie: "Gruppen-Selfie", c_selfie_p: "Gemeinsam ein Foto machen und per QR-Code laden.", c_selfie_cta: "Kamera öffnen",
+      c_break: "Pause machen", c_break_p: "Kurz raus, ohne den Raum zu verlieren.", c_break_cta: "Pause planen",
       c_break_on: "Pause: noch {m} Min.",
       c_quiet: "Ruheraum", c_quiet_p_off: "Alle um Ruhe bitten. Die Website zeigt es auch.",
-      c_quiet_p_on: "An. Andere sehen diesen Raum als Ruheraum.", c_quiet_cta_off: "Einschalten", c_quiet_cta_on: "Ausschalten",
+      c_quiet_p_on: "An. Andere sehen hier einen Ruheraum.", c_quiet_cta_off: "Einschalten", c_quiet_cta_on: "Ausschalten",
       book_title: "Raum buchen", book_lead: "Handykamera auf den Code richten. Er öffnet diesen Raum auf der Buchungsseite.",
-      book_free: "Gerade frei.", book_until: "Gebucht bis {t}.",
-      sound_title: "Klangwelten", playing: "Läuft", vol: "Lautstärke", vol_down: "Leiser", vol_up: "Lauter",
-      s_off: "Aus", s_rain: "Regen", s_ocean: "Meer", s_forest: "Wald", s_cafe: "Café", s_white: "Weißes Rauschen",
+      book_now_label: "Gerade", book_free: "Frei", book_until: "Gebucht bis {t}",
+      sound_title: "Klangwelten", playing: "Läuft", vol_down: "Leiser", vol_up: "Lauter",
+      s_off: "Stille", s_rain: "Regen", s_ocean: "Meer", s_forest: "Wald", s_cafe: "Café", s_white: "Weißes Rauschen",
       s_pink: "Rosa Rauschen", s_brown: "Braunes Rauschen",
-      selfie_title: "Gruppen-Selfie", selfie_lead: "Alle ins Bild! Das Foto wird nach 3 Sekunden gemacht.",
-      shoot: "Foto machen", retake: "Nochmal", selfie_exp: "Zum Herunterladen scannen. Das Foto wird um {t} gelöscht.",
+      selfie_title: "Gruppen-Selfie", selfie_lead: "Alle ins Bild! Das Foto wird drei Sekunden nach dem Drücken gemacht.",
+      shoot: "Foto machen", retake: "Nochmal", selfie_exp: "Zum Laden scannen. Gelöscht um {t}.",
       cam_none: "Keine Webcam gefunden. Die Raumkamera macht das Foto.", cam_starting: "Kamera startet…",
       selfie_fail: "Foto nicht möglich: {e}",
       break_title: "Pause machen", break_lead: "Der Raum bleibt deiner, während alle kurz rausgehen. Er wird nicht als leer freigegeben.",
-      min: "Min.", start_break: "Pause starten", break_held: "Der Raum ist für dich reserviert", back_by: "Zurück bis {t}",
-      more5: "+5 Min.", im_back: "Bin zurück", minus: "Weniger", plus: "Mehr",
-      sos_ask: "Notruf absetzen?", sos_ask_lead: "Der Campus-Sicherheitsdienst erfährt, dass es in diesem Raum einen Notfall gibt.",
-      sos_yes: "Ja, jetzt rufen", sos_open: "Hilfe wurde gerufen", sos_open_text: "Gemeldet um {t}. Ruhig bleiben und, wenn es sicher ist, im Raum bleiben.",
+      minutes_label: "Minuten", start_break: "Pause starten", break_held: "Der Raum ist für dich reserviert", back_by: "Zurück bis {t}",
+      more5: "+5 Min.", im_back: "Bin zurück", minus: "Fünf Minuten weniger", plus: "Fünf Minuten mehr",
+      sos_kicker: "Notfall", sos_ask: "Notruf absetzen?", sos_ask_lead: "Der Campus-Sicherheitsdienst erfährt, dass es in diesem Raum einen Notfall gibt.",
+      sos_yes: "Ja, jetzt rufen", sos_open_kicker: "Notfall gemeldet", sos_open: "Hilfe wurde gerufen",
+      sos_open_text: "Gemeldet um {t}. Ruhig bleiben und, wenn es sicher ist, im Raum bleiben.",
       sos_hide: "Meldung ausblenden", sos_banner: "Notfall gemeldet um {t}. Hilfe ist unterwegs.",
       offline: "Keine Verbindung zum Server. Neuer Versuch…", no_token: "Dieses Display ist nicht mit dem Raum verbunden (Token fehlt).",
       err_no_booking: "Der Raum ist gerade nicht gebucht, es gibt nichts zu reservieren. Bitte zuerst buchen.",
@@ -361,15 +360,15 @@
   if (!T[lang]) lang = "en";
   const t = (k, vars = {}) => (T[lang][k] ?? T.en[k] ?? k).replace(/\{(\w+)\}/g, (_, v) => vars[v] ?? "");
 
-  /* ---------- icons ---------- */
+  /* ---------- icons (thin line, one style) ---------- */
   const P = {
-    qr: '<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M14 14h3v3h-3zM20 14v.01M14 20h.01M17 20h4M20 17v3"/>',
+    qr: '<rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><path d="M14 14h3v3h-3zM20 14v.01M14 20h.01M17 20h4M20 17v3"/>',
     music: '<path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/>',
     camera: '<path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3z"/><circle cx="12" cy="13" r="3.5"/>',
     coffee: '<path d="M17 8h1a4 4 0 0 1 0 8h-1"/><path d="M3 8h14v9a4 4 0 0 1-4 4H7a4 4 0 0 1-4-4z"/><path d="M6 2v2M10 2v2M14 2v2"/>',
     moon: '<path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/>',
     alert: '<path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4M12 17h.01"/>',
-    left: '<path d="M15 18l-6-6 6-6"/>', right: '<path d="M9 18l6-6-6-6"/>',
+    left: '<path d="M15 18l-6-6 6-6"/>', right: '<path d="M9 18l6-6-6-6"/>', arrow: '<path d="M5 12h14M13 6l6 6-6 6"/>',
     phone: '<path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1 1 .4 1.9.7 2.8a2 2 0 0 1-.5 2.1L8 9.9a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.8.7a2 2 0 0 1 1.7 2z"/>',
     off: '<circle cx="12" cy="12" r="9"/><path d="M5.6 5.6l12.8 12.8"/>',
     rain: '<path d="M20 15.5A4.5 4.5 0 0 0 17.5 7 6 6 0 0 0 6 9a4 4 0 0 0 0 8"/><path d="M8 19v2M12 17v2M16 19v2"/>',
@@ -382,7 +381,8 @@
   };
   const ic = (n) => `<svg class="i" viewBox="0 0 24 24" aria-hidden="true">${P[n]}</svg>`;
   const $ = (id) => document.getElementById(id);
-  const hhmm = (d) => `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+  const pad2 = (n) => String(n).padStart(2, "0");
+  const hhmm = (d) => `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
   const parseLocal = (iso) => iso ? new Date(iso) : null;   // backend sends campus time without a zone
 
   /* ---------- scale the 800x480 screen to the window ---------- */
@@ -417,13 +417,13 @@
 
   /* ---------- state from the backend ---------- */
   let S = null;                 // last GET /api/display/{room}
-  let soundLocalAt = 0;         // last time this screen changed the sound (don't let a poll undo it)
+  let soundLocalAt = 0;         // last time this screen changed the sound (a poll mustn't undo it)
   async function poll() {
     try {
       S = await api("GET");
       $("offline").classList.add("hidden");
       render();
-    } catch (e) {
+    } catch {
       $("offline").textContent = t("offline"); $("offline").classList.remove("hidden");
     }
   }
@@ -432,22 +432,23 @@
   let sound = { kind: "off", volume: 50 };
   let quiet = false;
 
+  const breakUntil = () => { const b = parseLocal(S && S.break_until); return b && b > new Date() ? b : null; };
+
   function render() {
     if (!S) return;
     $("label").textContent = S.label || ROOM;
-    // status: colour dot + words (never colour alone)
+    // status: dot + words (never colour alone)
     let st = S.status, text = t("st_" + st);
-    const brk = parseLocal(S.break_until);
-    if (brk && brk > new Date()) { st = "break"; text = t("st_break", { t: hhmm(brk) }); }
+    const brk = breakUntil();
+    if (brk) { st = "break"; text = t("st_break", { t: hhmm(brk) }); }
     const n = S.people;
     if (n !== null && n !== undefined && st !== "break") text += " · " + (n === 0 ? t("people_0") : n === 1 ? t("people_1") : t("people_n", { n }));
     $("statusText").textContent = text;
-    const colour = { free: "--free", partial: "--shared", full: "--full", ghost: "--ghost", break: "--amber" }[st] || "--closed";
-    document.querySelector(".status .dot").style.background = `var(${colour})`;
+    $("dot").style.background = `var(--${{ free: "free", partial: "shared", full: "full", ghost: "ghost", break: "break" }[st] || "closed"})`;
 
     quiet = !!S.quiet;
-    $("quietBadge").classList.toggle("hidden", !quiet);
-    $("quietBadge").innerHTML = ic("moon") + t("quiet_badge");
+    $("quietTag").classList.toggle("hidden", !quiet);
+    $("quietTag").innerHTML = ic("moon") + t("quiet_tag");
 
     if (Date.now() - soundLocalAt > 4000 && S.sound && (S.sound.kind !== sound.kind || S.sound.volume !== sound.volume)) {
       sound = { ...S.sound }; Synth.apply(sound);
@@ -461,11 +462,8 @@
 
   /* ---------- carousel ---------- */
   const CARDS = [
-    { id: "book", icon: "qr", c: "#6ea8ff" },
-    { id: "sound", icon: "music", c: "#3ddc84" },
-    { id: "selfie", icon: "camera", c: "#5ee0e0" },
-    { id: "break", icon: "coffee", c: "#ffb020" },
-    { id: "quiet", icon: "moon", c: "#b69cff" }
+    { id: "book", icon: "qr" }, { id: "sound", icon: "music" }, { id: "selfie", icon: "camera" },
+    { id: "break", icon: "coffee" }, { id: "quiet", icon: "moon" }
   ];
   const track = $("track"), dots = $("dots");
   let current = 0;
@@ -483,16 +481,17 @@
   function renderCards() {
     CARDS.forEach((c, i) => {
       const el = track.children[i];
-      let title = t("c_" + c.id), p = t("c_" + c.id + "_p"), cta = t("c_" + c.id + "_cta");
+      const title = t("c_" + c.id);
+      let p = t("c_" + c.id + "_p"), cta = t("c_" + c.id + "_cta");
       if (c.id === "sound" && sound.kind !== "off") p = t("c_sound_on", { s: t("s_" + sound.kind) });
-      const brk = S && parseLocal(S.break_until);
-      if (c.id === "break" && brk && brk > new Date()) p = t("c_break_on", { m: Math.ceil((brk - new Date()) / 60000) });
+      const brk = breakUntil();
+      if (c.id === "break" && brk) p = t("c_break_on", { m: Math.ceil((brk - new Date()) / 60000) });
       if (c.id === "quiet") { p = t(quiet ? "c_quiet_p_on" : "c_quiet_p_off"); cta = t(quiet ? "c_quiet_cta_on" : "c_quiet_cta_off"); }
       el.classList.toggle("on", c.id === "quiet" && quiet);
-      el.setAttribute("aria-label", `${title}. ${p}. ${i + 1} / ${CARDS.length}`);
-      const html = `<div class="icon" style="color:${c.c};background:${c.c}26">${ic(c.icon)}</div>
+      el.setAttribute("aria-label", `${title}. ${p} ${i + 1} / ${CARDS.length}`);
+      const html = `<div class="num"><span class="label">${pad2(i + 1)} / ${pad2(CARDS.length)}</span>${ic(c.icon)}</div>
         <h2>${title}</h2><p>${p}</p>
-        <span class="cta" style="background:${c.c}">${cta}</span>`;
+        <span class="cta"><span>${cta}</span>${ic("arrow")}</span>`;
       // only touch the DOM on a real change: a re-layout makes Chrome snap the carousel back mid-swipe
       if (el.dataset.html !== html) { el.dataset.html = html; el.innerHTML = html; }
       dots.children[i].setAttribute("aria-label", title);
@@ -510,6 +509,7 @@
     $("prev").disabled = current === 0; $("next").disabled = current === CARDS.length - 1;
   }
   // after a swipe settles, the card in the middle becomes the current one (never mid-animation)
+  let dragX = null, dragStart = 0, dragMoved = false;
   const settle = () => {
     if (dragX !== null) return;
     const i = Math.round(track.scrollLeft / cardStep());
@@ -520,8 +520,7 @@
   $("prev").addEventListener("click", () => goTo(current - 1));
   $("next").addEventListener("click", () => goTo(current + 1));
 
-  // mouse drag = swipe (touch and touchpads already scroll natively)
-  let dragX = null, dragStart = 0, dragMoved = false;
+  // mouse drag = swipe (touch screens and touchpads already scroll natively)
   track.addEventListener("pointerdown", (e) => {
     if (e.pointerType !== "mouse") return;
     dragX = e.clientX; dragStart = track.scrollLeft; dragMoved = false;
@@ -537,8 +536,8 @@
     dragX = null;
     if (dragMoved) {
       track.classList.remove("dragging");
-      const moved = track.scrollLeft - dragStart, step = cardStep();
-      goTo(current + (Math.abs(moved) > step * 0.2 ? Math.sign(moved) : 0));
+      const moved = track.scrollLeft - dragStart;
+      goTo(current + (Math.abs(moved) > cardStep() * 0.2 ? Math.sign(moved) : 0));
       setTimeout(() => { dragMoved = false; }, 0);
     }
   });
@@ -571,7 +570,7 @@
     } catch (e) { fail(e); }
   }
 
-  /* ---------- 1. book ---------- */
+  /* ---------- 01 book ---------- */
   $("bookQr").src = `${API}/qr`;
   function renderBook() {
     $("bookUrl").textContent = S.booking_url || "";
@@ -579,7 +578,7 @@
     $("bookNow").textContent = ends.length ? t("book_until", { t: hhmm(ends[0]) }) : t("book_free");
   }
 
-  /* ---------- 2. soundscapes (synthesised in the page: no sound files) ---------- */
+  /* ---------- 02 soundscapes (synthesised in the page: no sound files) ---------- */
   const Synth = (() => {
     let ctx, master, nodes = [], timers = [], playing = "off";
     function ensure() {
@@ -687,16 +686,17 @@
     [...soundsEl.children].forEach((b) => {
       const k = b.dataset.kind, on = k === sound.kind;
       b.setAttribute("aria-pressed", on ? "true" : "false");
-      b.innerHTML = `${ic(k)}<span>${t("s_" + k)}</span>${on && k !== "off" ? `<small>${t("playing")}</small>` : ""}`;
+      const html = `${ic(k)}<div><span>${t("s_" + k)}</span>${on && k !== "off" ? `<small>${t("playing")}</small>` : ""}</div>`;
+      if (b.dataset.html !== html) { b.dataset.html = html; b.innerHTML = html; }
     });
-    $("volBar").style.width = sound.volume + "%";
     $("volVal").textContent = sound.volume + "%";
+    $("volDown").disabled = sound.volume <= 0; $("volUp").disabled = sound.volume >= 100;
   }
   const vol = (d) => setSound({ kind: sound.kind, volume: Math.max(0, Math.min(100, sound.volume + d)) });
   $("volDown").addEventListener("click", () => vol(-10));
   $("volUp").addEventListener("click", () => vol(10));
 
-  /* ---------- 3. selfie (this computer's webcam; the board camera if there is none) ---------- */
+  /* ---------- 03 selfie (this computer's webcam; the board camera if there is none) ---------- */
   const video = $("video");
   let stream = null, countdownT = 0, useBoardCam = false;
   async function camStart() {
@@ -752,13 +752,8 @@
   }
   $("retake").addEventListener("click", selfieReset);
 
-  /* ---------- 4. take a break ---------- */
+  /* ---------- 04 take a break ---------- */
   let breakMinutes = 15;
-  [5, 10, 15, 20, 30].forEach((m) => {
-    const b = document.createElement("button"); b.className = "chip"; b.dataset.m = m;
-    b.addEventListener("click", () => { breakMinutes = m; renderBreak(); });
-    $("chips").appendChild(b);
-  });
   $("bDown").addEventListener("click", () => { breakMinutes = Math.max(BREAK_MIN, breakMinutes - BREAK_STEP); renderBreak(); });
   $("bUp").addEventListener("click", () => { breakMinutes = Math.min(BREAK_MAX, breakMinutes + BREAK_STEP); renderBreak(); });
   async function startBreak(minutes) {
@@ -767,21 +762,21 @@
   }
   $("bStart").addEventListener("click", () => startBreak(breakMinutes));
   $("bMore").addEventListener("click", () => {
-    const brk = parseLocal(S && S.break_until); if (!brk) return;
+    const brk = breakUntil(); if (!brk) return;
     startBreak(Math.min(BREAK_MAX, Math.ceil((brk - new Date()) / 60000) + 5));
   });
   $("bBack").addEventListener("click", async () => {
     try { await api("DELETE", "/break"); if (S) S.break_until = null; render(); } catch (e) { fail(e); }
   });
   function renderBreak() {
-    $("bMin").innerHTML = `${breakMinutes} <small>${t("min")}</small>`;
-    [...$("chips").children].forEach((c) => { c.textContent = `${c.dataset.m}`; c.setAttribute("aria-pressed", +c.dataset.m === breakMinutes ? "true" : "false"); c.setAttribute("aria-label", `${c.dataset.m} ${t("min")}`); });
+    $("bMin").textContent = breakMinutes;
+    $("bBackBy").textContent = t("back_by", { t: hhmm(new Date(Date.now() + breakMinutes * 60000)) });
     $("bDown").disabled = breakMinutes <= BREAK_MIN; $("bUp").disabled = breakMinutes >= BREAK_MAX;
-    const brk = parseLocal(S && S.break_until), on = brk && brk > new Date();
-    $("breakSetup").classList.toggle("hidden", !!on); $("breakActive").classList.toggle("hidden", !on);
-    if (on) {
+    const brk = breakUntil();
+    $("breakSetup").classList.toggle("hidden", !!brk); $("breakActive").classList.toggle("hidden", !brk);
+    if (brk) {
       const left = Math.max(0, Math.round((brk - new Date()) / 1000));
-      $("bLeft").textContent = `${String(Math.floor(left / 60)).padStart(2, "0")}:${String(left % 60).padStart(2, "0")}`;
+      $("bLeft").textContent = `${pad2(Math.floor(left / 60))}:${pad2(left % 60)}`;
       $("bUntil").textContent = t("back_by", { t: hhmm(brk) });
       $("bMore").disabled = Math.ceil(left / 60) + 5 > BREAK_MAX;
     }
@@ -818,17 +813,16 @@
     $("sos").innerHTML = ic("alert") + t("sos"); $("sos").setAttribute("aria-label", t("sos_aria"));
     $("prev").innerHTML = ic("left"); $("prev").setAttribute("aria-label", t("prev"));
     $("next").innerHTML = ic("right"); $("next").setAttribute("aria-label", t("next"));
-    $("hint").textContent = t("hint");
     track.setAttribute("aria-label", S ? S.label : ROOM);
     document.querySelectorAll("[data-back]").forEach((b) => { if (!b.dataset.t) b.innerHTML = ic("left") + t("back"); });
     document.querySelectorAll("[data-t]").forEach((el) => { el.textContent = t(el.dataset.t); });
     $("shoot").innerHTML = ic("camera") + t("shoot");
     $("retake").textContent = t("retake");
-    $("bStart").innerHTML = ic("coffee") + t("start_break");
+    $("bStart").innerHTML = t("start_break") + ic("arrow");
     $("bMore").textContent = t("more5"); $("bBack").innerHTML = ic("check") + t("im_back");
     $("bDown").setAttribute("aria-label", t("minus")); $("bUp").setAttribute("aria-label", t("plus"));
     $("volDown").setAttribute("aria-label", t("vol_down")); $("volUp").setAttribute("aria-label", t("vol_up"));
-    $("sosAskIcon").innerHTML = ic("alert"); $("sosOpenIcon").innerHTML = ic("phone");
+    $("sosAskKicker").innerHTML = ic("alert") + t("sos_kicker"); $("sosOpenKicker").innerHTML = ic("phone") + t("sos_open_kicker");
     renderCards(); renderSound(); renderBreak();
     if (S) render();
   }
@@ -846,7 +840,7 @@
     else if (e.key === "ArrowLeft") goTo(current - 1);
   });
 
-  /* ---------- back to the start after 90 s without a touch ---------- */
+  /* ---------- back to the first card after 90 s without a touch ---------- */
   let lastTouch = Date.now();
   ["pointerdown", "keydown"].forEach((ev) => addEventListener(ev, () => { lastTouch = Date.now(); }, true));
   setInterval(() => {

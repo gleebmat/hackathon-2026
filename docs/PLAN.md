@@ -192,8 +192,11 @@ resolve button).
 
 **The page (`web/display.html`).** Laid out for 800x480 and scaled to any window. Built for a 4.3" touch screen: one
 big swipeable card per feature (Book, Soundscapes, Selfie, Take a break, Quiet room) instead of a grid of small
-buttons; arrows, dots and the keyboard (arrows, Esc) work too. Touch targets at least 56 px, text at least 17 px,
-white on near-black, status in words and colour (never colour alone), visible focus ring, English/German (same
+buttons; arrows, dots and the keyboard (arrows, Esc) work too. Quiet academic look: ink on warm paper (`#17171a` on
+`#f4f1ea`), Newsreader serif headings, Instrument Sans text (as the website), hairline rules, numbered sections
+01-05, one accent (`#22408f`), red only for SOS. Sound tiles about 180x140 px. Touch targets at least 48 px (main
+buttons 60-76 px), text at least 15 px (body 18-22 px), nothing overflows at 800x480 in English or German (checked on
+all 28 screens and states), status in words and colour (never colour alone), visible focus ring, English/German (same
 `roomv-lang` choice as the website), screen-reader labels, reduced motion respected, back to the first card after
 90 s untouched. SOS is always top right, asks "Are you sure?" first, and shows "Help has been called" until the
 website resolves it. Selfie: this computer's webcam (preview mirrored, photo not), else the board camera's frame.
