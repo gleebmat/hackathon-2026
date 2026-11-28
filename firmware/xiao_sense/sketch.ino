@@ -133,13 +133,15 @@ inline void px(const uint8_t* f, int x, int y, int& r, int& g, int& b) {
   if (bgrOrder) { b = p[0]; g = p[1]; r = p[2]; } else { r = p[0]; g = p[1]; b = p[2]; }
 }
 
-// Fast model input: the whole 320x240 frame averaged down to 96x96 (int8 RGB, pixel - 128).
+// Fast model input: the centre 240x240 square of the frame (not squashed: the model was trained on undistorted
+// people) averaged down to 96x96 (int8 RGB, pixel - 128). The detector still sees the whole frame.
 void prepareFast() {
   int8_t* in = interpreter->input(0)->data.int8;
+  const int left = (FW - FH) / 2;
   for (int y = 0; y < IMG; y++) {
     const int y0 = y * FH / IMG, y1 = max(y0 + 1, (y + 1) * FH / IMG);
     for (int x = 0; x < IMG; x++) {
-      const int x0 = x * FW / IMG, x1 = max(x0 + 1, (x + 1) * FW / IMG);
+      const int x0 = left + x * FH / IMG, x1 = max(x0 + 1, left + (x + 1) * FH / IMG);
       int sr = 0, sg = 0, sb = 0, n = 0;
       for (int yy = y0; yy < y1; yy++)
         for (int xx = x0; xx < x1; xx++) {
