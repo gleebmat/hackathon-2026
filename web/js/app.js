@@ -11,7 +11,8 @@ const POLL_MS = 1000;            // map + room list: board changes show up withi
 const SLOT_REFRESH_TICKS = 30;  // the picker reloads every room's slots every 30 s
 const DAY_LIMIT = 4;
 const HORIZON_DAYS = 14;
-const STATUS = { free: t("st_free"), partial: t("st_partial"), full: t("st_full"), ghost: t("st_ghost"), closed: t("st_closed") };
+const STATUS = { free: t("st_free"), partial: t("st_partial"), full: t("st_full"), ghost: t("st_ghost"), closed: t("st_closed"),
+  unbookable: t("st_unbookable") };
 const PURPOSES = [
   { id: "quiet_study", label: t("p_quiet_study"), emoji: "📚", noise: "quiet" },
   { id: "group_study", label: t("p_group_study"), emoji: "🧠", noise: "moderate" },
@@ -23,7 +24,7 @@ const PURPOSES = [
 ];
 const PURPOSE = Object.fromEntries(PURPOSES.map((p) => [p.id, p]));
 
-const state = { user: null, rooms: [], mine: [], view: null, picker: null, sheet: null, myRatings: {} };
+const state = { user: null, rooms: [], mine: [], view: null, picker: null, sheet: null, myRatings: {}, notes: [] };
 const $ = (id) => document.getElementById(id);
 
 // ---------- Small helpers ----------
@@ -127,10 +128,11 @@ async function createView() {
   state.view.onRoomClick((id) => { if (state.rooms.some((r) => r.id === id)) openRoom(id); });
   state.view.onRoomHover?.(showMapTip);
   for (const r of state.rooms) state.view.setStatus(r.id, r);
+  state.view.setFloor?.(1);   // open on floor 1 (the board room Z.1.04 is there); "All floors" shows everything
 }
 
 // Small tooltip that follows the pointer over a bookable room on the 3D map.
-const STATUS_VAR = { free: "--free", partial: "--shared", full: "--full", ghost: "--ghost", closed: "--muted" };
+const STATUS_VAR = { free: "--free", partial: "--shared", full: "--full", ghost: "--ghost", closed: "--muted", unbookable: "--unbookable" };
 function showMapTip(id, e) {
   const card = $("building").parentElement;
   let tip = card.querySelector(".map-tip");
@@ -143,7 +145,7 @@ function showMapTip(id, e) {
   if (!r || !e) { tip.classList.remove("on"); return; }
   tip.innerHTML = `<b>${esc(r.label || r.id)}</b>${esc(r.label ? `${r.id} · ${r.name}` : r.name)}` +
     `<i style="background:var(${STATUS_VAR[r.status] ?? "--muted"})"></i>${STATUS[r.status] ?? esc(r.status)}` +
-    (r.status === "closed" ? "" : ` · ${t("seats_of", { free: r.seats_free, cap: r.capacity })}`);
+    (["closed", "unbookable"].includes(r.status) ? "" : ` · ${t("seats_of", { free: r.seats_free, cap: r.capacity })}`);
   const box = card.getBoundingClientRect();
   const x = Math.min(e.clientX - box.left + 14, box.width - tip.offsetWidth - 8);
   tip.style.left = `${Math.max(8, x)}px`;
@@ -272,7 +274,10 @@ async function cancelBooking(btn) {
   }
   btn.disabled = true;
   try {
+    const gone = state.mine.find((x) => x.id === Number(btn.dataset.id));
     await api.cancel(Number(btn.dataset.id));
+    if (gone) notify(`cancelled-${gone.id}`, "cancelled", "note_cancelled",
+      { room: gone.room_id, day: dayLabel(gone.start.slice(0, 10)), t: `${hm(gone.start)}–${hm(gone.end)}` }, gone.room_id, { toast: false });
     toast(t("booking_cancelled"));
     await Promise.all([refreshMine(), refreshRooms()]);
     state.picker.refresh();
@@ -550,6 +555,10 @@ function renderSlots(popIndex) {
 
 function renderForm() {
   const sh = state.sheet;
+  if (sh.room && sh.room.bookable === false) {   // lecture halls, Aula, atrium: 55+ seats (app/booking.py)
+    $("sh-form").innerHTML = `<div class="block"><div class="info-note">🔒 ${t("not_bookable")}</div></div>`;
+    return;
+  }
   const r = range();
   const { canFull, maxSeats } = rules();
   const left = dayLeft();
@@ -641,6 +650,8 @@ async function submitBooking(btn) {
       purpose: sh.purpose, custom_purpose: sh.purpose === "custom" ? sh.custom.trim() : null,
     });
     confetti(btn);
+    notify(`booked-${b.id}`, "booked", "note_booked",
+      { room: b.room_id, day: dayLabel(sh.date), t: `${hm(b.start)}–${hm(b.end)}` }, b.room_id, { toast: false });
     toast(t("booked_toast", { room: b.room_id, day: dayLabel(sh.date), a: hm(b.start), b: hm(b.end) }), { action: { label: t("my_bookings"), run: openDrawer } });
     closeSheet();
     refreshMine();
@@ -721,7 +732,7 @@ function renderSuggestions(q) {
   list.innerHTML = search.results.length
     ? search.results.map((r, i) => `<li role="option" id="sug-${i}" data-room="${esc(r.id)}" aria-selected="${i === search.active}">
         <span class="sug-id">${highlight(r.id, q)}</span><span class="sug-name">${highlight(r.name, q)}</span>
-        <span class="pill ${esc(r.status)}">${r.status === "closed" ? t("st_closed") : t("n_free", { n: r.seats_free })}</span></li>`).join("")
+        <span class="pill ${esc(r.status)}">${STATUS[r.status] && ["closed", "unbookable"].includes(r.status) ? STATUS[r.status] : t("n_free", { n: r.seats_free })}</span></li>`).join("")
     : `<li class="sug-empty">${t("no_match", { q: esc(q) })}</li>`;
   list.classList.remove("hidden");
   $("search-input").setAttribute("aria-expanded", "true");
@@ -959,30 +970,100 @@ async function ask(text) {
 
 // ---------- Smart alerts: what the sensors mean for your own bookings ----------
 
-const alerted = new Set();   // each alert once per page load
+// Notification center (bell next to My bookings): reminders and sensor alerts for your own bookings. Stored per
+// user in this browser, so every notice comes once, also across reloads; texts are kept as keys, so they follow the
+// language switch.
+const NOTES_MAX = 40;
+const notesKey = () => `roomv-notes-${state.user?.email ?? ""}`;
 
-function alertOnce(key, message, roomId) {
-  if (alerted.has(key)) return;
-  alerted.add(key);
-  toast(message, { ms: 10000, action: { label: t("alert_open"), run: () => openRoom(roomId) } });
+function loadNotes() {
+  try { state.notes = JSON.parse(localStorage.getItem(notesKey()) || "[]"); } catch { state.notes = []; }
 }
+
+function saveNotes() {
+  try { localStorage.setItem(notesKey(), JSON.stringify(state.notes.slice(0, NOTES_MAX))); } catch { /* private mode */ }
+}
+
+function agoText(at) {
+  const m = Math.round((Date.now() - at) / 60000);
+  return m < 1 ? t("just_now") : m < 60 ? t("min_ago", { m }) : t("h_ago", { h: Math.round(m / 60) });
+}
+
+function renderNotes() {
+  const unread = state.notes.filter((n) => !n.read).length;
+  const count = $("notes-count");
+  count.textContent = unread;
+  count.classList.toggle("hidden", !unread);
+  $("notes-list").innerHTML = state.notes.length
+    ? state.notes.map((n) => `<li class="note ${n.read ? "" : "unread"} ${esc(n.kind)}" data-room="${esc(n.room ?? "")}">
+        <span class="note-icon">${NOTE_ICON[n.kind] ?? "🔔"}</span>
+        <span><span class="note-text">${esc(t(n.msg, n.vars))}</span><span class="muted small">${esc(agoText(n.at))}</span></span></li>`).join("")
+    : `<li class="note-empty muted small">${t("notes_empty")}</li>`;
+}
+
+const NOTE_ICON = { soon: "⏰", ending: "⏳", over: "🏁", ghost: "👻", released: "🚫", loud: "🔊", left: "🎒",
+  booked: "✅", cancelled: "🗑️" };
+
+/** Adds a notification once (by key). `at` = when it happened (default now); only fresh ones (< 15 min) pop up. */
+function notify(key, kind, msg, vars, room, { toast: show = true, at = Date.now() } = {}) {
+  if (state.notes.some((n) => n.key === key)) return;
+  at = Math.min(at, Date.now());
+  show = show && Date.now() - at < 15 * 60000;
+  state.notes.unshift({ key, kind, msg, vars, room, at, read: false });
+  state.notes.sort((a, b) => b.at - a.at);
+  state.notes.length = Math.min(state.notes.length, NOTES_MAX);
+  saveNotes();
+  renderNotes();
+  if (show) toast(t(msg, vars), { ms: 10000, action: room ? { label: t("alert_open"), run: () => openRoom(room) } : undefined });
+}
+
+function wireNotes() {
+  const panel = $("notes-panel");
+  const btn = $("notes-btn");
+  const toggle = (open) => { panel.classList.toggle("hidden", !open); btn.setAttribute("aria-expanded", String(open)); };
+  btn.addEventListener("click", (e) => { e.stopPropagation(); toggle(panel.classList.contains("hidden")); renderNotes(); });
+  document.addEventListener("click", (e) => { if (!panel.contains(e.target) && e.target !== btn) toggle(false); });
+  $("notes-read").addEventListener("click", () => { for (const n of state.notes) n.read = true; saveNotes(); renderNotes(); });
+  $("notes-list").addEventListener("click", (e) => {
+    const li = e.target.closest(".note");
+    if (!li) return;
+    const n = state.notes.find((x) => x.room === li.dataset.room && !x.read) ?? state.notes.find((x) => x.room === li.dataset.room);
+    if (n) { n.read = true; saveNotes(); renderNotes(); }
+    if (li.dataset.room) { toggle(false); openRoom(li.dataset.room); }
+  });
+  loadNotes();
+  renderNotes();
+}
+
+const minutesKey = (ms) => { const d = new Date(Date.now() + ms); return `${dateKey(d)}T${pad(d.getHours())}:${pad(d.getMinutes())}`; };
 
 function checkAlerts() {
   const now = nowKey();
-  const d = new Date(Date.now() - 15 * 60000);
-  const recently = `${dateKey(d)}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  const in10 = minutesKey(10 * 60000);
+  const ago15 = minutesKey(-15 * 60000);
+  const ago12h = minutesKey(-12 * 3600000);
   for (const b of state.mine) {
-    if (b.status !== "active") continue;
     const room = state.rooms.find((r) => r.id === b.room_id);
-    if (!room) continue;
-    const name = room.label || room.id;
+    const name = room ? room.label || room.id : b.room_id;
+    const when = `${hm(b.start)}–${hm(b.end)}`;
+    if (b.status === "released" && b.end > ago12h) {
+      notify(`released-${b.id}`, "released", "note_released", { room: name, t: when }, b.room_id,
+        { at: b.ghost_release_at ? new Date(b.ghost_release_at).getTime() : new Date(b.start).getTime() });
+      continue;
+    }
+    if (b.status !== "active") continue;
+    if (b.start > now && b.start <= in10) notify(`soon-${b.id}`, "soon", "note_soon", { room: name, t: hm(b.start) }, b.room_id);
     if (b.start <= now && b.end > now) {
-      if (PURPOSE[b.purpose]?.noise === "quiet" && room.board && room.live && room.noise_class !== "quiet") {
-        alertOnce(`loud-${b.id}`, t("alert_loud", { room: name, db: room.noise_db.toFixed(0) }), room.id);
+      if (b.end <= in10) {
+        notify(`ending-${b.id}`, "ending", "note_ending", { room: name, m: minutesUntil(`${b.end}`), t: hm(b.end) }, b.room_id);
       }
-      if (b.ghost_release_at) alertOnce(`ghost-${b.id}`, t("alert_ghost", { room: name, t: hm(b.ghost_release_at) }), room.id);
-    } else if (b.end <= now && b.end > recently && room.left_items > 0) {
-      alertOnce(`left-${b.id}`, t("alert_left", { room: name }), room.id);
+      if (b.ghost_release_at) notify(`ghost-${b.id}`, "ghost", "note_ghost", { room: name, t: hm(b.ghost_release_at) }, b.room_id);
+      if (room && PURPOSE[b.purpose]?.noise === "quiet" && room.board && room.live && room.noise_class !== "quiet") {
+        notify(`loud-${b.id}`, "loud", "alert_loud", { room: name, db: room.noise_db.toFixed(0) }, b.room_id);
+      }
+    } else if (b.end <= now && b.end > ago15) {
+      notify(`over-${b.id}`, "over", "note_over", { room: name, t: hm(b.end) }, b.room_id, { at: new Date(b.end).getTime() });
+      if (room?.left_items > 0) notify(`left-${b.id}`, "left", "alert_left", { room: name }, b.room_id);
     }
   }
 }
@@ -1007,6 +1088,7 @@ async function main() {
   wireSearch();
   wireSheet();
   wirePage();
+  wireNotes();
   wireAssistant();
   state.picker = createPicker($("picker"), {
     onOpen: (id, opts) => openRoom(id, opts),

@@ -585,3 +585,32 @@ def test_other_students_keep_the_campus_busy(app_env, monkeypatch, time_now):
     later = [s for r in c.get("/api/calendar").json()["rooms"].values() for s in r["slots"] if s["status"] != "free"]
     assert later                                               # and some rooms are taken later today
     assert c.post("/api/login", json={"email": campus_sim.EMAIL, "password": "!"}).status_code == 401
+
+
+def test_walk_ins_dont_block_a_whole_room_booking(app_env):
+    a = user(1)
+    reading(a, "V.1.07a", people=3)   # three people sitting in the board room without a booking
+    cap = room(a, "V.1.07a")["capacity"]
+    slots = a.get("/api/rooms/V.1.07a/availability", params={"date": "2026-11-27"}).json()["slots"]
+    now_slot = next(s for s in slots if s["start"] == "10:00")
+    assert now_slot["status"] == "free" and now_slot["seats_free"] == cap - 3   # sharers see 3 seats taken
+    assert book(a, start="2026-11-27T10:00", hours=1, mode="full", seats=2, purpose="meeting").status_code == 201
+
+
+def test_only_rooms_under_55_seats_can_be_booked(app_env, monkeypatch):
+    a = user(1)
+    rooms = a.get("/api/rooms").json()
+    big = max(rooms, key=lambda r: r["capacity"])
+    small = min(rooms, key=lambda r: r["capacity"])
+    assert booking.BOOKABLE_BELOW == 55
+    monkeypatch.setattr(booking, "BOOKABLE_BELOW", big["capacity"])   # the biggest built-in room plays a lecture hall
+    assert not room(a, big["id"])["bookable"] and room(a, small["id"])["bookable"]
+    r = book(a, room=big["id"])
+    assert r.status_code == 409 and "fewer than" in r.json()["error"]
+    slots = a.get(f"/api/rooms/{big['id']}/availability", params={"date": "2026-11-28"}).json()["slots"]
+    assert {s["status"] for s in slots} == {"closed"}
+    suggested = a.get("/api/suggest", params={"hours": 1, "mode": "partial", "seats": 1, "purpose": "group_study",
+                                              "start": "2026-11-28T10:00"}).json()
+    assert big["id"] not in [r["id"] for r in suggested]
+    assert book(a, room=small["id"], seats=1).status_code == 201
+    assert room(a, big["id"])["status"] == "unbookable" and room(a, big["id"])["seats_free"] == 0
