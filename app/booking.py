@@ -19,7 +19,8 @@ GHOST_AFTER = (timedelta(seconds=int(os.environ["GHOST_RELEASE_SECONDS"]))
                if "GHOST_RELEASE_SECONDS" in os.environ
                else timedelta(minutes=int(os.environ.get("GHOST_RELEASE_MIN", "10"))))
 GHOST_GRACE = timedelta(seconds=int(os.environ.get("GHOST_GRACE_SECONDS", "60")))
-BOARD_STALE = timedelta(seconds=3)   # the board sends every ~0.6 s: 3 s without a reading = offline
+BOARD_STALE = timedelta(seconds=10)   # board readings older than this are not used (ghost timers survive short gaps)
+LIVE_STALE = timedelta(seconds=3)     # the board sends every ~0.6 s: 3 s without a reading = shown as offline
 SENSOR_STALE = timedelta(minutes=2)
 
 PURPOSE_CLASS = {
@@ -82,7 +83,8 @@ def sensor(conn: sqlite3.Connection, room_id: str, now: datetime) -> dict:
     """Fresh sensor values for a room: noise_db, people and empty_since are None when unknown or stale."""
     row = conn.execute("SELECT * FROM readings WHERE room_id = ?", (room_id,)).fetchone()
     cutoff = now - (BOARD_STALE if room_id == BOARD_ROOM else SENSOR_STALE)
-    out = {"noise_db": None, "people": None, "empty_since": None, "left_items": None, "counted": None, "people_at": None}
+    out = {"noise_db": None, "people": None, "empty_since": None, "left_items": None, "counted": None, "people_at": None,
+           "heard_at": max((parse(row[k]) for k in ("noise_at", "people_at") if row and row[k]), default=None)}
     if row and row["noise_at"] and parse(row["noise_at"]) >= cutoff:
         out["noise_db"] = row["noise_db"]
     if row and row["people_at"] and parse(row["people_at"]) >= cutoff:
@@ -166,7 +168,7 @@ def room_state(conn: sqlite3.Connection, room: sqlite3.Row, now: datetime) -> di
     booked = sum(b["seats"] for b in current)
     people = seen["people"] if seen["people"] is not None else sim_people
     board = room["id"] == BOARD_ROOM
-    is_live = board and (seen["noise_db"] is not None or seen["people"] is not None)
+    is_live = board and seen["heard_at"] is not None and now - seen["heard_at"] <= LIVE_STALE
     exclusive = any(b["mode"] == "full" for b in current)
     seats_free = 0 if exclusive or room["closed"] else max(0, room["capacity"] - max(booked, people))
     deadlines = [d for d in (ghost_deadline(b, seen) for b in current) if d]

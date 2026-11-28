@@ -562,3 +562,15 @@ def test_no_private_booking_while_people_are_inside(app_env):
     assert r.status_code == 201                          # sharing with them is fine
     reading(a, "V.1.04", people=2)
     assert book(a, room="V.1.04", start="2026-11-27T14:00", hours=1, mode="full", seats=2).status_code == 201
+
+
+def test_live_badge_follows_the_board_within_seconds(app_env, time_now):
+    c = TestClient(main.app)
+    rid = booking.BOARD_ROOM
+    assert room(c, rid)["live"] is False
+    reading(c, rid, noise_db=40)
+    assert room(c, rid)["live"] is True
+    time_now["t"] = NOW + timedelta(seconds=4)       # board stopped: offline after 3 s
+    assert room(c, rid)["live"] is False
+    reading(c, rid, noise_db=41)                     # and back at once
+    assert room(c, rid)["live"] is True
