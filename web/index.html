@@ -28,6 +28,8 @@
     <symbol id="i-prev" viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></symbol>
     <symbol id="i-next" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"/></symbol>
     <symbol id="i-users" viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0M16 4.5a3.5 3.5 0 0 1 0 7M18 14.5a6.5 6.5 0 0 1 3.5 5.5"/></symbol>
+    <symbol id="ic-expand" viewBox="0 0 24 24"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></symbol>
+    <symbol id="ic-collapse" viewBox="0 0 24 24"><path d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5"/></symbol>
     <symbol id="ic-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></symbol>
     <symbol id="ic-lock" viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></symbol>
     <symbol id="ic-users" viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0M16 4.5a3.5 3.5 0 0 1 0 7M18 14.5a6.5 6.5 0 0 1 3.5 5.5"/></symbol>
@@ -63,7 +65,7 @@
   <header class="topbar">
     <a class="brand" href="./">
       <span class="brand-tile" aria-hidden="true">cb.</span>
-      <span><span class="brand-name">Campus Booking System</span><br><span class="brand-sub" data-i18n="brand_sub">Find it. Book it. Study.</span></span>
+      <span class="brand-text"><span class="brand-name">Campus Booking System</span><br><span class="brand-sub" data-i18n="brand_sub">Find it. Book it. Study.</span></span>
     </a>
 
     <div class="search" id="search">
@@ -94,8 +96,14 @@
       </button>
       <div class="menu-wrap">
         <button class="avatar" id="avatar" type="button" aria-haspopup="true" aria-expanded="false" data-i18n-title="profile">?</button>
+        <span class="count avatar-count hidden" id="avatar-count" aria-hidden="true">0</span>
         <div class="menu hidden" id="menu">
           <div class="menu-user"><strong id="user-name"></strong><span class="muted small" id="user-email"></span></div>
+          <!-- Shown while the page is scrolled: the bell and My bookings are tucked into the account -->
+          <div class="menu-quick">
+            <button type="button" class="menu-item" id="menu-mine"><svg class="ic" aria-hidden="true"><use href="#ic-cal"/></svg><span data-i18n="my_bookings">My bookings</span><span class="count" id="menu-mine-count">0</span></button>
+            <button type="button" class="menu-item" id="menu-notes"><svg class="ic" aria-hidden="true"><use href="#ic-bell"/></svg><span data-i18n="notes">Notifications</span><span class="count" id="menu-notes-count">0</span></button>
+          </div>
           <div class="menu-label" data-i18n="mode">Mode</div>
           <div class="segmented" id="modes">
             <button type="button" data-mode="auto" data-i18n="mode_auto">Auto</button>
@@ -113,6 +121,7 @@
   <main class="page tool">
     <section class="map-card">
       <div class="building" id="building"></div>
+      <button class="map-full" id="map-full" type="button" data-i18n-title="map_full" data-i18n-aria="map_full"><svg class="ic" aria-hidden="true"><use href="#ic-expand"/></svg></button>
       <div class="map-legend" aria-hidden="true">
         <span><i style="background:var(--free)"></i><span data-i18n="legend_free">Free</span></span>
         <span><i style="background:var(--shared)"></i><span data-i18n="legend_shared">Shared</span></span>

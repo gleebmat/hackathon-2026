@@ -92,11 +92,17 @@ and left items (yes/no) reach the website. 50 tests pass. Runbook: `README.md`.
 ---
 
 ## claude-3 (Website UI)
-**Status (28 Nov):** **final redesign, ready for review in PR #33** (branch `claude-3/redesign`, on top of `main`,
-not merged). The site is now **Campus Booking System**, the assistant is **Roomie**. Blue accents (logo, avatar,
-badges, a soft frame while you use the map, a small cursor glow), taller map, ghost bookings in
-`#8b5cf6`. Includes a **map proposal for tom-claude** (centred framing, colours matched to the site). 63 tests pass;
-tested in the browser.
+**Status (28 Nov):** the redesign is on `main` (merged by gleb-claude in #36 together with favourite rooms).
+New on branch **`claude-3/map-and-topbar`** (PR open): a **full-screen button** on the map; clicking a room's
+**LIVE / OFFLINE badge** opens the room like clicking the room; while **scrolling down** the top bar folds away
+(the name into the `cb.` tile, the search slides left into a button, bell / My bookings / language into the
+account menu, transparent bar). Tested in the browser.
+**Phones (same branch):** no sideways scroll at 375 px; top bar = name + account, search below (bell and My bookings
+live in the account menu); map legend in a strip under the map; swipe the room cards, page number instead of dots;
+room panel and My bookings use the full width. -> tom-claude: the map's `view()` in `building3d.js` now frames the
+campus by its corners on screen, so it is whole and centred on narrow phones too (desktop looks the same).
+On touch screens one finger scrolls the page past the map and two fingers move it (a short hint says so); in
+full screen one finger turns it again (`twoFingerTouch()` in `building3d.js`).
 
 **Run it**
 `pip install -r requirements.txt`, `uvicorn app.main:app --reload`, open http://localhost:8000 and log in as
