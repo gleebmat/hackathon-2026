@@ -153,6 +153,7 @@ export function createBuilding(el, input, opts = {}) {
   // --- buildings ---
   const floorGroups = new Map();   // "V:1" -> Group (slab + rooms of that floor)
   const shells = [];               // per building: walls + roof
+  const linkParts = [];            // bridges and corridors to other buildings: hidden when one building is shown
   const rooms = new Map();         // id -> {mesh, data, baseColor, badge, loud, building}
   const bounds = new THREE.Box3();
   const bBounds = new Map();       // building id -> Box3
@@ -168,7 +169,9 @@ export function createBuilding(el, input, opts = {}) {
       for (const b of bd.blocks) {
         if ((b.open && f > 0) || (b.floors && !b.floors.includes(f))) continue;
         const openings = bd.rooms.filter((r) => r.floor < f && f < r.floor + (r.storeys ?? 1)).map(roomCorners);
-        g.add(slab(b, f * H, f > 1, slabMat, SLAB, openings));   // courtyards open above floor 1 (atrium floor)
+        const s = slab(b, f * H, f > 1, slabMat, SLAB, openings);   // courtyards open above floor 1 (atrium floor)
+        if (b.link) linkParts.push(s);
+        g.add(s);
       }
       floorGroups.set(`${bd.id}:${f}`, g);
       scene.add(g);
@@ -178,12 +181,14 @@ export function createBuilding(el, input, opts = {}) {
       const bBase = Math.min(...fl) * H, bTop = (Math.max(...fl) + 1) * H;
       const roof = slab(b, bTop, true, roofMat, 0.5);
       edges(roof, 0x4b5768, 0.55);
-      shell.add(roof);
+      const part = b.link ? new THREE.Group() : shell;     // links (bridges, corridors) hide when one building is shown
+      if (b.link) { shell.add(part); linkParts.push(part); }
+      part.add(roof);
       const pts = corners(b);
       pts.forEach(([x0, z0], i) => {                       // one glass wall per footprint edge
         const [x1, z1] = pts[(i + 1) % pts.length], len = Math.hypot(x1 - x0, z1 - z0);
         if (len < 0.05) return;
-        const w = box((x0 + x1) / 2, (z0 + z1) / 2, len, 0.3, bBase, bTop - bBase, glass, shell);
+        const w = box((x0 + x1) / 2, (z0 + z1) / 2, len, 0.3, bBase, bTop - bBase, glass, part);
         w.rotation.y = -Math.atan2(z1 - z0, x1 - x0);
       });
       const c = b.courtyard;
@@ -192,7 +197,10 @@ export function createBuilding(el, input, opts = {}) {
         box(cx, cz - c.d / 2, c.w, 0.3, H, top - H, glass, shell); box(cx, cz + c.d / 2, c.w, 0.3, H, top - H, glass, shell);
         box(cx - c.w / 2, cz, 0.3, c.d, H, top - H, glass, shell); box(cx + c.w / 2, cz, 0.3, c.d, H, top - H, glass, shell);
       }
-      for (const [x, z] of pts) { bb.expandByPoint(new THREE.Vector3(x, bBase, z)); bb.expandByPoint(new THREE.Vector3(x, bTop, z)); }
+      for (const [x, z] of pts) {                          // links don't count when framing one building
+        (b.link ? bounds : bb).expandByPoint(new THREE.Vector3(x, bBase, z));
+        (b.link ? bounds : bb).expandByPoint(new THREE.Vector3(x, bTop, z));
+      }
     }
     bounds.union(bb);
     for (const c of bd.connectors ?? []) {
@@ -385,6 +393,7 @@ export function createBuilding(el, input, opts = {}) {
       g.visible = inView(bid) && (floorFilter === null || Number(f) <= floorFilter) && !coversTarget;
     }
     for (const { shell, building } of shells) shell.visible = inView(building.id);   // the glass case stays when floors are hidden
+    for (const p of linkParts) p.visible = !buildingFilter;
     for (const r of rooms.values()) {
       const isTarget = r.data.id === highlight;
       r.mesh.visible = isTarget || showOffices || !HIDDEN_BY_DEFAULT.has(r.data.type);
@@ -469,13 +478,12 @@ export function createBuilding(el, input, opts = {}) {
       const len = Math.hypot(fx, fz) || 1, ux = fx / len, uz = fz / len;
       return Math.atan2(-north[0] * uz + north[1] * ux, north[0] * ux + north[1] * uz);
     },
-    /** Turns the camera around its target so north points up the screen (same distance and height). */
-    faceNorth() {
-      const off = camera.position.clone().sub(controls.target);
-      const flat = Math.hypot(off.x, off.z);
-      const pos = new THREE.Vector3(controls.target.x - north[0] * flat, camera.position.y, controls.target.z - north[1] * flat);
-      anim = { t0: performance.now(), ms: 700, p0: camera.position.clone(), q0: controls.target.clone(), p1: pos,
-               q1: controls.target.clone() };
+    /** Back to the standard view (the start angle) of what is shown now: the building and floor stay selected. */
+    homeView() {
+      clearHighlight();
+      applyVisibility();
+      const bd = buildings.find((x) => inView(x.id)) ?? buildings[0];
+      goTo(view(filterBox(), floorFilter === null ? null : floorFilter * bd.floor_height + 1));
     },
     rooms: () => [...rooms.values()].map((r) => r.data),
     setStatus(id, { status, noise_class, live, board } = {}) {
@@ -563,10 +571,10 @@ function mountControls(el, api, labels = {}) {
     "font:600 12px/1 'Instrument Sans',system-ui,sans-serif;z-index:5;pointer-events:none";
   el.appendChild(box);
   // Compass above the building/floor buttons: turns with the view so N always points to true north; letters stay
-  // upright. Click it to turn the map so north is up.
+  // upright. Click it to go back to the standard view.
   const compass = document.createElement("button");
   compass.type = "button";
-  compass.title = L.compassTitle ?? "Turn the map so north is up";
+  compass.title = L.compassTitle ?? "Back to the standard view";
   compass.setAttribute("aria-label", compass.title);
   compass.style.cssText = "position:absolute;left:12px;top:12px;z-index:5;width:76px;height:76px;padding:0;border:0;" +
     "border-radius:50%;cursor:pointer;background:rgba(249,251,255,.94);" +
@@ -581,7 +589,7 @@ function mountControls(el, api, labels = {}) {
         `<text class="l" x="${x * 21}" y="${y * 21}" fill="${c}" font-size="9" font-weight="800" text-anchor="middle"
           dominant-baseline="central" font-family="'Instrument Sans',system-ui,sans-serif">${t}</text>`).join("")}
     </g></svg>`;
-  compass.onclick = () => api.faceNorth?.();
+  compass.onclick = () => api.homeView?.();
   el.appendChild(compass);
   const rose = compass.querySelector(".rose");
   const letters = [...compass.querySelectorAll(".l")];

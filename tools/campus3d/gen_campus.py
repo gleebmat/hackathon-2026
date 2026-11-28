@@ -47,6 +47,8 @@ SKIP_ROOMS = {"Z.1.29"}    # Omansaal: left out of the map on request
 MIN_PIECE = 40.0           # m2: smaller building pieces (stair and lift shafts, odd cells) join their neighbour
 MIN_PIECE_WIDTH = 1.6      # m: thinner pieces too
 MAX_FILLED_HOLE = 80.0     # m2: shafts and small light wells inside a building are filled
+LINK_WIDTH = 8.0           # m: narrower parts of a building that reach another building are links (bridges,
+                           # corridors); the map hides them when one building is shown on its own
 PILLARS = {"O"}            # buildings whose upper floors overhang the ground floor: legs under the overhang corners
 PILLAR_SIZE = 1.2          # m
 # Coffee and vending machines on floor 1, roughly where they are (x, z in metres); each is moved to the nearest free
@@ -162,6 +164,39 @@ def shell_blocks(outlines, taken):
                     b["holes"] = holes
                 blocks.append(b)
     return blocks
+
+
+def split_links(buildings):
+    """Marks the parts of each building that connect it to another one (narrower than LINK_WIDTH and touching the
+    other building) as separate blocks with "link": true."""
+    shapes = {b["id"]: [Polygon(x["poly"], x.get("holes", [])) for x in b["blocks"]] for b in buildings}
+    for b in buildings:
+        others = unary_union([g for o in buildings if o is not b for g in shapes[o["id"]]])
+        rooms = [Polygon(r["poly"]) for r in b["rooms"]]
+        core = {}   # per floor: the building without its narrow parts
+        for f in b["floors"]:
+            here = unary_union([g for x, g in zip(b["blocks"], shapes[b["id"]]) if f in x["floors"]])
+            core[f] = here.buffer(-LINK_WIDTH / 2, join_style=2).buffer(LINK_WIDTH / 2, join_style=2).buffer(0.05, join_style=2)
+        if 0 in core and 1 in core:   # underground parts beyond the building's body (e.g. stores under a courtyard)
+            core[0] = core[0].intersection(core[1].buffer(0.5, join_style=2))
+        out = []
+        for x, g in zip(b["blocks"], shapes[b["id"]]):
+            wide = unary_union([core[f] for f in x["floors"]])   # narrow on every floor it has
+            links = [p for p in polys(g.difference(wide)) if p.area >= 8 and p.distance(others) < 0.6
+                     and not any(r.intersection(p).area > 1 for r in rooms)]   # a part with rooms is building
+            if not links:
+                out.append(x)
+                continue
+            for p in polys(tidy(unary_union(links))):
+                out.append({"poly": coords(p.exterior), "floors": x["floors"], "link": True})
+            for p in polys(tidy(g.difference(unary_union(links)))):
+                if p.area >= 2:
+                    piece = {"poly": coords(p.exterior), "floors": x["floors"]}
+                    holes = [coords(h) for h in p.interiors if Polygon(h).area > MAX_FILLED_HOLE]
+                    if holes:
+                        piece["holes"] = holes
+                    out.append(piece)
+        b["blocks"] = out
 
 
 def block_union(b, floor):
@@ -392,6 +427,7 @@ def main():
             b["pillars"] = pillars(b)
         final_clip(b)
         buildings.append(b)
+    split_links(buildings)
     everything = {f: unary_union([block_union(b, f) for b in buildings]) for f in range(4)}
     for b in buildings:
         b["doors"] = outside_doors(b, plan.get("doors", []), everything)
