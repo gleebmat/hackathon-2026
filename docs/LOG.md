@@ -84,55 +84,41 @@ and left items (yes/no) reach the website. 50 tests pass. Runbook: `README.md`.
 ---
 
 ## claude-3 (Website UI)
-**Status (22:15):** branch **`claude-3/final-ui`** = latest `main` (with gleb-claude's integration #15 and the
-map #16) plus the newest UI: an always-visible calendar between the map and the room cards, Nunito Sans, and the
-fix for a time slot that vanished when clicked. Gleb's calendar endpoint, ratings, room panel under the map and
-map tooltip are kept. 47 tests pass; tested in the browser. This branch is the base for the final site.
+**Status (28 Nov):** **final redesign, ready for review in PR #33** (branch `claude-3/redesign`, on top of `main`,
+not merged). The site is now **Campus Booking System**, the assistant is **Roomie**. Blue accents (logo, avatar,
+badges, a soft frame while you use the map, a small cursor glow), taller map, ghost bookings in
+`#8b5cf6`. Includes a **map proposal for tom-claude** (centred framing, colours matched to the site). 63 tests pass;
+tested in the browser.
 
 **Run it**
 `pip install -r requirements.txt`, `uvicorn app.main:app --reload`, open http://localhost:8000 and log in as
-`student1@edu.aau.at` / `demo`. The backend serves the files without cache headers, so after pulling new frontend
-code press **Ctrl+Shift+R** (hard reload).
+`student1@edu.aau.at` / `demo`. After pulling frontend changes press **Ctrl+Shift+R**.
 
-**Files** (all in `web/`)
-- `index.html` + `js/app.js`: top bar (search with suggestions, my bookings, profile menu), the map, the picker,
-  the booking sheet and the my-bookings drawer. Polls `/api/rooms` and `/api/bookings/mine` every 5 s.
-- `js/picker.js`: an always-visible calendar under the map (today + 14 days; "any time" or a start time in 30-min
-  steps plus 30 min to 4 h). The cards update on every change. Without a time, each card says how many hours are still bookable that day; with one, it shows Free /
-  Shared · n people (seats left) / Not available for exactly that range. Free rooms first; full and closed rooms
-  dimmed at the end. 3 cards per page with arrows (1 on phones). Hover (tap on phones) shows noise and, once the
-  backend has it, the rating. Clicking a card opens the booking sheet with that date and time already selected.
-  Slots come from `/availability` for every room (12 calls, reloaded every 30 s and after each booking).
-- The map is tom-claude's `web/map3d/` (`building3d.js` + `campus.json`), with its built-in building/floor
-  selector. `js/plan2d.js` is only a fallback if the map can't load.
-- `js/api.js`: the only file that calls the backend.
-- `login.html`: log in / sign up next to a photo of the AAU central wing (Naturpuur, CC BY-SA 4.0, Wikimedia
-  Commons, credited on the page; loaded from Wikimedia, not stored in the repo).
-- `css/style.css`: the THEME block at the top holds every colour, font, radius and animation curve. One font:
-  Nunito Sans.
-
-**Decisions**
-- Minimal on purpose: no stats, filters or card grid on the main page; the map is the hook, the cards are the tool.
-- The map panel stays dark in light and dark mode, matching the 3D scene.
-- Ratings are not faked: the rating row appears only when `/api/rooms` returns `rating`.
-- Times from the API are campus time without a zone; the UI reads them as the browser's local time.
+**What the redesign changes** (all in `web/`, plus the map proposal in `web/map3d/building3d.js`)
+- Name and logo: "Campus Booking System", a black monogram tile `cb.` (no mascot).
+- Palette (chosen by Martha, THEME block at the top of `css/style.css`): `--bg #f3f5f8`, `--surface #f9fbff`,
+  `--surface-2 #eef1f5`, `--border #e1e5ec`, `--text #2a2420`, `--muted #6d685d`, `--brand`/`--accent #2f5be0`;
+  status `--free #23865a`, `--shared #c98512`, `--full #b42318`, `--ghost #8b5cf6`, `--closed #94a3b8`;
+  `--star #c98512`. No gradients; crisp corners from three tokens only (3, 4, 6 px; only status dots are round).
+- One font everywhere: Instrument Sans (bold for headings, tabular numbers for times).
+- Our own line icons (SVG sprite in `index.html`) instead of every emoji.
+- Roomie, the assistant: a small `r.` tile bottom right that opens a compact panel (no section on the page).
+- Rooms that can't be booked (55+ seats) open a small info card on the map, not the booking panel.
+- Filter on the room cards: All / Seminar rooms / Lecture halls (from the room's name or label).
+- Ratings fold away: shown on card hover and in a collapsed "Ratings" box in the booking panel.
+- Profile menu: the colour-theme picker is gone (light/dark/auto and language stay).
 
 **Requests**
-- -> gleb-claude (backend changes the UI is ready for):
-  1. **Ratings:** store 1–5 stars per user and room; return `rating` (average) and `votes` in `/api/rooms`;
-     `POST /api/rooms/{id}/rating {stars}`, allowed only after the user had a booking in that room.
-  2. **All rooms for one range in one call:** `GET /api/rooms?date=&start=&hours=` with `status`, `people`,
-     `seats_free` and expected `noise_class` for that range. Today the picker makes 12 `/availability` calls.
-  3. **Free hours per day:** `free_hours` per room for a `date`, for the picker's "any time" view.
-  4. **No-cache headers** for `web/` (e.g. `Cache-Control: no-cache` on the static mount), so teammates don't run
-     stale JS after a pull.
-  5. **One room list:** the backend reads `web/data/building_v.json`, the map reads `web/map3d/campus.json`. Ids,
-     names and capacities should come from one source.
-  6. Please add `web/js/api.js`, `web/js/plan2d.js` and `web/js/picker.js` to claude-3's files in PLAN.md.
-- -> tom-claude (3D map, PR #13):
-  1. The mouse wheel over the map zooms it, so the page can't be scrolled past it. Please zoom only with Ctrl +
-     wheel or after a click into the map (an option in `createBuilding`).
-  2. An option for the scene colours (status colours, label colour), so the map can follow the site's theme.
+- -> tom-claude (map): please look at the separate commit "Map proposal for Tom" on `claude-3/redesign` and take
+  it or redo it your way. The goal is that the map matches the site:
+  1. **Centred:** the camera fits the campus to the canvas using the field of view and aspect, so it is whole and
+     centred at any size, and re-frames on resize until the user moves the map (the old fixed formula cut the
+     campus off in wide, short boxes).
+  2. **Colours:** light blue-grey scene (`#eef2f8` → `#e2e8f1` panel), light cool room greys, statuses in the site
+     colours above, hover in `#2f5be0`, and the built-in building/floor selector light with a blue active button.
+  3. Still open from before: the mouse wheel over the map zooms it, so the page can't scroll past it (Ctrl + wheel
+     or click-to-zoom would fix it).
+- -> gleb-claude: no backend changes needed; please don't merge until Tom has looked at the map part.
 ---
 
 ## gemini (Data, simulation, demo)

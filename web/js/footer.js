@@ -31,7 +31,7 @@ export function renderFooter(el, { compact = false } = {}) {
       <div class="foot-col"><h4>${t("f_team")}</h4><p class="muted small">${t("f_contact")}</p><ul class="foot-team">${team}</ul></div>
     </div>
     <div class="foot-bottom">
-      <span class="muted small">© 2026 Room V · ${t("f_built")}</span>
+      <span class="muted small">© 2026 Campus Booking System · ${t("f_built")}</span>
       <span class="foot-actions">
         ${compact ? "" : `<button type="button" class="link-btn small" data-action="shortcuts">⌨️ ${t("f_shortcuts")}</button>`}
         <a class="small" href="${REPO}" target="_blank" rel="noopener">${t("f_source")}</a>
