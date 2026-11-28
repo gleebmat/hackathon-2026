@@ -930,20 +930,18 @@ h1, h2, h3, .brand-name, .picker-title, .sheet-title h2, .pick-id, .map-info-id,
 .map-card { border: 1px solid var(--border); }
 .map-legend { background: color-mix(in srgb, var(--surface) 92%, transparent); color: var(--muted); border: 1px solid var(--border); }
 
-/* Blue accents: the map and the calendar/cards block get a blue frame only while you use them */
+/* Blue accents: the map gets a soft blue frame only while you use it */
 .map-card { border: 2px solid var(--border); transition: border-color .25s var(--ease), box-shadow .25s var(--ease); }
-.map-card:hover, .map-card:focus-within { border-color: var(--accent); }
+.map-card:hover, .map-card:focus-within { border-color: color-mix(in srgb, var(--accent) 40%, var(--border)); }
 .picker {
   padding: 22px 22px 26px; border-radius: var(--radius-lg);
   background: color-mix(in srgb, var(--accent) 7%, transparent);
-  border: 2px solid transparent; transition: border-color .25s var(--ease);
 }
-.picker:hover, .picker:focus-within { border-color: var(--accent); }
 
 /* Soft glow on the page background that follows the cursor (behind everything) */
 .cursor-glow {
   position: fixed; inset: 0; z-index: -1; pointer-events: none; opacity: 0; transition: opacity .4s var(--ease);
-  background: radial-gradient(360px circle at var(--gx, 50%) var(--gy, 30%), color-mix(in srgb, var(--accent) 18%, transparent), transparent 70%);
+  background: radial-gradient(200px circle at var(--gx, 50%) var(--gy, 30%), color-mix(in srgb, var(--accent) 16%, transparent), transparent 70%);
 }
 .cursor-glow.on { opacity: 1; }
 @media (hover: none), (prefers-reduced-motion: reduce) { .cursor-glow { display: none; } }

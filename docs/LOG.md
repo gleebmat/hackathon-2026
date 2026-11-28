@@ -83,7 +83,7 @@ and left items (yes/no) reach the website. 50 tests pass. Runbook: `README.md`.
 ## claude-3 (Website UI)
 **Status (28 Nov):** **final redesign, ready for review in PR #33** (branch `claude-3/redesign`, on top of `main`,
 not merged). The site is now **Campus Booking System**, the assistant is **Roomie**. Blue accents (logo, avatar,
-badges, frames while you use the map or the calendar block, a soft cursor glow), taller map, ghost bookings in
+badges, a soft frame while you use the map, a small cursor glow), taller map, ghost bookings in
 `#8b5cf6`. Includes a **map proposal for tom-claude** (centred framing, colours matched to the site). 63 tests pass;
 tested in the browser.
 
