@@ -81,28 +81,15 @@ not work on arduino-esp32 3.x) and `PubSubClient`. The sketch publishes one read
 | Presence | Arshia's 96x96 RGB int8 model on the board, present at once at 0.70+, else 2 of the last 3 frames at 0.60+ | in view 0.70-0.98, empty mostly 0.1-0.5; ~0.95 s per frame; 101 KB arena |
 | Noise | PDM mic RMS mapped to ~30-90 dB | 30-62 dB with the real mic (72 dB = Velxio's test tone when Mic is off) |
 | Ghost booking | presence -> backend ghost timer | marked after 5 s, released after 15 s with the demo timers |
-| Left items | see below | 0 when nothing was left; >0 for an object placed inside the view; the UI shows yes/no |
-| People count | Swift-YOLO Nano (Seeed SSCMA zoo, 192x192, 186 M MACs) on core 0 while someone is present; `people` = max(count, 1) when present | counts correctly on test photos and the webcam; ~45 s per count in Velxio (2.6 s on a real board); presence slows to ~2 s/frame meanwhile. Switch: `COUNT_PEOPLE` |
+| Left items | Swift-YOLO COCO 320 detector (189 M MACs, 80 classes) on core 0 after people leave; counts bags, umbrellas, phones, bottles, cups, laptops, books | left = items now minus items before people came; ~70 s per check in Velxio (0.2 s on a real board). Switch: `FIND_ITEMS` |
+| People count | Swift-YOLO face detector 96x96 (22 M MACs) on core 0 while someone is present; `people` = max(faces, 1) | a few seconds per count in Velxio; needs faces towards the camera. Switch: `COUNT_PEOPLE` |
 
-**Left items (on the board).** The board keeps a snapshot of the empty room: whenever nobody has been seen since the
-last snapshot and the view is empty (person score < 0.45) and still for 3 checks, it refreshes it, so the snapshot
-is always the room just before people came. After people leave it compares each frame with the snapshot on a 24x24
-grid of 4x4-pixel cells: the camera offset (up to 3 px) is found and compensated, a cell counts as changed when its
-contrast to its neighbours moved by more than 14 or its brightness (minus the global exposure shift) by more than
-45, and it must stay changed for 3 checks in a row. Changed cells are grown by one cell and merged into blobs;
-blobs of 3+ cells count as items unless they touch the left, right or top edge (a person walking out or half in
-view). More than 30% changed means the view or the light changed: new snapshot. After 5 clean checks the room counts
-as clean again. Placement tips for demos: `README.md`.
+**Left items (on the board).** No photo comparison any more (that version is the git tag `board-v1`). The COCO
+detector counts forgettable objects while the room is empty; the count before people came is the baseline, and after
+they leave every extra object is a left item. Details, placement tips and the model comparison: `README.md`.
 
-**Models considered for the count (28 Nov):** current 96x96 VWW model = yes/no only (7.5 M MACs, ~1 s in Velxio);
-Swift-YOLO (non-nano, 89 M MACs) = faster but found only 2 of 4 people on a test photo; **Swift-YOLO Nano** = accurate
-(4/4, 2/2), chosen; Espressif's ESP-DL pedestrian detector = fastest on real hardware (~113 ms) but needs the
-ESP32-S3 vector instructions and ESP-IDF components that Velxio's Arduino build may not support (untested);
-Arshia's EfficientDet-Lite2 = names objects but too big (7.6 MB). Left items have no affordable on-board object
-detector, so they stay a change detector.
-
-**Next steps (board owner):** test on a physical XIAO ESP32S3 Sense with your own WiFi SSID (counts take ~2.6 s
-there); try ESP-DL pedestrian detection on the real board.
+**Next steps (board owner):** test on a physical XIAO ESP32S3 Sense with your own WiFi SSID (detectors are ~10-20x faster
+there); a trained FOMO model for faster item checks.
 
 **Demo notes**
 - In Velxio: click **Camera** and **Mic** under the board (allow them in Chrome), then Run. Use the team project
