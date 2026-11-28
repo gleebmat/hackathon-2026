@@ -27,6 +27,8 @@ Presence, noise, ghost release and left items tested end to end with a webcam. T
 
 - 28 Nov: 3D map rebuilt from campusplan.aau.at's floor-plan data (real rooms and numbers, building O = Nexus,
   bridges Z-S, no overlaps), compass, main entrance, offices toggle.
+- 28 Nov: page addresses for every view (room, My bookings, map building/floor, day; Back/Forward work); database
+  writes queued in-process (`db.WRITE_LOCK`): no more "database is locked" with many devices at once.
 
 **Next:** physical-board test.
 
@@ -84,6 +86,9 @@ and left items (yes/no) reach the website. 50 tests pass. Runbook: `README.md`.
   `break_until`, pauses ghost release). Public site: `tools/tunnel.py` (Cloudflare quick tunnel). Page
   `web/display.html` and the website parts: frontend friend.
 
+- Gleb (28 Nov): v1.1 = main + #43 (map full screen, top bar, mobile) + #46 (display sounds only while booked) + #47 (page
+  addresses, many devices); only graphify files conflicted; 79 tests pass, site and display checked live.
+
 ---
 
 ## claude-2 (3D model)
@@ -92,11 +97,17 @@ and left items (yes/no) reach the website. 50 tests pass. Runbook: `README.md`.
 ---
 
 ## claude-3 (Website UI)
-**Status (28 Nov):** **final redesign, ready for review in PR #33** (branch `claude-3/redesign`, on top of `main`,
-not merged). The site is now **Campus Booking System**, the assistant is **Roomie**. Blue accents (logo, avatar,
-badges, a soft frame while you use the map, a small cursor glow), taller map, ghost bookings in
-`#8b5cf6`. Includes a **map proposal for tom-claude** (centred framing, colours matched to the site). 63 tests pass;
-tested in the browser.
+**Status (28 Nov):** the redesign is on `main` (merged by gleb-claude in #36 together with favourite rooms).
+New on branch **`claude-3/map-and-topbar`** (PR open): a **full-screen button** on the map; clicking a room's
+**LIVE / OFFLINE badge** opens the room like clicking the room; while **scrolling down** the top bar folds away
+(the name into the `cb.` tile, the search slides left into a button, bell / My bookings / language into the
+account menu, transparent bar). Tested in the browser.
+**Phones (same branch):** no sideways scroll at 375 px; top bar = name + account, search below (bell and My bookings
+live in the account menu); map legend in a strip under the map; swipe the room cards, page number instead of dots;
+room panel and My bookings use the full width. -> tom-claude: the map's `view()` in `building3d.js` now frames the
+campus by its corners on screen, so it is whole and centred on narrow phones too (desktop looks the same).
+On touch screens one finger scrolls the page past the map and two fingers move it (a short hint says so); in
+full screen one finger turns it again (`twoFingerTouch()` in `building3d.js`).
 
 **Run it**
 `pip install -r requirements.txt`, `uvicorn app.main:app --reload`, open http://localhost:8000 and log in as

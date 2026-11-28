@@ -113,6 +113,16 @@ async function refreshRooms() {
 
 // The 3D campus map (web/map3d/, tom-claude) when it is there, otherwise the 2D floor plan.
 async function createView() {
+  applyingRoute = true;   // the map's start-up selection must not overwrite the address it is about to apply
+  try {
+    await buildView();
+    applyMapRoute();      // ?building= / ?floor= from the address
+  } finally {
+    applyingRoute = false;
+  }
+}
+
+async function buildView() {
   const el = $("building");
   try {
     const [{ createBuilding }, campus] = await Promise.all([
@@ -123,8 +133,13 @@ async function createView() {
       all: t("map_all"), allBuildings: t("map_all_buildings"), allFloors: t("map_all_floors"),
       everyFloor: t("map_every_floor"), floor: t("map_floor"), floorTitle: t("map_floor_title"),
       entrance: t("map_entrance"), compass: t("map_compass").split(","), compassTitle: t("map_compass_title"),
-      offices: t("map_offices"), officesTitle: t("map_offices_title") } });
+      offices: t("map_offices"), officesTitle: t("map_offices_title") },
+      onSelect: ({ building, floor }) => {
+        if (routeParams().has("room")) return;   // focusing a room moves the map itself: not a choice to keep
+        setRoute({ building, floor: floor === null ? "all" : floor === 1 ? null : floor });
+      } });
     el.classList.add("is-3d");
+    syncMapTouch();
   } catch {
     state.view = createPlan(el, (await api.building()) || layoutBuilding(state.rooms));
   }
@@ -186,6 +201,7 @@ async function refreshMine() {
     void count.offsetWidth;
     count.classList.add("bump");
   }
+  syncTopCounts();
   if ($("mine-drawer").open && json !== mineJson) renderMine();
   mineJson = json;
 }
@@ -265,6 +281,7 @@ function renderMine() {
 }
 
 function openDrawer() {
+  setRoute({ view: "bookings" }, { push: true });
   renderMine();
   $("mine-drawer").showModal();
   refreshMine();
@@ -306,7 +323,7 @@ function newSheet(id, opts = {}) {
 
 // Rooms that can't be booked (55+ seats) get a small card on the map, not the booking panel.
 function showRoomInfo(r) {
-  closeSheet();
+  closeSheet({ route: false });
   state.view?.focusRoom(r.id);
   const card = document.querySelector(".map-card");
   let box = card.querySelector(".map-info");
@@ -317,6 +334,7 @@ function showRoomInfo(r) {
     box.addEventListener("click", (e) => {
       if (!e.target.closest(".map-info-x")) return;
       box.classList.remove("on");
+      leaveRoute("room");
       state.view?.showAll();
     });
   }
@@ -333,10 +351,101 @@ function hideRoomInfo() {
   document.querySelector(".map-info")?.classList.remove("on");
 }
 
+// ---------- Top bar while scrolling ----------
+// Scrolled down: the name folds into the cb. tile, the search folds to the left into a button, the bell, My bookings
+// and the language switch tuck into the account, and the bar turns transparent (CSS: body.scrolled).
+
+function wireTopbarScroll() {
+  const bar = document.querySelector(".topbar");
+  const input = $("search-input");
+  let frame = 0;
+  const update = () => {
+    frame = 0;
+    const on = window.scrollY > 60;
+    if (on === document.body.classList.contains("scrolled")) return;
+    document.body.classList.toggle("scrolled", on);
+    if (!on) bar.classList.remove("search-open");
+  };
+  addEventListener("scroll", () => { if (!frame) frame = requestAnimationFrame(update); }, { passive: true });
+  input.addEventListener("focus", () => bar.classList.add("search-open"));
+  input.addEventListener("blur", () => { if (!input.value.trim()) bar.classList.remove("search-open"); });
+  update();
+}
+
+// ---------- Map full screen ----------
+// The browser's own full screen when it has one; otherwise the map card covers the window (CSS .is-full).
+
+const mapCard = () => document.querySelector(".map-card");
+const mapIsFull = () => document.fullscreenElement === mapCard() || mapCard().classList.contains("is-full");
+
+function syncMapFull() {
+  const on = mapIsFull();
+  mapCard().classList.toggle("is-full", on);
+  const btn = $("map-full");
+  btn.querySelector("use").setAttribute("href", on ? "#ic-collapse" : "#ic-expand");
+  btn.title = t(on ? "map_full_exit" : "map_full");
+  btn.setAttribute("aria-label", btn.title);
+  btn.setAttribute("aria-pressed", String(on));
+  syncMapTouch();
+}
+
+// Touch screens: on the page one finger scrolls past the map and two fingers move it; in full screen one finger is enough.
+const coarse = matchMedia("(pointer: coarse)");
+const twoFingers = () => coarse.matches && !mapIsFull();
+function syncMapTouch() {
+  state.view?.twoFingerTouch?.(twoFingers());
+}
+
+function wireMapTouch() {
+  const el = $("building");
+  let hint = null, timer = 0, start = null;
+  el.addEventListener("touchstart", (e) => { start = e.touches.length === 1 ? e.touches[0].clientY : null; }, { passive: true });
+  el.addEventListener("touchmove", (e) => {
+    if (!twoFingers() || e.touches.length !== 1 || start === null || Math.abs(e.touches[0].clientY - start) < 12) return;
+    if (!hint) {
+      hint = document.createElement("div");
+      hint.className = "map-hint";
+      mapCard().append(hint);
+    }
+    hint.textContent = t("map_two_fingers");
+    hint.classList.add("on");
+    clearTimeout(timer);
+    timer = setTimeout(() => hint.classList.remove("on"), 1400);
+  }, { passive: true });
+  el.addEventListener("touchstart", (e) => { if (e.touches.length > 1) hint?.classList.remove("on"); }, { passive: true });
+  coarse.addEventListener("change", syncMapTouch);
+}
+
+async function setMapFull(on) {
+  const card = mapCard();
+  if (on && !mapIsFull()) {
+    // Some embedded browsers leave the request pending: after 0.5 s fall back to covering the window.
+    const ok = await Promise.race([
+      card.requestFullscreen().then(() => true, () => false),
+      new Promise((done) => setTimeout(() => done(false), 500)),
+    ]);
+    if (!ok && document.fullscreenElement !== card) card.classList.add("is-full");
+  } else if (!on && mapIsFull()) {
+    if (document.fullscreenElement) await document.exitFullscreen().catch(() => {});
+    card.classList.remove("is-full");
+  }
+  syncMapFull();
+}
+
+function wireMapFull() {
+  $("map-full").addEventListener("click", () => setMapFull(!mapIsFull()));
+  document.addEventListener("fullscreenchange", syncMapFull);
+  document.addEventListener("keydown", (e) => {   // Esc for the fallback mode (the browser handles its own)
+    if (e.key === "Escape" && mapCard().classList.contains("is-full") && !document.fullscreenElement) setMapFull(false);
+  });
+}
+
 async function openRoom(id, opts) {
   closeSuggestions();
+  setRoute({ room: id, view: null }, { push: !opts?.replaceRoute });
   const known = state.rooms.find((r) => r.id === id);
   if (known && known.bookable === false) return showRoomInfo(known);
+  if (mapIsFull()) await setMapFull(false);   // the booking panel sits under the map
   hideRoomInfo();
   state.view?.focusRoom(id);
   state.sheet = newSheet(id, opts);
@@ -399,15 +508,22 @@ async function loadSheetData() {
   if (!$("sh-form")?.contains(document.activeElement) || document.activeElement?.tagName !== "INPUT") renderForm();
 }
 
-function closeSheet() {
+function closeSheet({ route = true } = {}) {
   const dlg = $("room-dialog");
   if (dlg.hidden || dlg.classList.contains("closing")) return;
+  if (route) leaveRoute("room");
   dlg.classList.add("closing");
   setTimeout(() => {
     dlg.classList.remove("closing");
     dlg.hidden = true;
     state.sheet = null;
-    state.view?.showAll();
+    applyingRoute = true;   // the map goes back to the building/floor in the address, without rewriting it
+    try {
+      state.view?.showAll();
+      applyMapRoute();
+    } finally {
+      applyingRoute = false;
+    }
   }, 220);
 }
 
@@ -904,6 +1020,8 @@ function wireMenu() {
   const avatar = $("avatar");
   const toggle = (open) => { menu.classList.toggle("hidden", !open); avatar.setAttribute("aria-expanded", String(open)); };
   avatar.addEventListener("click", (e) => { e.stopPropagation(); toggle(menu.classList.contains("hidden")); });
+  $("menu-mine").addEventListener("click", () => { toggle(false); openDrawer(); });
+  $("menu-notes").addEventListener("click", (e) => { e.stopPropagation(); toggle(false); openNotes(); });
   document.addEventListener("click", (e) => { if (!menu.contains(e.target)) toggle(false); });
   $("modes").addEventListener("click", (e) => {
     const b = e.target.closest("[data-mode]");
@@ -920,13 +1038,17 @@ function wireMenu() {
 
 // ---------- Start ----------
 
+function closeDrawer({ route = true } = {}) {
+  const drawer = $("mine-drawer");
+  if (!drawer.open || drawer.classList.contains("closing")) return;
+  if (route) leaveRoute("view");
+  drawer.classList.add("closing");
+  setTimeout(() => { drawer.classList.remove("closing"); drawer.close(); }, 200);
+}
+
 function wirePage() {
   $("mine-btn").addEventListener("click", openDrawer);
   const drawer = $("mine-drawer");
-  const closeDrawer = () => {
-    drawer.classList.add("closing");
-    setTimeout(() => { drawer.classList.remove("closing"); drawer.close(); }, 200);
-  };
   drawer.addEventListener("cancel", (e) => { e.preventDefault(); closeDrawer(); });
   drawer.addEventListener("click", (e) => {
     if (e.target === drawer || e.target.closest("[data-close]")) return closeDrawer();
@@ -935,15 +1057,78 @@ function wirePage() {
     if (t.dataset.action === "cancel") return cancelBooking(t);
     if (t.dataset.action === "rate") return rateRoom(t);
     if (t.dataset.action === "fav") return toggleFavorite(t);
-    if (t.dataset.action === "open-fav") { closeDrawer(); return openRoom(t.dataset.room); }
+    if (t.dataset.action === "open-fav") { closeDrawer({ route: false }); return openRoom(t.dataset.room, { replaceRoute: true }); }
     if (t.dataset.action === "find") { closeDrawer(); setTimeout(() => $("search-input").focus(), 220); return; }
     if (t.dataset.action === "ics") return downloadIcs(state.mine.find((x) => x.id === Number(t.dataset.id)));
     if (t.dataset.action === "add") {
       const b = state.mine.find((x) => x.id === Number(t.dataset.id));
-      closeDrawer();
-      openRoom(b.room_id, { date: b.start.slice(0, 10), time: hm(b.end), hours: 1, mode: b.mode, seats: b.seats, purpose: b.purpose, custom: b.custom_purpose || "" });
+      closeDrawer({ route: false });
+      openRoom(b.room_id, { date: b.start.slice(0, 10), time: hm(b.end), hours: 1, mode: b.mode, seats: b.seats,
+        purpose: b.purpose, custom: b.custom_purpose || "", replaceRoute: true });
     }
   });
+}
+
+// ---------- Page addresses ----------
+// Every view has its own address, so reloads, shared links and the browser's back button land on the same view:
+//   ?room=Z.1.04  a room        ?view=bookings  My bookings
+//   ?building=Z   map building  ?floor=2 | all  map floor (default 1)   ?date=2026-12-01  calendar day (default today)
+// Opening a room or My bookings adds a history step (Back closes it); map and day changes only update the address.
+let applyingRoute = false;
+const routeParams = () => new URLSearchParams(location.search);
+
+function setRoute(changes, { push = false } = {}) {
+  if (applyingRoute) return;
+  const p = routeParams();
+  for (const [k, v] of Object.entries(changes)) {
+    if (v === null || v === undefined || v === "") p.delete(k);
+    else p.set(k, v);
+  }
+  const qs = p.toString(), url = `${location.pathname}${qs ? `?${qs}` : ""}`;
+  if (url === `${location.pathname}${location.search}`) return;
+  if (push) history.pushState({ pushed: true }, "", url);
+  else history.replaceState(history.state, "", url);
+}
+
+// A view closed by its own button: step back if we opened it (so Back doesn't reopen it), else drop it from the address.
+function leaveRoute(key) {
+  if (applyingRoute || !routeParams().has(key)) return;
+  if (history.state?.pushed) history.back();
+  else setRoute({ [key]: null });
+}
+
+function applyMapRoute() {
+  const p = routeParams(), view = state.view;
+  if (!view?.setBuilding) return;
+  const b = p.get("building");
+  if (b && view.buildings?.().some((x) => x.id === b)) view.setBuilding(b);
+  else if (!b) view.setBuilding(null);
+  const f = p.get("floor");
+  if (f === "all") view.setFloor(null);
+  else if (f !== null && /^\d+$/.test(f)) view.setFloor(Number(f));
+}
+
+function applyRoute() {
+  applyingRoute = true;
+  try {
+    const p = routeParams();
+    const date = p.get("date");
+    if (!date || !state.picker.setDate(date)) state.picker.setDate(dateKey(new Date()));
+    const room = p.get("room");
+    if (room && state.rooms.some((r) => r.id === room)) {
+      if (state.sheet?.roomId !== room) openRoom(room);
+    } else {
+      const sheetOpen = Boolean(state.sheet);   // a closing sheet restores the map from the address itself
+      if (sheetOpen) closeSheet({ route: false });
+      if (document.querySelector(".map-info.on")) { hideRoomInfo(); state.view?.showAll(); }
+      if (!sheetOpen) applyMapRoute();
+    }
+    const drawer = $("mine-drawer");
+    if (p.get("view") === "bookings") { if (!drawer.open) openDrawer(); }
+    else if (drawer.open) closeDrawer({ route: false });
+  } finally {
+    applyingRoute = false;
+  }
 }
 
 // ---------- Share link, calendar file, shortcuts ----------
@@ -1097,7 +1282,21 @@ function renderNotes() {
         <span class="note-icon">${ic(NOTE_ICON[n.kind] ?? "bell")}</span>
         <span><span class="note-text">${esc(t(n.msg, n.vars))}</span><span class="muted small">${esc(agoText(n.at))}</span></span></li>`).join("")
     : `<li class="note-empty muted small">${t("notes_empty")}</li>`;
+  syncTopCounts();
 }
+
+// While the page is scrolled the bell and My bookings hide in the account menu: mirror their counts there.
+function syncTopCounts() {
+  const mine = $("mine-count")?.textContent || "0";
+  const unread = state.notes.filter((n) => !n.read).length;
+  $("menu-mine-count").textContent = mine;
+  $("menu-notes-count").textContent = unread;
+  $("menu-notes-count").classList.toggle("hidden", !unread);
+  $("avatar-count").textContent = unread;
+  $("avatar-count").classList.toggle("hidden", !unread);
+}
+
+let openNotes = () => {};
 
 const NOTE_ICON = { soon: "clock", ending: "hourglass", over: "done", ghost: "ghost", released: "ban", loud: "sound", left: "bag",
   booked: "check", cancelled: "trash" };
@@ -1119,6 +1318,7 @@ function wireNotes() {
   const panel = $("notes-panel");
   const btn = $("notes-btn");
   const toggle = (open) => { panel.classList.toggle("hidden", !open); btn.setAttribute("aria-expanded", String(open)); };
+  openNotes = () => { toggle(true); renderNotes(); };
   btn.addEventListener("click", (e) => { e.stopPropagation(); toggle(panel.classList.contains("hidden")); renderNotes(); });
   document.addEventListener("click", (e) => { if (!panel.contains(e.target) && e.target !== btn) toggle(false); });
   $("notes-read").addEventListener("click", () => { for (const n of state.notes) n.read = true; saveNotes(); renderNotes(); });
@@ -1200,6 +1400,9 @@ async function main() {
   $("user-email").textContent = state.user.email;
   wireMenu();
   wireCursorGlow();
+  wireMapFull();
+  wireMapTouch();
+  wireTopbarScroll();
   wireSearch();
   wireSheet();
   wirePage();
@@ -1208,12 +1411,13 @@ async function main() {
   state.picker = createPicker($("picker"), {
     onOpen: (id, opts) => openRoom(id, opts),
     onError: (err) => { if (!handleAuth(err)) toast(err.message, { error: true }); },
+    onDate: (key) => setRoute({ date: key === dateKey(new Date()) ? null : key }),
   });
   await Promise.all([refreshRooms(), refreshMine()]);
   await createView();
-  // Shared link: ?room=Z.1.04 opens that room right away.
-  const wanted = new URLSearchParams(location.search).get("room");
-  if (wanted && state.rooms.some((r) => r.id === wanted)) openRoom(wanted);
+  // The address decides what is open (a shared link, a reload); Back and Forward go through it too.
+  applyRoute();
+  addEventListener("popstate", applyRoute);
   // Refresh just the visible sensor panel between full campus polls.
   let sensorPending = false;
   setInterval(async () => {

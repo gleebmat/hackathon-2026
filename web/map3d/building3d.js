@@ -21,7 +21,8 @@ const SLAB = 0.35;
  * @param el     container element (the canvas fills it)
  * @param input  campus.json ({buildings: [...]}) or a single building
  * @param opts   {controls: true}: draws a small building / floor selector inside the container. Pass
- *               {controls: false} if the page has its own buttons (they should call setBuilding / setFloor).
+ *               {controls: false} if the page has its own buttons (they should call setBuilding / setFloor);
+ *               {onSelect({building, floor})} is called whenever the built-in selector changes (floor null = all).
  */
 export function createBuilding(el, input, opts = {}) {
   const entranceLabel = opts.labels?.entrance ?? "Main entrance";
@@ -286,16 +287,24 @@ export function createBuilding(el, input, opts = {}) {
   let lastArgs = null;   // the last box/floor framed, so a resize can frame it again
   const view = (box, floorY = null) => {
     lastArgs = [box.clone(), floorY];
-    const c = box.getCenter(new THREE.Vector3()), s = box.getSize(new THREE.Vector3());
+    const c = box.getCenter(new THREE.Vector3());
     if (floorY !== null) c.setY(floorY);
-    c.z += Math.max(s.z, 20) * 0.08;   // nearer buildings sit low on screen; shift a little so the campus looks centred
+    // Measure the box corners along the screen's right / up axes, then centre on them and step back until they fit.
+    const fwd = VIEW_DIR.clone().negate();
+    const right = new THREE.Vector3().crossVectors(fwd, camera.up).normalize();
+    const up = new THREE.Vector3().crossVectors(right, fwd);
+    const lo = new THREE.Vector3(Infinity, Infinity, Infinity), hi = lo.clone().negate();
+    for (const x of [box.min.x, box.max.x]) for (const y of [box.min.y, box.max.y]) for (const z of [box.min.z, box.max.z]) {
+      const d = new THREE.Vector3(x, y, z).sub(c);
+      const q = new THREE.Vector3(d.dot(right), d.dot(up), d.dot(fwd));
+      lo.min(q); hi.max(q);
+    }
+    c.addScaledVector(right, (lo.x + hi.x) / 2).addScaledVector(up, (lo.y + hi.y) / 2);
+    const halfW = Math.max(hi.x - lo.x, 20) / 2, halfH = Math.max(hi.y - lo.y, 14) / 2;
     const vfov = THREE.MathUtils.degToRad(camera.fov);
     const hfov = 2 * Math.atan(Math.tan(vfov / 2) * camera.aspect);
-    const halfW = Math.max(s.x, 20) / 2, halfD = Math.max(s.z, 20) / 2;
-    const tilt = Math.sqrt(1 - VIEW_DIR.y ** 2);   // how much of the height shows on screen
-    const needW = halfW / Math.tan(hfov / 2);
-    const needH = (halfD * VIEW_DIR.y + s.y * tilt * 0.5 + halfD * 0.25) / Math.tan(vfov / 2);
-    const dist = Math.max(needW, needH, 25) * 1.08;
+    // nearer corners look bigger, so step back by part of the depth in front of the centre
+    const dist = Math.max(halfW / Math.tan(hfov / 2), halfH / Math.tan(vfov / 2), 25) * 1.04 + Math.max(0, -lo.z) * 0.5;
     return { pos: c.clone().add(VIEW_DIR.clone().multiplyScalar(dist)), target: c };
   };
   const goTo = (v) => { flyTo(v.pos.clone(), v.target.clone()); touched = false; };
@@ -311,8 +320,11 @@ export function createBuilding(el, input, opts = {}) {
     const r = renderer.domElement.getBoundingClientRect();
     mouse.set(((ev.clientX - r.left) / r.width) * 2 - 1, -((ev.clientY - r.top) / r.height) * 2 + 1);
     ray.setFromCamera(mouse, camera);
-    const visible = [...rooms.values()].map((x) => x.mesh).filter((m) => m.visible && m.parent.visible);
-    const hit = ray.intersectObjects(visible, false)[0];
+    const shown = [...rooms.values()].filter((x) => x.mesh.visible && x.mesh.parent.visible);
+    // A room's badge (LIVE / OFFLINE, 55+) is drawn on top of everything, so it is checked first and counts as its room.
+    const badgeHit = ray.intersectObjects(shown.filter((x) => x.badge).map((x) => x.badge), false)[0];
+    if (badgeHit) return badgeHit.object.userData.roomId;
+    const hit = ray.intersectObjects(shown.map((x) => x.mesh), false)[0];
     return hit ? hit.object.userData.roomId : null;
   };
   renderer.domElement.addEventListener("pointerdown", (e) => (down = [e.clientX, e.clientY]));
@@ -472,6 +484,11 @@ export function createBuilding(el, input, opts = {}) {
   // floor 1 if the visible building(s) have it, else everything
   const defaultFloor = () => buildings.some((bd) => inView(bd.id) && bd.floors.includes(DEFAULT_FLOOR)) ? DEFAULT_FLOOR : null;   // true north in the model (x east, z south), from gen_campus.py
   const api = {
+    /** Touch screens: true = only two fingers move the map and one finger scrolls the page; false = one finger turns it. */
+    twoFingerTouch(on) {
+      controls.touches.ONE = on ? null : THREE.TOUCH.ROTATE;
+      renderer.domElement.style.touchAction = on ? "pan-y" : "none";
+    },
     /** Clockwise angle (radians) from the top of the screen to true north: the compass needle turns by it. */
     heading() {
       const fx = controls.target.x - camera.position.x, fz = controls.target.z - camera.position.z;
@@ -505,6 +522,7 @@ export function createBuilding(el, input, opts = {}) {
           r.badge = kind === "live" ? badge("● LIVE", "#e0483e") : kind === "locked" ? badge("🔒 55+", "#475569")
             : badge(kind === "board-live" ? "LIVE" : "OFFLINE", kind === "board-live" ? "#e0483e" : "#6b7280", true);
           r.badge.position.set(0, r.h / 2 + (kind === "live" ? 1.4 : 3.2), 0);
+          r.badge.userData.roomId = r.data.id;   // clicking the badge acts like clicking the room
           r.mesh.add(r.badge);
         }
       }
@@ -557,12 +575,12 @@ export function createBuilding(el, input, opts = {}) {
     onRoomClick(cb) { clickCb = cb; },
     onRoomHover(cb) { hoverCb = cb; },
   };
-  if (opts.controls !== false) mountControls(el, api, opts.labels);
+  if (opts.controls !== false) mountControls(el, api, opts.labels, opts.onSelect);
   return api;
 }
 
 // Built-in building / floor selector, so any page that embeds the map can switch floors without its own UI.
-function mountControls(el, api, labels = {}) {
+function mountControls(el, api, labels = {}, onSelect = null) {
   const L = { all: "All", allBuildings: "All buildings", allFloors: "All floors", everyFloor: "Show every floor",
     floor: "Floor {n}", floorTitle: "Floor {n} (floors above are hidden)", ...labels };
   if (getComputedStyle(el).position === "static") el.style.position = "relative";
@@ -639,6 +657,7 @@ function mountControls(el, api, labels = {}) {
     for (const f of floors) {
       button(fRow, L.floor.replace("{n}", f), floor === f, L.floorTitle.replace("{n}", f), () => { floor = f; api.setFloor(f); render(); });
     }
+    onSelect?.({ building, floor });   // e.g. the page keeps the selection in its address
   };
   // keep the selector in sync when the page calls the API directly
   for (const [name, after] of [["setBuilding", (id) => { building = id ?? null; floor = api.floor(); }],

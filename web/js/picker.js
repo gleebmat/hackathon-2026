@@ -28,7 +28,7 @@ function dayName(key) {
   return new Date(`${key}T12:00`).toLocaleDateString(locale, { weekday: "short", day: "numeric", month: "short" });
 }
 
-export function createPicker(root, { onOpen, onError }) {
+export function createPicker(root, { onOpen, onError, onDate }) {
   const $ = (sel) => root.querySelector(sel);
   const state = {
     date: todayKey(), start: null, hours: 1, page: 0,
@@ -161,7 +161,10 @@ export function createPicker(root, { onOpen, onError }) {
       }
       $(".prev").disabled = state.page === 0;
       $(".next").disabled = state.page >= pages - 1;
-      $(".dots").innerHTML = Array.from({ length: pages }, (_, i) => `<i class="${i === state.page ? "on" : ""}"></i>`).join("");
+      // Many pages (one card per page on phones): a page number instead of a long row of dots
+      $(".dots").innerHTML = pages > 12
+        ? `<span class="page-no">${state.page + 1} / ${pages}</span>`
+        : Array.from({ length: pages }, (_, i) => `<i class="${i === state.page ? "on" : ""}"></i>`).join("");
     };
     if (direction && cards.children.length) {
       cards.className = `picks out-${direction}`;
@@ -235,6 +238,11 @@ export function createPicker(root, { onOpen, onError }) {
     const fitted = fitTime({ date: state.date, start: state.start, hours: state.hours, ...next });
     const dateChanged = fitted.date !== state.date;
     Object.assign(state, fitted, { page: 0 });
+    if (dateChanged) {
+      state.month = new Date(`${state.date}T12:00`);   // a day picked from the address may be in another month
+      state.month.setDate(1);
+      onDate?.(state.date);
+    }
     drawCalendar();
     if (dateChanged) render();
     if (dateChanged || state.loadedFor !== state.date) {
@@ -268,6 +276,17 @@ export function createPicker(root, { onOpen, onError }) {
   });
   $(".prev").addEventListener("click", () => { state.page--; render("right"); });
   $(".next").addEventListener("click", () => { state.page++; render("left"); });
+  // Swipe the cards left / right on touch screens
+  let swipe = null;
+  $(".picks").addEventListener("touchstart", (e) => { swipe = { x: e.touches[0].clientX, y: e.touches[0].clientY }; }, { passive: true });
+  $(".picks").addEventListener("touchend", (e) => {
+    if (!swipe) return;
+    const dx = e.changedTouches[0].clientX - swipe.x, dy = e.changedTouches[0].clientY - swipe.y;
+    swipe = null;
+    if (Math.abs(dx) < 50 || Math.abs(dx) < Math.abs(dy) * 1.5) return;
+    const arrow = $(dx < 0 ? ".next" : ".prev");
+    if (!arrow.disabled) arrow.click();
+  });
   $(".picks").addEventListener("click", (e) => {
     const card = e.target.closest(".pick");
     if (!card) return;
@@ -307,6 +326,17 @@ export function createPicker(root, { onOpen, onError }) {
         }
       }
       render();
+    },
+    /** Picks a day (YYYY-MM-DD, today .. HORIZON_DAYS ahead), e.g. from the page address. False if not allowed. */
+    setDate(key) {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(key ?? "")) return false;
+      const day = new Date(`${key}T00:00`), today = new Date(), last = new Date();
+      today.setHours(0, 0, 0, 0);
+      last.setHours(0, 0, 0, 0);
+      last.setDate(last.getDate() + HORIZON_DAYS);
+      if (Number.isNaN(day.getTime()) || day < today || day > last) return false;
+      if (key !== state.date) choose({ date: key }, key > state.date ? "left" : "right");
+      return true;
     },
     /** Reload slots (after a booking or cancel) and redraw. */
     async refresh() {

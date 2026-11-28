@@ -25,7 +25,10 @@ API docs: http://localhost:8000/docs. The map alone: http://localhost:8000/map3d
 - **Website:** English and German (switch top right, in the profile menu, the footer, or press `L`; strings live in
   `web/js/i18n.js`, backend errors and room types are translated there too). Footer with AAU links (website,
   CAMPUSonline, Moodle, campus map, IT Service Desk), how booking works and the team's contacts (`web/js/footer.js`).
-  Rooms can be shared as links (`/?room=Z.1.04`, "Copy link" in the room panel), bookings exported to a calendar
+  **Every view has its own address**, so reloads, shared links and the browser's Back/Forward buttons land on the
+  same view: `?room=Z.1.04` (a room), `?view=bookings` (My bookings), `?building=Z&floor=2` (map; `floor=all`),
+  `?date=2026-12-01` (calendar day); they combine. Back closes a room or My bookings; logging in keeps the address.
+  Rooms can be shared as links ("Copy link" in the room panel), bookings exported to a calendar
   (`.ics`, "Calendar" in My bookings), and `?` shows the keyboard shortcuts. Login photo: carinthia.com
   (`web/img/login.jpg`).
 - **3D map = the real campus plan:** buildings V, N, Z, L (library), S and O (Nexus) are built from
@@ -64,6 +67,9 @@ API docs: http://localhost:8000/docs. The map alone: http://localhost:8000/map3d
 - **Public website:** `python tools/tunnel.py` (backend running) prints a public `https://...trycloudflare.com`
   address for phones and the jury; the display's QR codes use it. New address on every start. Needs `cloudflared`
   (`winget install --id Cloudflare.cloudflared`). Anyone with the link can use the site and the demo accounts.
+  Several devices at once are fine: each has its own login, and a booking on one shows on the others within a
+  second. Database writes queue in the backend (`db.WRITE_LOCK`): with 10 devices polling, answers took 50 ms
+  (max 0.2 s); with 30 at once about 0.2 s (max 0.5 s), no errors; when many grab the same slot, exactly one wins.
 - **Port:** any free port works (`uvicorn app.main:app --port 8011` is fine too). The board doesn't talk to the
   port: it publishes to an MQTT broker and the backend subscribes, so only the browser URL changes.
 - **Database:** a local SQLite file (`campus.db`, or `DB_PATH`), gitignored. Accounts, sessions, bookings and
