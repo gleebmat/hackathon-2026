@@ -286,16 +286,24 @@ export function createBuilding(el, input, opts = {}) {
   let lastArgs = null;   // the last box/floor framed, so a resize can frame it again
   const view = (box, floorY = null) => {
     lastArgs = [box.clone(), floorY];
-    const c = box.getCenter(new THREE.Vector3()), s = box.getSize(new THREE.Vector3());
+    const c = box.getCenter(new THREE.Vector3());
     if (floorY !== null) c.setY(floorY);
-    c.z += Math.max(s.z, 20) * 0.08;   // nearer buildings sit low on screen; shift a little so the campus looks centred
+    // Measure the box corners along the screen's right / up axes, then centre on them and step back until they fit.
+    const fwd = VIEW_DIR.clone().negate();
+    const right = new THREE.Vector3().crossVectors(fwd, camera.up).normalize();
+    const up = new THREE.Vector3().crossVectors(right, fwd);
+    const lo = new THREE.Vector3(Infinity, Infinity, Infinity), hi = lo.clone().negate();
+    for (const x of [box.min.x, box.max.x]) for (const y of [box.min.y, box.max.y]) for (const z of [box.min.z, box.max.z]) {
+      const d = new THREE.Vector3(x, y, z).sub(c);
+      const q = new THREE.Vector3(d.dot(right), d.dot(up), d.dot(fwd));
+      lo.min(q); hi.max(q);
+    }
+    c.addScaledVector(right, (lo.x + hi.x) / 2).addScaledVector(up, (lo.y + hi.y) / 2);
+    const halfW = Math.max(hi.x - lo.x, 20) / 2, halfH = Math.max(hi.y - lo.y, 14) / 2;
     const vfov = THREE.MathUtils.degToRad(camera.fov);
     const hfov = 2 * Math.atan(Math.tan(vfov / 2) * camera.aspect);
-    const halfW = Math.max(s.x, 20) / 2, halfD = Math.max(s.z, 20) / 2;
-    const tilt = Math.sqrt(1 - VIEW_DIR.y ** 2);   // how much of the height shows on screen
-    const needW = halfW / Math.tan(hfov / 2);
-    const needH = (halfD * VIEW_DIR.y + s.y * tilt * 0.5 + halfD * 0.25) / Math.tan(vfov / 2);
-    const dist = Math.max(needW, needH, 25) * 1.08;
+    // nearer corners look bigger, so step back by part of the depth in front of the centre
+    const dist = Math.max(halfW / Math.tan(hfov / 2), halfH / Math.tan(vfov / 2), 25) * 1.04 + Math.max(0, -lo.z) * 0.5;
     return { pos: c.clone().add(VIEW_DIR.clone().multiplyScalar(dist)), target: c };
   };
   const goTo = (v) => { flyTo(v.pos.clone(), v.target.clone()); touched = false; };
@@ -475,6 +483,11 @@ export function createBuilding(el, input, opts = {}) {
   // floor 1 if the visible building(s) have it, else everything
   const defaultFloor = () => buildings.some((bd) => inView(bd.id) && bd.floors.includes(DEFAULT_FLOOR)) ? DEFAULT_FLOOR : null;   // true north in the model (x east, z south), from gen_campus.py
   const api = {
+    /** Touch screens: true = only two fingers move the map and one finger scrolls the page; false = one finger turns it. */
+    twoFingerTouch(on) {
+      controls.touches.ONE = on ? null : THREE.TOUCH.ROTATE;
+      renderer.domElement.style.touchAction = on ? "pan-y" : "none";
+    },
     /** Clockwise angle (radians) from the top of the screen to true north: the compass needle turns by it. */
     heading() {
       const fx = controls.target.x - camera.position.x, fz = controls.target.z - camera.position.z;

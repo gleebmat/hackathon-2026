@@ -125,6 +125,7 @@ async function createView() {
       entrance: t("map_entrance"), compass: t("map_compass").split(","), compassTitle: t("map_compass_title"),
       offices: t("map_offices"), officesTitle: t("map_offices_title") } });
     el.classList.add("is-3d");
+    syncMapTouch();
   } catch {
     state.view = createPlan(el, (await api.building()) || layoutBuilding(state.rooms));
   }
@@ -369,6 +370,34 @@ function syncMapFull() {
   btn.title = t(on ? "map_full_exit" : "map_full");
   btn.setAttribute("aria-label", btn.title);
   btn.setAttribute("aria-pressed", String(on));
+  syncMapTouch();
+}
+
+// Touch screens: on the page one finger scrolls past the map and two fingers move it; in full screen one finger is enough.
+const coarse = matchMedia("(pointer: coarse)");
+const twoFingers = () => coarse.matches && !mapIsFull();
+function syncMapTouch() {
+  state.view?.twoFingerTouch?.(twoFingers());
+}
+
+function wireMapTouch() {
+  const el = $("building");
+  let hint = null, timer = 0, start = null;
+  el.addEventListener("touchstart", (e) => { start = e.touches.length === 1 ? e.touches[0].clientY : null; }, { passive: true });
+  el.addEventListener("touchmove", (e) => {
+    if (!twoFingers() || e.touches.length !== 1 || start === null || Math.abs(e.touches[0].clientY - start) < 12) return;
+    if (!hint) {
+      hint = document.createElement("div");
+      hint.className = "map-hint";
+      mapCard().append(hint);
+    }
+    hint.textContent = t("map_two_fingers");
+    hint.classList.add("on");
+    clearTimeout(timer);
+    timer = setTimeout(() => hint.classList.remove("on"), 1400);
+  }, { passive: true });
+  el.addEventListener("touchstart", (e) => { if (e.touches.length > 1) hint?.classList.remove("on"); }, { passive: true });
+  coarse.addEventListener("change", syncMapTouch);
 }
 
 async function setMapFull(on) {
@@ -1281,6 +1310,7 @@ async function main() {
   wireMenu();
   wireCursorGlow();
   wireMapFull();
+  wireMapTouch();
   wireTopbarScroll();
   wireSearch();
   wireSheet();

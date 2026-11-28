@@ -161,7 +161,10 @@ export function createPicker(root, { onOpen, onError }) {
       }
       $(".prev").disabled = state.page === 0;
       $(".next").disabled = state.page >= pages - 1;
-      $(".dots").innerHTML = Array.from({ length: pages }, (_, i) => `<i class="${i === state.page ? "on" : ""}"></i>`).join("");
+      // Many pages (one card per page on phones): a page number instead of a long row of dots
+      $(".dots").innerHTML = pages > 12
+        ? `<span class="page-no">${state.page + 1} / ${pages}</span>`
+        : Array.from({ length: pages }, (_, i) => `<i class="${i === state.page ? "on" : ""}"></i>`).join("");
     };
     if (direction && cards.children.length) {
       cards.className = `picks out-${direction}`;
@@ -268,6 +271,17 @@ export function createPicker(root, { onOpen, onError }) {
   });
   $(".prev").addEventListener("click", () => { state.page--; render("right"); });
   $(".next").addEventListener("click", () => { state.page++; render("left"); });
+  // Swipe the cards left / right on touch screens
+  let swipe = null;
+  $(".picks").addEventListener("touchstart", (e) => { swipe = { x: e.touches[0].clientX, y: e.touches[0].clientY }; }, { passive: true });
+  $(".picks").addEventListener("touchend", (e) => {
+    if (!swipe) return;
+    const dx = e.changedTouches[0].clientX - swipe.x, dy = e.changedTouches[0].clientY - swipe.y;
+    swipe = null;
+    if (Math.abs(dx) < 50 || Math.abs(dx) < Math.abs(dy) * 1.5) return;
+    const arrow = $(dx < 0 ? ".next" : ".prev");
+    if (!arrow.disabled) arrow.click();
+  });
   $(".picks").addEventListener("click", (e) => {
     const card = e.target.closest(".pick");
     if (!card) return;
