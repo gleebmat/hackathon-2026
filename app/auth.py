@@ -18,6 +18,8 @@ def hash_password(password: str) -> str:
 
 
 def check_password(password: str, stored: str) -> bool:
+    if "$" not in stored:   # an account nobody can log in to (the simulated "Other students")
+        return False
     salt, digest = stored.split("$")
     actual = hashlib.pbkdf2_hmac("sha256", password.encode(), bytes.fromhex(salt), ITERATIONS)
     return hmac.compare_digest(actual.hex(), digest)

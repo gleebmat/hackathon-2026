@@ -1,70 +1,40 @@
 // Smart campus room sensor - Seeed XIAO ESP32S3 Sense (runs in the Velxio simulator and on the real board).
 //
-// Once per camera frame (about every 1-2 s in Velxio) it measures the room on the board itself and publishes one JSON
-// reading over MQTT to the topic aau-hack26/rooms/<room>/readings on a public broker; the backend
-// (app/mqtt_feed.py) subscribes to it:
-//   {"room_id":"Z.1.04","noise_db":47.0,"presence":true,"person_score":0.91,"people":2,"left_items":0}
-// Three models, all TensorFlow Lite Micro, int8, on the board:
-//  - presence (every frame): Arshia's 96x96 person model (models/vww_96_int8.tflite in person_model.h)
-//  - people count (while someone is present, on the second core): Seeed's Swift-YOLO face detector, 96x96
-//    (models/face_96_int8.tflite in face_model.h); people = number of faces, at least 1 while present
-//  - left items (while the room is empty, on the second core): Seeed's Swift-YOLO COCO detector, 320x320, 80 classes
-//    (models/coco_320_int8.tflite in items_model.h); it counts forgettable things (bags, phones, umbrellas, books, ...).
-//    Items already there before people came belong to the room; left items = how many more there are after they left.
-//  - noise_db: PDM microphone level (approximate: silence ~30 dB, full scale ~90 dB)
-// The two detectors are zlib-compressed in flash (firmware + models must fit Velxio's 3 MB app partition) and
-// unpacked into PSRAM at startup with the ROM decompressor.
-// Serial commands (Velxio: type into the serial monitor, press Send): items = list what the item detector sees;
-// snapshot = the items visible now belong to the room (left items back to 0).
+// Camera: raw RGB565 frames (the simulator's own JPEG output is cut off after the top third), encoded to JPEG here.
+// With frame_key.h in the project (tools/make_frame_key.py), every JPEG frame (~5-10 KB) goes
+// encrypted (AES-128-CTR) over MQTT to aau-hack26/rooms/<room>/frame, a few per second. The backend
+// (app/vision.py) runs YOLO11n on it: people count and left items, on the website about a second later.
+// Without frame_key.h the board decides presence itself with Arshia's 96x96 person model (person_model.h),
+// yes/no only, ~1 s per frame in Velxio.
+// Noise: PDM microphone level (approximate: silence ~30 dB, full scale ~90 dB), every loop, as JSON on
+// aau-hack26/rooms/<room>/readings: {"room_id":"Z.1.04","noise_db":47.0} (+ "presence","person_score" in fallback).
 // In Velxio: Camera button = your webcam, Mic button = your microphone (off = test pattern / 440 Hz tone).
-// Libraries: Chirale_TensorFlowLite (builds TFLM from source, works on arduino-esp32 3.x), PubSubClient.
-// Files: sketch.ino + person_model.h + face_model.h + items_model.h.
+// Libraries: Chirale_TensorFlowLite, PubSubClient. Files: sketch.ino + person_model.h (+ frame_key.h).
 #include <WiFi.h>
 #include <PubSubClient.h>
 #include <ESP_I2S.h>
 #include <math.h>
 #include "esp_camera.h"
+#include "img_converters.h"
+#include "mbedtls/aes.h"
 #include <Chirale_TensorFlowLite.h>
 #include "tensorflow/lite/micro/micro_interpreter.h"
 #include "tensorflow/lite/micro/micro_mutable_op_resolver.h"
 #include "tensorflow/lite/schema/schema_generated.h"
 #include "person_model.h"
-
-// Switches: 0 turns a detector off (its model file is then not needed). Previous version (Swift-YOLO Nano count,
-// snapshot-diff left items): git tag board-v1.
-#define COUNT_PEOPLE 1
-#define FIND_ITEMS 1
-#if COUNT_PEOPLE
-#include "face_model.h"
-#endif
-#if FIND_ITEMS
-#include "items_model.h"
-#endif
-#if COUNT_PEOPLE || FIND_ITEMS
-#if __has_include("miniz.h")                 // the ROM decompressor's header moved between ESP-IDF versions
-#include "miniz.h"
-#elif __has_include("rom/miniz.h")
-#include "rom/miniz.h"
+#if __has_include("frame_key.h")
+#include "frame_key.h"
+#define SEND_FRAMES 1
 #else
-#include "esp32s3/rom/miniz.h"
-#endif
+#define SEND_FRAMES 0
 #endif
 
 const char* ROOM_ID = "Z.1.04";
-const char* MQTT_HOST = "broker.hivemq.com";   // public broker: fine for a demo, use your own for real data
+const char* MQTT_HOST = "broker.hivemq.com";   // public broker: frames are encrypted, readings are not secret
 const int MQTT_PORT = 1883;
-const float PERSON_THRESHOLD = 0.60;
-const float PRESENT_NOW = 0.70;              // a single frame this sure counts as present right away
-const float FACE_SCORE = 0.40;               // face detector score that counts as a person
-const float ITEM_SCORE = 0.30;               // objectness x class score that counts as an item
-const uint32_t RESULT_FRESH_MS = 120000;     // older detector results are not used
-const uint32_t ITEMS_BASELINE_MS = 300000;   // empty room: refresh the item baseline every 5 minutes
-
-// COCO classes people forget (index in the model's 80 classes).
-struct ItemClass { int id; const char* name; };
-const ItemClass ITEMS[] = {{24, "backpack"}, {25, "umbrella"}, {26, "handbag"}, {28, "suitcase"}, {39, "bottle"},
-                           {41, "cup"}, {63, "laptop"}, {67, "cell phone"}, {73, "book"}};
-const int N_ITEMS = sizeof(ITEMS) / sizeof(ITEMS[0]);
+const uint32_t FRAME_EVERY_MS = 250;         // at most ~4 frames per second
+const float ARRIVAL_SCORE = 0.70;            // fallback model: one frame this sure = present
+const float VOTE_SCORE = 0.60;               // ... or 2 of the last 3 frames at least this sure
 
 // Seeed's camera pin map for the Sense board (same as Velxio's camera example)
 #define XCLK_GPIO_NUM 10
@@ -82,10 +52,14 @@ const int N_ITEMS = sizeof(ITEMS) / sizeof(ITEMS[0]);
 #define HREF_GPIO_NUM 47
 #define PCLK_GPIO_NUM 13
 
-const int IMG = 96;                          // camera frame and presence model input: 96x96
+int FW = 0, FH = 0;                          // camera frame size, the biggest that fits (see startCamera)
+const int IMG = 96;                          // fallback model input
 
 I2SClass mic;
 bool camOk = false, micOk = false, modelOk = false;
+uint8_t* rgb = nullptr;                      // frame as 3 bytes per pixel (BGR) for the fallback model (PSRAM)
+uint8_t* sealed = nullptr;                   // encrypted frame: 16-byte counter block + JPEG (PSRAM)
+const size_t SEALED_MAX = 64 * 1024;
 
 const int ARENA_SIZE = 160 * 1024;
 uint8_t* arena = nullptr;
@@ -102,18 +76,31 @@ bool startCamera() {
   c.pin_xclk = XCLK_GPIO_NUM; c.pin_pclk = PCLK_GPIO_NUM; c.pin_vsync = VSYNC_GPIO_NUM; c.pin_href = HREF_GPIO_NUM;
   c.pin_sccb_sda = SIOD_GPIO_NUM; c.pin_sccb_scl = SIOC_GPIO_NUM; c.pin_pwdn = -1; c.pin_reset = -1;
   c.xclk_freq_hz = 20000000;
-  c.pixel_format = PIXFORMAT_RGB565;      // colour: the models take RGB
-  c.frame_size = FRAMESIZE_96X96;
+  c.pixel_format = PIXFORMAT_RGB565;
   c.fb_count = 1;
   c.fb_location = CAMERA_FB_IN_DRAM;      // the simulator can't put frame buffers in PSRAM yet
-  c.grab_mode = CAMERA_GRAB_WHEN_EMPTY;
-  return esp_camera_init(&c) == ESP_OK;
+  c.grab_mode = CAMERA_GRAB_LATEST;
+  rgb = (uint8_t*)heap_caps_malloc(320 * 240 * 3, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+  sealed = (uint8_t*)heap_caps_malloc(SEALED_MAX, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+  if (!rgb || !sealed) return false;
+  // the raw frame must fit in internal RAM: take the biggest size that does
+  const framesize_t sizes[] = {FRAMESIZE_QVGA, FRAMESIZE_HQVGA, FRAMESIZE_QQVGA};
+  const int widths[] = {320, 240, 160}, heights[] = {240, 176, 120};
+  for (int i = 0; i < 3; i++) {
+    c.frame_size = sizes[i];
+    if (esp_camera_init(&c) == ESP_OK) {
+      FW = widths[i];
+      FH = heights[i];
+      return true;
+    }
+    esp_camera_deinit();
+  }
+  return false;
 }
 
 bool startModel() {
   const tflite::Model* model = tflite::GetModel(g_person_model);
   arena = (uint8_t*)heap_caps_malloc(ARENA_SIZE, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
-  if (!arena) arena = (uint8_t*)heap_caps_malloc(ARENA_SIZE, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
   if (!arena) return false;
   static tflite::MicroMutableOpResolver<6> ops;
   ops.AddAveragePool2D();
@@ -125,209 +112,31 @@ bool startModel() {
   static tflite::MicroInterpreter interp(model, ops, arena, ARENA_SIZE);
   if (interp.AllocateTensors() != kTfLiteOk) return false;
   interpreter = &interp;
-  Serial.printf("model arena used: %u bytes\n", (unsigned)interp.arena_used_bytes());
   return true;
 }
 
-// Fills the presence model input (int8 RGB, pixel - 128) from one RGB565 frame; rgb (optional) receives 8-bit RGB
-// for the detectors.
-void prepare(const camera_fb_t* fb, uint8_t* rgb) {
-  int8_t* in = interpreter ? interpreter->input(0)->data.int8 : nullptr;
-  for (int i = 0; i < IMG * IMG; i++) {
-    uint16_t p = (fb->buf[2 * i] << 8) | fb->buf[2 * i + 1];
-    uint8_t r = (p >> 11) << 3, g = ((p >> 5) & 0x3F) << 2, b = (p & 0x1F) << 3;
-    if (rgb) {
-      rgb[3 * i] = r;
-      rgb[3 * i + 1] = g;
-      rgb[3 * i + 2] = b;
-    }
-    if (in) {
-      in[3 * i] = (int8_t)(r - 128);
-      in[3 * i + 1] = (int8_t)(g - 128);
-      in[3 * i + 2] = (int8_t)(b - 128);
+// Fallback model score for a frame: centre 240x240 square averaged down to 96x96 (int8 RGB, pixel - 128).
+float personScore(camera_fb_t* fb) {
+  if (!fmt2rgb888(fb->buf, fb->len, fb->format, rgb)) return -1;
+  int8_t* in = interpreter->input(0)->data.int8;
+  const int left = (FW - FH) / 2;
+  for (int y = 0; y < IMG; y++) {
+    const int y0 = y * FH / IMG, y1 = (y + 1) * FH / IMG;
+    for (int x = 0; x < IMG; x++) {
+      const int x0 = left + x * FH / IMG, x1 = left + (x + 1) * FH / IMG;
+      int s[3] = {0, 0, 0}, n = 0;
+      for (int yy = y0; yy < y1; yy++)
+        for (int xx = x0; xx < x1; xx++, n++) {
+          const uint8_t* p = rgb + 3 * (yy * FW + xx);   // decoder writes blue, green, red
+          s[0] += p[2]; s[1] += p[1]; s[2] += p[0];
+        }
+      for (int c = 0; c < 3; c++) in[3 * (y * IMG + x) + c] = (int8_t)(s[c] / n - 128);
     }
   }
-}
-
-float personScore() {
   if (interpreter->Invoke() != kTfLiteOk) return -1;
   TfLiteTensor* out = interpreter->output(0);
   return (out->data.int8[1] - out->params.zero_point) * out->params.scale;   // index 1 = person
 }
-
-#if COUNT_PEOPLE || FIND_ITEMS
-// ---- detectors on the second core ----
-enum Job { JOB_NONE, JOB_FACES, JOB_ITEMS };
-uint8_t jobRgb[IMG * IMG * 3];               // frame handed to the worker
-volatile int job = JOB_NONE;                 // the worker owns jobRgb while this isn't JOB_NONE
-volatile int faces = -1, items = -1;         // latest results (-1 = none yet)
-volatile uint32_t facesAt = 0, itemsAt = 0;  // when the frame of that result was taken
-uint32_t jobFrameAt = 0;
-char itemList[160] = "";                     // what the item detector saw last, for the serial command 'items'
-
-// Unpacks a zlib-compressed model from flash into 16-byte aligned PSRAM.
-uint8_t* unpack(const unsigned char* z, size_t zBytes, size_t bytes) {
-  uint8_t* buf = (uint8_t*)heap_caps_aligned_alloc(16, bytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
-  tinfl_decompressor* d = (tinfl_decompressor*)malloc(sizeof(tinfl_decompressor));   // ~11 KB: too big for the stack
-  if (!buf || !d) return nullptr;
-  tinfl_init(d);
-  size_t in = zBytes, out = bytes;
-  tinfl_status st = tinfl_decompress(d, z, &in, buf, buf, &out,
-                                     TINFL_FLAG_PARSE_ZLIB_HEADER | TINFL_FLAG_USING_NON_WRAPPING_OUTPUT_BUF);
-  free(d);
-  if (st == TINFL_STATUS_DONE && out == bytes) return buf;
-  free(buf);
-  return nullptr;
-}
-
-// Builds an interpreter with the ops both Swift-YOLO detectors use.
-tflite::MicroInterpreter* startDetector(const unsigned char* z, size_t zBytes, size_t bytes, size_t arenaBytes,
-                                        const char* name) {
-  uint8_t* model = unpack(z, zBytes, bytes);
-  uint8_t* mem = (uint8_t*)heap_caps_aligned_alloc(16, arenaBytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
-  if (!model || !mem) {
-    Serial.printf("%s: out of memory or unpack failed\n", name);
-    return nullptr;
-  }
-  static tflite::MicroMutableOpResolver<16> ops;
-  static bool opsReady = false;
-  if (!opsReady) {
-    ops.AddConv2D();
-    ops.AddDepthwiseConv2D();
-    ops.AddPad();
-    ops.AddPadV2();
-    ops.AddAdd();
-    ops.AddMul();
-    ops.AddConcatenation();
-    ops.AddMaxPool2D();
-    ops.AddResizeNearestNeighbor();
-    ops.AddLogistic();
-    ops.AddTranspose();
-    ops.AddReshape();
-    ops.AddSplitV();
-    ops.AddGather();
-    ops.AddQuantize();
-    opsReady = true;
-  }
-  auto* m = new tflite::MicroInterpreter(tflite::GetModel(model), ops, mem, arenaBytes);
-  if (m->AllocateTensors() != kTfLiteOk) {
-    Serial.printf("%s: AllocateTensors failed\n", name);
-    return nullptr;
-  }
-  Serial.printf("%s arena used: %u bytes\n", name, (unsigned)m->arena_used_bytes());
-  return m;
-}
-
-// Copies jobRgb into a detector's input, scaled to its size (nearest pixel).
-void fillInput(tflite::MicroInterpreter* m) {
-  TfLiteTensor* in = m->input(0);
-  const int size = in->dims->data[1];
-  const float s = in->params.scale;
-  const int zp = in->params.zero_point;
-  for (int y = 0; y < size; y++)
-    for (int x = 0; x < size; x++) {
-      const uint8_t* px = jobRgb + 3 * ((y * IMG / size) * IMG + x * IMG / size);
-      for (int c = 0; c < 3; c++)
-        in->data.int8[3 * (y * size + x) + c] = (int8_t)constrain((int)lroundf(px[c] / 255.0f / s) + zp, -128, 127);
-    }
-}
-
-// Overlap of two boxes given as centre x, centre y, width, height.
-float iou(const float* a, const float* b) {
-  float w = min(a[0] + a[2] / 2, b[0] + b[2] / 2) - max(a[0] - a[2] / 2, b[0] - b[2] / 2);
-  float h = min(a[1] + a[3] / 2, b[1] + b[3] / 2) - max(a[1] - a[3] / 2, b[1] - b[3] / 2);
-  if (w <= 0 || h <= 0) return 0;
-  return w * h / (a[2] * a[3] + b[2] * b[3] - w * h);
-}
-
-float bestScore = 0;                         // highest objectness of the last run, for the serial log
-
-// Runs a Swift-YOLO detector on jobRgb. Rows are [x, y, w, h, objectness, class scores...], scores 0..100.
-// Counts boxes per class (perClass may be null) after non-maximum suppression; returns the total or -1.
-int detect(tflite::MicroInterpreter* m, float minScore, const ItemClass* classes, int nClasses, int* perClass) {
-  fillInput(m);
-  if (m->Invoke() != kTfLiteOk) return -1;
-  TfLiteTensor* out = m->output(0);
-  const int rows = out->dims->data[1], cols = out->dims->data[2];
-  const float s = out->params.scale / 100.0f;    // scores 0..1
-  const int zp = out->params.zero_point;
-  const int MAX_BOXES = 48;
-  static float boxes[MAX_BOXES][6];              // x, y, w, h, score, class slot
-  int nb = 0;
-  bestScore = 0;
-  for (int r = 0; r < rows; r++) {
-    const int8_t* d = out->data.int8 + r * cols;
-    float obj = (d[4] - zp) * s;
-    bestScore = max(bestScore, obj);
-    if (obj < minScore) continue;
-    for (int k = 0; k < (classes ? nClasses : 1); k++) {
-      float score = classes ? obj * (d[5 + classes[k].id] - zp) * s : obj;
-      if (score < minScore) continue;
-      int at = nb < MAX_BOXES ? nb++ : -1;
-      if (at < 0) {                              // full: replace the weakest box if this one is stronger
-        int weakest = 0;
-        for (int i = 1; i < MAX_BOXES; i++) if (boxes[i][4] < boxes[weakest][4]) weakest = i;
-        if (boxes[weakest][4] >= score) continue;
-        at = weakest;
-      }
-      for (int c = 0; c < 4; c++) boxes[at][c] = (d[c] - zp) * out->params.scale;
-      boxes[at][4] = score;
-      boxes[at][5] = k;
-    }
-  }
-  if (perClass) memset(perClass, 0, sizeof(int) * nClasses);
-  int total = 0;
-  static bool used[MAX_BOXES];
-  memset(used, 0, sizeof used);
-  for (;;) {                                     // greedy NMS per class
-    int best = -1;
-    for (int i = 0; i < nb; i++) if (!used[i] && (best < 0 || boxes[i][4] > boxes[best][4])) best = i;
-    if (best < 0) break;
-    used[best] = true;
-    total++;
-    if (perClass) perClass[(int)boxes[best][5]]++;
-    for (int i = 0; i < nb; i++)
-      if (!used[i] && boxes[i][5] == boxes[best][5] && iou(boxes[i], boxes[best]) > 0.45f) used[i] = true;
-  }
-  return total;
-}
-
-tflite::MicroInterpreter* faceModel = nullptr;
-tflite::MicroInterpreter* itemsModel = nullptr;
-
-void workerTask(void*) {
-  for (;;) {
-    int j = job;
-    if (j != JOB_NONE) {
-      uint32_t t0 = millis();
-      if (j == JOB_FACES) {
-        int n = detect(faceModel, FACE_SCORE, nullptr, 0, nullptr);
-        if (n >= 0) {
-          faces = n;
-          facesAt = jobFrameAt;
-        }
-        Serial.printf("faces %d (best %.2f, %lums)\n", n, bestScore, (unsigned long)(millis() - t0));
-      } else {
-        int perClass[N_ITEMS];
-        int n = detect(itemsModel, ITEM_SCORE, ITEMS, N_ITEMS, perClass);
-        if (n >= 0) {
-          int len = 0;
-          itemList[0] = 0;
-          for (int k = 0; k < N_ITEMS; k++)
-            if (perClass[k] && len < (int)sizeof itemList - 24)
-              len += snprintf(itemList + len, sizeof itemList - len, "%s%d %s", len ? ", " : "", perClass[k],
-                              ITEMS[k].name);
-          items = n;
-          itemsAt = jobFrameAt;
-        }
-        Serial.printf("items %d [%s] (%lums)\n", n, itemList, (unsigned long)(millis() - t0));
-      }
-      job = JOB_NONE;
-    }
-    vTaskDelay(pdMS_TO_TICKS(20));
-  }
-}
-#endif
 
 // Approximate sound level: RMS of ~32 ms of 16 kHz audio.
 float noiseDb() {
@@ -347,143 +156,104 @@ float noiseDb() {
 
 WiFiClient net;
 PubSubClient mqtt(net);
-String topic;
+String readingsTopic, frameTopic;
 
-void publish(const String& json) {
-  if (WiFi.status() != WL_CONNECTED) return;
-  if (!mqtt.connected()) {
-    String id = String("xiao-") + String((uint32_t)ESP.getEfuseMac(), HEX);
-    if (!mqtt.connect(id.c_str())) {
-      Serial.printf("MQTT connect failed (%d)\n", mqtt.state());
-      return;
-    }
-  }
-  bool ok = mqtt.publish(topic.c_str(), json.c_str());
-  Serial.printf("MQTT %s -> %s\n", topic.c_str(), ok ? "sent" : "FAILED");
+bool mqttReady() {
+  if (WiFi.status() != WL_CONNECTED) return false;
+  if (mqtt.connected()) return true;
+  String id = String("xiao-") + String((uint32_t)ESP.getEfuseMac(), HEX);
+  if (mqtt.connect(id.c_str())) return true;
+  Serial.printf("MQTT connect failed (%d)\n", mqtt.state());
+  return false;
 }
+
+#if SEND_FRAMES
+// Encodes the frame as JPEG, encrypts it (AES-128-CTR, fresh random counter block) and streams it to the frame topic.
+bool sendFrame(camera_fb_t* fb, size_t& jpgLen) {
+  uint8_t* jpg = nullptr;
+  jpgLen = 0;
+  if (!mqttReady() || !frame2jpg(fb, 80, &jpg, &jpgLen)) return false;
+  if (jpgLen + 16 > SEALED_MAX) {
+    free(jpg);
+    return false;
+  }
+  // Counter mode by hand, one 16-byte block at a time: the AES unit's bulk (DMA) mode can't read PSRAM in Velxio.
+  uint8_t counter[16], stream[16];
+  esp_fill_random(counter, 16);
+  memcpy(sealed, counter, 16);
+  mbedtls_aes_context aes;
+  mbedtls_aes_init(&aes);
+  mbedtls_aes_setkey_enc(&aes, FRAME_KEY, 128);
+  for (size_t i = 0; i < jpgLen; i += 16) {
+    mbedtls_aes_crypt_ecb(&aes, MBEDTLS_AES_ENCRYPT, counter, stream);
+    for (size_t k = 0; k < 16 && i + k < jpgLen; k++) sealed[16 + i + k] = jpg[i + k] ^ stream[k];
+    for (int b = 15; b >= 0 && ++counter[b] == 0; b--) {}   // 128-bit big-endian counter + 1
+  }
+  mbedtls_aes_free(&aes);
+  free(jpg);
+  const size_t n = jpgLen + 16;
+  return mqtt.beginPublish(frameTopic.c_str(), n, false) && mqtt.write(sealed, n) == n && mqtt.endPublish();
+}
+#endif
 
 void setup() {
   Serial.begin(115200);
-  Serial.setTimeout(20);
   delay(300);
   camOk = startCamera();
-  Serial.println(camOk ? "CAM OK" : "CAM FAILED");
-  modelOk = startModel();
-  Serial.println(modelOk ? "MODEL OK" : "MODEL FAILED");
+  if (camOk) Serial.printf("CAM OK (%dx%d)\n", FW, FH);
+  else Serial.println("CAM FAILED");
+  if (!SEND_FRAMES) {
+    modelOk = startModel();
+    Serial.println(modelOk ? "MODEL OK (on-board presence)" : "MODEL FAILED");
+  } else {
+    Serial.println("FRAMES ON: people and items are detected by the backend");
+  }
   mic.setPinsPdmRx(42, 41);
   micOk = mic.begin(I2S_MODE_PDM_RX, 16000, I2S_DATA_BIT_WIDTH_16BIT, I2S_SLOT_MODE_MONO);
   Serial.println(micOk ? "MIC OK" : "MIC FAILED");
-#if COUNT_PEOPLE
-  faceModel = startDetector(g_face_model_z, FACE_MODEL_Z_BYTES, FACE_MODEL_BYTES, 512 * 1024, "face model");
-  Serial.println(faceModel ? "FACES OK" : "FACES FAILED (presence only)");
-#endif
-#if FIND_ITEMS
-  itemsModel = startDetector(g_items_model_z, ITEMS_MODEL_Z_BYTES, ITEMS_MODEL_BYTES, 3 * 1024 * 1024, "items model");
-  Serial.println(itemsModel ? "ITEMS OK" : "ITEMS FAILED (no left items)");
-#endif
-#if COUNT_PEOPLE || FIND_ITEMS
-  if (faceModel || itemsModel)
-    xTaskCreatePinnedToCore(workerTask, "detect", 16384, nullptr, 1, nullptr, 0);   // loop() runs on core 1
-#endif
   WiFi.mode(WIFI_STA);
   WiFi.begin("Velxio-GUEST");   // Velxio's built-in open network; use your own SSID on the real board
   for (int i = 0; i < 40 && WiFi.status() != WL_CONNECTED; i++) delay(250);
   Serial.println(WiFi.status() == WL_CONNECTED ? "WIFI OK" : "WIFI FAILED");
-  topic = String("aau-hack26/rooms/") + ROOM_ID + "/readings";
+  readingsTopic = String("aau-hack26/rooms/") + ROOM_ID + "/readings";
+  frameTopic = String("aau-hack26/rooms/") + ROOM_ID + "/frame";
   mqtt.setServer(MQTT_HOST, MQTT_PORT);
 }
 
-// Left items from item counts: items seen while nobody has come yet belong to the room (baseline); after people
-// were present and left, every extra item counts. When the extra items are gone the room is clean again.
-int itemsBefore = 0, leftItems = 0;
-bool occupied = false;                       // people were seen since the baseline
-uint32_t leftAt = 0;                         // when presence last ended
+uint32_t lastFrame = 0, sent = 0, failed = 0;
 
 void loop() {
-  // no pause: one reading per frame, as fast as the presence model runs
+  if (millis() - lastFrame < FRAME_EVERY_MS) delay(FRAME_EVERY_MS - (millis() - lastFrame));
+  lastFrame = millis();
   String json = String("{\"room_id\":\"") + ROOM_ID + "\"";
   float db = micOk ? noiseDb() : -1;
   if (db >= 0) json += ",\"noise_db\":" + String(db, 1);
 
   camera_fb_t* fb = camOk ? esp_camera_fb_get() : nullptr;
-  if (fb && modelOk) {
-    static bool wasPresent = false;
-#if COUNT_PEOPLE || FIND_ITEMS
-    // hand this frame to the idle worker: faces while someone is here; items once people have left (and every few
-    // minutes in an empty room for the baseline). An item check is slow, so it doesn't run all the time: a face
-    // count has to wait for a running item check.
-    bool itemsDue = items < 0 || occupied || millis() - itemsAt > ITEMS_BASELINE_MS;
-    int next = wasPresent ? (faceModel ? JOB_FACES : JOB_NONE) : (itemsModel && itemsDue ? JOB_ITEMS : JOB_NONE);
-    bool feed = job == JOB_NONE && next != JOB_NONE;
-    prepare(fb, feed ? jobRgb : nullptr);
-    if (feed) {
-      jobFrameAt = millis();
-      job = next;
-    }
+  if (fb) {
+#if SEND_FRAMES
+    const uint32_t t0 = millis();
+    size_t jpgLen;
+    const bool ok = sendFrame(fb, jpgLen);
+    ok ? sent++ : failed++;
+    Serial.printf("frame %u bytes -> %s (%lums, %lu sent, %lu failed)\n", (unsigned)jpgLen, ok ? "sent" : "FAILED",
+                  (unsigned long)(millis() - t0), (unsigned long)sent, (unsigned long)failed);
 #else
-    prepare(fb, nullptr);
-#endif
-    esp_camera_fb_return(fb);
-    uint32_t t0 = millis();
-    float score = personScore();
-    uint32_t ms = millis() - t0;
-    if (score < 0) {
-      Serial.println("Inference failed; occupancy unknown");
-      json += "}";
-      publish(json);
-      mqtt.loop();
-      return;
-    }
-    votes[voteIdx++ % 3] = score >= PERSON_THRESHOLD;
-    // one clear frame is enough to say "someone is here"; leaving needs 2 of the last 3 frames below the threshold
-    bool present = score >= PRESENT_NOW || (votes[0] + votes[1] + votes[2]) >= 2;
-    if (wasPresent && !present) leftAt = millis();
-    wasPresent = present;
-
-#if FIND_ITEMS
-    static uint32_t usedItemsAt = 0;
-    if (Serial.available()) {
-      String cmd = Serial.readStringUntil('\n');
-      cmd.trim();
-      if (cmd == "items") {
-        Serial.printf("Item detector: %d item(s) [%s]; room baseline %d; left %d\n", items, itemList, itemsBefore,
-                      leftItems);
-      } else if (cmd == "snapshot") {
-        itemsBefore = max((int)items, 0);
-        occupied = false;
-        leftItems = 0;
-        Serial.printf("The %d item(s) visible now belong to the room; left items back to 0.\n", itemsBefore);
-      } else if (cmd.length()) {
-        Serial.println("Commands: items, snapshot");
+    if (modelOk) {
+      const float score = personScore(fb);
+      if (score >= 0) {
+        votes[voteIdx++ % 3] = score >= VOTE_SCORE;
+        const bool present = score >= ARRIVAL_SCORE || (votes[0] + votes[1] + votes[2]) >= 2;
+        json += ",\"person_score\":" + String(score, 2) + ",\"presence\":" + (present ? "true" : "false");
       }
     }
-    if (present) {
-      occupied = true;
-      leftItems = 0;                         // whoever is here may still pick their things up
-    } else if (items >= 0 && itemsAt != usedItemsAt && millis() - itemsAt < RESULT_FRESH_MS) {
-      usedItemsAt = itemsAt;                 // a new item count from a frame without people
-      if (!occupied) {
-        itemsBefore = items;
-      } else if ((int32_t)(itemsAt - leftAt) >= 0) {
-        leftItems = max(0, (int)items - itemsBefore);
-        if (leftItems == 0) occupied = false;   // clean again: the next count is the new baseline
-      }
-    }
-    json += ",\"left_items\":" + String(leftItems);
 #endif
-    json += ",\"presence\":" + String(present ? "true" : "false");
-    json += ",\"person_score\":" + String(score, 2);
-#if COUNT_PEOPLE
-    // the face count lags a few seconds behind, so presence decides 0 vs. some and the faces say how many
-    if (faces >= 0 && millis() - facesAt < RESULT_FRESH_MS)
-      json += ",\"people\":" + String(present ? max((int)faces, 1) : 0);
-#endif
-    Serial.printf("person=%.2f (%lums) present=%d\n", score, (unsigned long)ms, present);
-  } else if (fb) {
     esp_camera_fb_return(fb);
+  } else if (camOk) {
+    Serial.println("no camera frame (is the Camera button on?)");
   }
   json += "}";
+  if (mqttReady()) mqtt.publish(readingsTopic.c_str(), json.c_str());
   Serial.println(json);
-  publish(json);
   mqtt.loop();
 }

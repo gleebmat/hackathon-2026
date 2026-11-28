@@ -16,8 +16,8 @@ Presence, noise, ghost release and left items tested end to end with a webcam. T
 - 28 Nov: left items rewritten against false alarms (rolling empty-room snapshot, camera-shift and lighting
   compensation, changes must stay put for 3 checks, edge changes ignored). Details in `docs/PLAN.md`.
 
-- 28 Nov: people count with Swift-YOLO Nano (tag `board-v1`), then replaced by Seeed's face detector (fast) and a
-  COCO object detector for left items (no photo comparison). Model comparison in `README.md`.
+- 28 Nov: people count with Swift-YOLO Nano (tag `board-v1`), then Seeed's face detector and a COCO object
+  detector on the board; superseded by gleb-claude's YOLO11s on the laptop (#28).
 
 - 28 Nov: website in English and German, footer (AAU links, team contacts), share links, .ics export, shortcuts,
   new login photo.
@@ -55,6 +55,15 @@ and left items (yes/no) reach the website. 50 tests pass. Runbook: `README.md`.
 - -> tom-claude (board): take over `firmware/xiao_sense/`; next: a real people count, then a physical board test.
 - -> gemini (Arshia): a counting model small enough for the ESP32-S3 (it would set `people`, `counted: true`).
 - -> claude-3 (Martha): new UI strings for booked vs present and left items are in `app.js`; restyle freely.
+
+**28 Nov: accurate detection (branch `gleb/accurate-detection`)**
+- Board on-device detection was too slow/inaccurate in Velxio (~1 min per result; Velxio's JPEG frames are also cut
+  off after the top third). Now the board sends encrypted 320x240 frames over MQTT and `app/vision.py` runs YOLO11s (640)
+  on the laptop: steady people count and left items about 1 s after the camera sees them.
+- Backend: people sitting in a room without a booking (walk-ins) take seats for shared bookings but never block a
+  whole-room booking. UI: an empty room always reads "Nobody here".
+- Lively campus: simulated noise drifts every few seconds, walk-ins change every 5 min, and simulated "Other
+  students" (`app/campus_sim.py`) book rooms every 2 min (~45% busy by day). LIVE badge calmer, off 3 s after the board stops.
 
 ---
 

@@ -147,10 +147,10 @@ a { color: var(--brand); }
 .live-badge {
   display: inline-flex; align-items: center; gap: 5px; padding: 3px 9px; border-radius: 999px;
   background: var(--live); color: #fff; font-size: 11px; font-weight: 800; letter-spacing: .06em;
-  box-shadow: 0 0 0 0 color-mix(in srgb, var(--live) 50%, transparent); animation: live-ring 2s infinite;
+  box-shadow: 0 0 0 0 color-mix(in srgb, var(--live) 30%, transparent); animation: live-ring 3s ease-out infinite;
 }
 .live-badge::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: #fff; }
-@keyframes live-ring { 70% { box-shadow: 0 0 0 8px transparent; } 100% { box-shadow: 0 0 0 0 transparent; } }
+@keyframes live-ring { 60% { box-shadow: 0 0 0 4px transparent; } 100% { box-shadow: 0 0 0 0 transparent; } }
 
 .chip {
   padding: 7px 14px; border-radius: 999px; border: 1px solid var(--border); background: var(--surface);
@@ -313,10 +313,10 @@ mark { background: color-mix(in srgb, var(--brand-2) 35%, transparent); color: i
 .plan .room:hover text, .plan .room.selected text { transform: translateY(-1.2px); }
 .plan .room .rid { font: 700 2.7px var(--font-display); }
 .plan .room .rname { font: 500 1.7px var(--font-body); fill: #6c6989; }
-.plan .live-dot { fill: var(--live); animation: blink 1.4s infinite; }
+.plan .live-dot { fill: var(--live); animation: blink 3s ease-in-out infinite; }
 .plan.focused .room:not(.selected) { opacity: .28; }
 @keyframes loud { 50% { stroke: var(--full); stroke-width: 1.1; } }
-@keyframes blink { 50% { opacity: .25; } }
+@keyframes blink { 50% { opacity: .6; } }
 
 /* ===================== Room picker: date pill + at most 3 cards ===================== */
 /* Calendar: always visible between the map and the cards */

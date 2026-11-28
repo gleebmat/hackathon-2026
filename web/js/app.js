@@ -452,9 +452,11 @@ function renderSheetHead() {
 }
 
 // Booked seats next to what the room's sensor actually sees. `counted` false = the board only knows yes/no.
+// An empty room always reads "Nobody here": readings with and without a head count used to alternate between
+// "0 people here now" and "Nobody here" for the same empty room.
 function seenText(r) {
-  if (r.counted) return t(r.present === 1 ? "here_one" : "here_many", { n: r.present });
-  return t(r.present > 0 ? "someone_here" : "nobody_here");
+  if (!(r.present > 0)) return t("nobody_here");
+  return r.counted ? t(r.present === 1 ? "here_one" : "here_many", { n: r.present }) : t("someone_here");
 }
 
 function occupancyText(r) {

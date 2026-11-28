@@ -2,7 +2,9 @@
 and the backend subscribes, so the laptop never has to be reachable from the internet.
 
 Topic: aau-hack26/rooms/<room_id>/readings   Payload: the same JSON as POST /api/readings.
-Settings: MQTT_HOST (default broker.hivemq.com), MQTT_PORT (1883), MQTT_TOPIC (aau-hack26/rooms/+/readings);
+Topic: aau-hack26/rooms/<room_id>/frame      Payload: an encrypted camera JPEG (app/vision.py).
+Settings: MQTT_HOST (default broker.hivemq.com), MQTT_PORT (1883), MQTT_TOPIC (aau-hack26/rooms/+/readings),
+MQTT_FRAME_TOPIC (aau-hack26/rooms/+/frame);
 MQTT_FEED=0 turns it off (tests). The broker is public, so anyone can publish there: fine for a demo, use a private
 broker with credentials for anything real.
 """
@@ -17,19 +19,25 @@ import paho.mqtt.client as mqtt
 log = logging.getLogger(__name__)
 
 
-def start(handle: Callable[[dict], None]) -> mqtt.Client:
+def start(handle: Callable[[dict], None], frame: Callable[[str, bytes], None] | None = None) -> mqtt.Client:
     host = os.environ.get("MQTT_HOST", "broker.hivemq.com")
     port = int(os.environ.get("MQTT_PORT", "1883"))
     topic = os.environ.get("MQTT_TOPIC", "aau-hack26/rooms/+/readings")
+    frame_topic = os.environ.get("MQTT_FRAME_TOPIC", "aau-hack26/rooms/+/frame")
     client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
 
     def on_connect(c, _userdata, _flags, reason_code, _props):
         log.info("MQTT connected to %s (%s), subscribing to %s", host, reason_code, topic)
         c.subscribe(topic)
+        if frame:
+            c.subscribe(frame_topic)
 
     def on_message(_c, _userdata, msg):
         if msg.retain:
             return  # A replay on subscription is not a new heartbeat.
+        if frame and mqtt.topic_matches_sub(frame_topic, msg.topic):
+            frame(msg.topic.split("/")[-2], msg.payload)
+            return
         try:
             data = json.loads(msg.payload)
             if isinstance(data, dict):
