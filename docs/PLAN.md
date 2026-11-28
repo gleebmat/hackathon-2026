@@ -82,7 +82,7 @@ not work on arduino-esp32 3.x) and `PubSubClient`. The recording sketch targets 
 | Noise | PDM mic RMS mapped to ~30-90 dB | 30-62 dB with the real mic (72 dB = Velxio's test tone when Mic is off) |
 | Ghost booking | presence -> backend ghost timer | marked after 5 s, released after 15 s with the demo timers |
 | Left items | see below | 0 when nothing was left; >0 for an object placed inside the view; the UI shows yes/no |
-| People count | not available: the model only says yes/no (`counted: false`) | candidate: Seeed Swift-YOLO person detector (counts, ~11 s/frame in Velxio) |
+| People count | Swift-YOLO Nano (Seeed SSCMA zoo, 192x192, 186 M MACs) on core 0 while someone is present; `people` = max(count, 1) when present | counts correctly on test photos and the webcam; ~45 s per count in Velxio (2.6 s on a real board); presence slows to ~2 s/frame meanwhile. Switch: `COUNT_PEOPLE` |
 
 **Left items (on the board).** The board keeps a snapshot of the empty room: whenever nobody has been seen since the
 last snapshot and the view is empty (person score < 0.45) and still for 3 checks, it refreshes it, so the snapshot
@@ -94,7 +94,15 @@ blobs of 3+ cells count as items unless they touch the left, right or top edge (
 view). More than 30% changed means the view or the light changed: new snapshot. After 5 clean checks the room counts
 as clean again. Placement tips for demos: `README.md`.
 
-**Next steps (board owner):** a real people count; test on a physical XIAO ESP32S3 Sense with your own WiFi SSID.
+**Models considered for the count (28 Nov):** current 96x96 VWW model = yes/no only (7.5 M MACs, ~1 s in Velxio);
+Swift-YOLO (non-nano, 89 M MACs) = faster but found only 2 of 4 people on a test photo; **Swift-YOLO Nano** = accurate
+(4/4, 2/2), chosen; Espressif's ESP-DL pedestrian detector = fastest on real hardware (~113 ms) but needs the
+ESP32-S3 vector instructions and ESP-IDF components that Velxio's Arduino build may not support (untested);
+Arshia's EfficientDet-Lite2 = names objects but too big (7.6 MB). Left items have no affordable on-board object
+detector, so they stay a change detector.
+
+**Next steps (board owner):** test on a physical XIAO ESP32S3 Sense with your own WiFi SSID (counts take ~2.6 s
+there); try ESP-DL pedestrian detection on the real board.
 
 **Demo notes**
 - In Velxio: click **Camera** and **Mic** under the board (allow them in Chrome), then Run. Use the team project
@@ -102,7 +110,7 @@ as clean again. Placement tips for demos: `README.md`.
 - Start the backend with `GHOST_GRACE_SECONDS=5` and `GHOST_RELEASE_SECONDS=15` for a fast ghost release.
 - Keep the view empty after Run until serial prints `Empty-room baseline ready`.
 - Pitch wording: presence, noise and left items are computed on the board; only small JSON readings leave it.
-  Don't claim a people count yet.
+  The people count is slow in the simulator (~45 s); say so if you show it.
 
 ## Contracts (code against these; whoever changes one updates this file in the same PR)
 

@@ -11,7 +11,8 @@ Hackathon project: speed matters, but don't break `main`.
   simulated.
 - Board: **XIAO ESP32S3 Sense in Velxio** (`firmware/xiao_sense/`; team Velxio project TODAREISTODO, setup,
   placement tips and troubleshooting in `README.md`), readings over MQTT to the backend (`app/mqtt_feed.py`);
-  presence, noise, ghost and left items work. Open: a real people count. The Infineon path was removed.
+  presence, noise, ghost, left items and a (slow, ~45 s in Velxio) people count work; `COUNT_PEOPLE` switches the count off.
+  The Infineon path was removed.
 
 ## Docs
 - Only `docs/PLAN.md`, `docs/LOG.md` and `README.md`. No other Markdown files; log in your own section of `docs/LOG.md`.

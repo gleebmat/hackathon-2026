@@ -16,7 +16,9 @@ Presence, noise, ghost release and left items tested end to end with a webcam. T
 - 28 Nov: left items rewritten against false alarms (rolling empty-room snapshot, camera-shift and lighting
   compensation, changes must stay put for 3 checks, edge changes ignored). Details in `docs/PLAN.md`.
 
-**Next:** people count (model research in the PR for this work), physical-board test.
+- 28 Nov: people count on the board with Swift-YOLO Nano (switch `COUNT_PEOPLE`), model research in `docs/PLAN.md`.
+
+**Next:** physical-board test.
 
 ---
 

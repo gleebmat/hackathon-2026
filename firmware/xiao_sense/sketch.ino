@@ -23,6 +23,24 @@
 #include "tensorflow/lite/schema/schema_generated.h"
 #include "person_model.h"
 
+// People count (optional): Seeed's Swift-YOLO Nano person detector (models/swift_yolo_nano_person_192_int8.tflite)
+// runs in the background on the other CPU core and counts people every few seconds; the fast person model above
+// still decides presence every frame. The 1.9 MB model is stored zlib-compressed in count_model_1.h + _2.h (1.6 MB,
+// so the firmware still fits the 3 MB app flash) and unpacked into PSRAM at startup with the ROM decompressor.
+// Set COUNT_PEOPLE to 0 to go back to presence only (the count_model files are then not needed).
+#define COUNT_PEOPLE 1
+#if COUNT_PEOPLE
+#include "count_model_1.h"
+#include "count_model_2.h"
+#if __has_include("miniz.h")                 // the ROM decompressor's header moved between ESP-IDF versions
+#include "miniz.h"
+#elif __has_include("rom/miniz.h")
+#include "rom/miniz.h"
+#else
+#include "esp32s3/rom/miniz.h"
+#endif
+#endif
+
 const char* ROOM_ID = "Z.1.04";
 const char* MQTT_HOST = "broker.hivemq.com";   // public broker: fine for a demo, use your own for real data
 const int MQTT_PORT = 1883;
@@ -112,12 +130,18 @@ bool startModel() {
 }
 
 // Fills the model input (int8 RGB, pixel - 128) and the grayscale copy from one RGB565 frame.
-void prepare(const camera_fb_t* fb) {
+// rgb (optional) receives the frame as 8-bit RGB for the people counter.
+void prepare(const camera_fb_t* fb, uint8_t* rgb) {
   int8_t* in = interpreter ? interpreter->input(0)->data.int8 : nullptr;
   for (int i = 0; i < IMG * IMG; i++) {
     uint16_t p = (fb->buf[2 * i] << 8) | fb->buf[2 * i + 1];
     uint8_t r = (p >> 11) << 3, g = ((p >> 5) & 0x3F) << 2, b = (p & 0x1F) << 3;
     gray[i] = (r * 77 + g * 150 + b * 29) >> 8;
+    if (rgb) {
+      rgb[3 * i] = r;
+      rgb[3 * i + 1] = g;
+      rgb[3 * i + 2] = b;
+    }
     if (in) {
       in[3 * i] = (int8_t)(r - 128);
       in[3 * i + 1] = (int8_t)(g - 128);
@@ -125,6 +149,131 @@ void prepare(const camera_fb_t* fb) {
     }
   }
 }
+
+#if COUNT_PEOPLE
+const int COUNT_IMG = 192;                   // counter input: the 96x96 frame scaled up 2x
+const float COUNT_SCORE = 40;                // detection score (0..100) that counts as a person
+const int COUNT_ARENA = 1600 * 1024;
+const uint32_t COUNT_FRESH_MS = 60000;       // older counts are not sent
+uint8_t countRgb[IMG * IMG * 3];             // frame handed to the counter
+volatile bool countBusy = false;             // the counter owns countRgb while true
+volatile int peopleCount = -1;
+volatile uint32_t countAt = 0;
+tflite::MicroInterpreter* counter = nullptr;
+
+// Unpacks the count model into PSRAM.
+uint8_t* unpackModel() {
+  uint8_t* buf = (uint8_t*)heap_caps_aligned_alloc(16, COUNT_MODEL_BYTES, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+  tinfl_decompressor* d = (tinfl_decompressor*)malloc(sizeof(tinfl_decompressor));   // ~11 KB: too big for the stack
+  if (!buf || !d) return nullptr;
+  tinfl_init(d);
+  const int flags = TINFL_FLAG_PARSE_ZLIB_HEADER | TINFL_FLAG_USING_NON_WRAPPING_OUTPUT_BUF;
+  size_t in1 = COUNT_MODEL_Z1_BYTES, out1 = COUNT_MODEL_BYTES;      // part 1, more input follows
+  tinfl_status st = tinfl_decompress(d, g_count_model_z1, &in1, buf, buf, &out1, flags | TINFL_FLAG_HAS_MORE_INPUT);
+  size_t in2 = COUNT_MODEL_Z2_BYTES, out2 = COUNT_MODEL_BYTES - out1;
+  if (st == TINFL_STATUS_NEEDS_MORE_INPUT && in1 == COUNT_MODEL_Z1_BYTES)
+    st = tinfl_decompress(d, g_count_model_z2, &in2, buf, buf + out1, &out2, flags);
+  free(d);
+  if (st == TINFL_STATUS_DONE && out1 + out2 == COUNT_MODEL_BYTES) return buf;
+  Serial.printf("count model unpack failed (%d)\n", (int)st);
+  free(buf);
+  return nullptr;
+}
+
+bool startCounter() {
+  uint8_t* model = unpackModel();
+  uint8_t* mem = (uint8_t*)heap_caps_aligned_alloc(16, COUNT_ARENA, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+  if (!model || !mem) return false;
+  static tflite::MicroMutableOpResolver<13> ops;
+  ops.AddConv2D();
+  ops.AddPad();
+  ops.AddPadV2();
+  ops.AddAdd();
+  ops.AddConcatenation();
+  ops.AddMaxPool2D();
+  ops.AddResizeNearestNeighbor();
+  ops.AddLogistic();
+  ops.AddTranspose();
+  ops.AddReshape();
+  ops.AddSplitV();
+  ops.AddMul();
+  ops.AddQuantize();
+  static tflite::MicroInterpreter interp(tflite::GetModel(model), ops, mem, COUNT_ARENA);
+  if (interp.AllocateTensors() != kTfLiteOk) return false;
+  counter = &interp;
+  Serial.printf("count model arena used: %u bytes\n", (unsigned)interp.arena_used_bytes());
+  return true;
+}
+
+// Overlap of two boxes given as centre x, centre y, width, height.
+float iou(const float* a, const float* b) {
+  float w = min(a[0] + a[2] / 2, b[0] + b[2] / 2) - max(a[0] - a[2] / 2, b[0] - b[2] / 2);
+  float h = min(a[1] + a[3] / 2, b[1] + b[3] / 2) - max(a[1] - a[3] / 2, b[1] - b[3] / 2);
+  if (w <= 0 || h <= 0) return 0;
+  return w * h / (a[2] * a[3] + b[2] * b[3] - w * h);
+}
+
+// People in countRgb: run the detector, keep boxes scoring COUNT_SCORE+, drop overlapping duplicates (NMS).
+int countPeople() {
+  TfLiteTensor* in = counter->input(0);
+  float s = in->params.scale;
+  int zp = in->params.zero_point;
+  for (int y = 0; y < COUNT_IMG; y++)
+    for (int x = 0; x < COUNT_IMG; x++)
+      for (int c = 0; c < 3; c++) {
+        int v = (int)lroundf(countRgb[3 * ((y / 2) * IMG + x / 2) + c] / 255.0f / s) + zp;
+        in->data.int8[3 * (y * COUNT_IMG + x) + c] = (int8_t)constrain(v, -128, 127);
+      }
+  if (counter->Invoke() != kTfLiteOk) return -1;
+  TfLiteTensor* out = counter->output(0);
+  const int rows = out->dims->data[1], cols = out->dims->data[2];
+  const int MAX_BOXES = 32;
+  static float boxes[MAX_BOXES][5];
+  int nb = 0;
+  for (int r = 0; r < rows; r++) {
+    const int8_t* d = out->data.int8 + r * cols;
+    float score = (d[4] - out->params.zero_point) * out->params.scale;
+    if (score < COUNT_SCORE) continue;
+    int at = nb < MAX_BOXES ? nb++ : -1;
+    if (at < 0) {                            // full: replace the weakest box if this one is stronger
+      int weakest = 0;
+      for (int i = 1; i < MAX_BOXES; i++) if (boxes[i][4] < boxes[weakest][4]) weakest = i;
+      if (boxes[weakest][4] >= score) continue;
+      at = weakest;
+    }
+    for (int k = 0; k < 4; k++) boxes[at][k] = (d[k] - out->params.zero_point) * out->params.scale;
+    boxes[at][4] = score;
+  }
+  int people = 0;
+  static bool used[MAX_BOXES];
+  memset(used, 0, sizeof used);
+  for (;;) {                                 // greedy NMS: take the best unused box, suppress its overlaps
+    int best = -1;
+    for (int i = 0; i < nb; i++) if (!used[i] && (best < 0 || boxes[i][4] > boxes[best][4])) best = i;
+    if (best < 0) break;
+    used[best] = true;
+    people++;
+    for (int i = 0; i < nb; i++) if (!used[i] && iou(boxes[i], boxes[best]) > 0.45f) used[i] = true;
+  }
+  return people;
+}
+
+void counterTask(void*) {
+  for (;;) {
+    if (countBusy) {
+      uint32_t t0 = millis();
+      int n = countPeople();
+      if (n >= 0) {
+        peopleCount = n;
+        countAt = millis();
+      }
+      Serial.printf("people count %d (%lums)\n", n, (unsigned long)(millis() - t0));
+      countBusy = false;
+    }
+    vTaskDelay(pdMS_TO_TICKS(50));
+  }
+}
+#endif
 
 float personScore() {
   if (interpreter->Invoke() != kTfLiteOk) return -1;
@@ -295,7 +444,15 @@ void setup() {
   WiFi.begin("Velxio-GUEST");   // Velxio's built-in open network; use your own SSID on the real board
   for (int i = 0; i < 40 && WiFi.status() != WL_CONNECTED; i++) delay(250);
   Serial.println(WiFi.status() == WL_CONNECTED ? "WIFI OK" : "WIFI FAILED");
-  topic = String("aau-hack26/rooms/") + ROOM_ID + "/readings";
+#if COUNT_PEOPLE
+  if (startCounter()) {
+    xTaskCreatePinnedToCore(counterTask, "count", 16384, nullptr, 1, nullptr, 0);   // loop() runs on core 1
+    Serial.println("COUNT OK");
+  } else {
+    Serial.println("COUNT FAILED (presence only)");
+  }
+#endif
+  topic =String("aau-hack26/rooms/") + ROOM_ID + "/readings";
   mqtt.setServer(MQTT_HOST, MQTT_PORT);
 }
 
@@ -310,7 +467,16 @@ void loop() {
 
   camera_fb_t* fb = camOk ? esp_camera_fb_get() : nullptr;
   if (fb && modelOk) {
-    prepare(fb);
+#if COUNT_PEOPLE
+    // the counter is idle and someone was here last check: give it this frame (an empty room needs no count, and
+    // skipping it keeps the CPU free for the left-item check)
+    static bool wasPresent = false;
+    bool feed = counter && !countBusy && wasPresent;
+    prepare(fb, feed ? countRgb : nullptr);
+    if (feed) countBusy = true;
+#else
+    prepare(fb, nullptr);
+#endif
     esp_camera_fb_return(fb);
     uint32_t t0 = millis();
     float score = personScore();
@@ -324,6 +490,9 @@ void loop() {
     }
     votes[voteIdx++ % 3] = score >= PERSON_THRESHOLD;
     bool present = score >= 0.85f || (votes[0] + votes[1] + votes[2]) >= 2;
+#if COUNT_PEOPLE
+    wasPresent = present;
+#endif
 
     static uint8_t cells[GRID * GRID];
     memcpy(prevEdges, edges, sizeof edges);
@@ -357,6 +526,11 @@ void loop() {
     json += ",\"presence\":" + String(present ? "true" : "false");
     json += ",\"person_score\":" + String(score, 2);
     json += ",\"left_items\":" + String(leftItems);
+#if COUNT_PEOPLE
+    // the count lags a few seconds behind, so presence decides 0 vs. some; the counter says how many
+    if (peopleCount >= 0 && millis() - countAt < COUNT_FRESH_MS)
+      json += ",\"people\":" + String(present ? max((int)peopleCount, 1) : 0);
+#endif
     Serial.printf("person=%.2f (%lums) present=%d left=%d\n", score, (unsigned long)ms, present, leftItems);
   } else if (fb) {
     esp_camera_fb_return(fb);
