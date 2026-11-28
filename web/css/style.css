@@ -850,7 +850,7 @@ h1, h2, h3, .brand-name, .picker-title, .sheet-title h2, .pick-id, .map-info-id,
 .btn-primary { background: var(--brand); color: var(--brand-ink); box-shadow: none; }
 .btn-primary:hover:not(:disabled) { box-shadow: none; filter: none; background: color-mix(in srgb, var(--brand) 86%, var(--accent)); }
 .btn:hover:not(:disabled) { transform: translateY(-1px); box-shadow: none; }
-.avatar { background: var(--text); color: var(--bg); }
+.avatar { background: var(--accent); color: #fff; }
 .count { background: var(--accent); color: #fff; }
 .live-badge { animation: none; }
 .pick-id { color: var(--text); font-weight: 700; }
@@ -954,3 +954,4 @@ h1, h2, h3, .brand-name, .picker-title, .sheet-title h2, .pick-id, .map-info-id,
 .search-field .icon { color: var(--accent); }
 .kbd { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 35%, var(--border)); }
 @media (max-width: 760px) { .picker { padding: 16px 12px 20px; } }
+.bell-btn .count { background: var(--accent); color: #fff; }
