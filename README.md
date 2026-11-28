@@ -35,6 +35,13 @@ API docs: http://localhost:8000/docs. The map alone: http://localhost:8000/map3d
 **What runs on the board** (`firmware/xiao_sense/sketch.ino`, about one reading per second in the simulator):
 - **Presence:** Arshia's 96x96 person model (`models/vww_96_int8.tflite`, as a C array in `person_model.h`) with
   TensorFlow Lite Micro. It says yes/no (score 0..1, threshold 0.60, majority of the last 3 frames). It can't count.
+- **People count** (switch `COUNT_PEOPLE` at the top of the sketch, on by default): Seeed's Swift-YOLO Nano person
+  detector (`models/swift_yolo_nano_person_192_int8.tflite`, 192x192, found 4/4 and 2/2 people on test photos) runs
+  on the second CPU core while someone is present. In Velxio one count takes **about 45 s** (2.6 s on a real board),
+  and the presence check slows from ~1 s to ~2 s per frame while it runs. The model is zlib-compressed in
+  `count_model_1.h` + `count_model_2.h` (Velxio builds files up to 4 million characters; regenerate with
+  `python tools/make_count_header.py models/swift_yolo_nano_person_192_int8.tflite firmware/xiao_sense`).
+  **To go back to presence only:** set `#define COUNT_PEOPLE 0` (the two count files can then be deleted).
 - **Noise:** the PDM microphone (RMS mapped to about 30-90 dB).
 - **Left items:** a comparison with an empty-room snapshot (details and placement tips below).
 - One JSON reading per check goes over MQTT to `broker.hivemq.com:1883`, topic `aau-hack26/rooms/Z.1.04/readings`:
@@ -43,7 +50,8 @@ API docs: http://localhost:8000/docs. The map alone: http://localhost:8000/map3d
   count as "board offline".
 
 **Velxio setup (team account).** Log in at https://velxio.dev with the team's (Gleb's) account and open the project
-**TODAREISTODO** (https://velxio.dev/gleebmat/todareistodo). It already has `sketch.ino`, `person_model.h` and the
+**TODAREISTODO** (https://velxio.dev/gleebmat/todareistodo). It already has `sketch.ino`, `person_model.h`,
+`count_model_1.h`, `count_model_2.h` and the
 libraries `Chirale_TensorFlowLite` and `PubSubClient` (Library Manager). GitHub is the master copy: after changing
 the sketch here, paste it into Velxio (or the other way round) and save (File > Save project).
 1. Start the backend with short demo timers:
@@ -62,6 +70,11 @@ the sketch here, paste it into Velxio (or the other way round) and save (File > 
 - *Compile error "control reaches end of non-void function" or a cut-off sketch:* the paste was truncated (the
   editor is slow with long pastes). Check that `sketch.ino` ends with `loop()`'s closing brace, then paste again.
 - *Two boards:* only run the project in one browser tab. Every running tab publishes to the same topic.
+- *"Smallest app partition is 0x300000" / "app partition is too small":* the firmware is over 3 MB. Velxio ignores a
+  custom `partitions.csv`, so models must be compressed (as the count model is) or smaller.
+- *HTTPS from the simulated board fails* (`ssl ... fatal alert`); plain MQTT/HTTP works. So models can't be downloaded
+  at startup from GitHub.
+- *A file "larger than 4 million characters":* Velxio won't build it; split it (see the count model files).
 - *Website shows the board offline:* the simulation is stopped or WiFi failed; the serial monitor says which.
 
 **Placement: how to get reliable results**

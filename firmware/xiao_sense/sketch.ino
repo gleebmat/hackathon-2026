@@ -468,7 +468,10 @@ void loop() {
   camera_fb_t* fb = camOk ? esp_camera_fb_get() : nullptr;
   if (fb && modelOk) {
 #if COUNT_PEOPLE
-    bool feed = counter && !countBusy;       // the counter is idle: give it this frame
+    // the counter is idle and someone was here last check: give it this frame (an empty room needs no count, and
+    // skipping it keeps the CPU free for the left-item check)
+    static bool wasPresent = false;
+    bool feed = counter && !countBusy && wasPresent;
     prepare(fb, feed ? countRgb : nullptr);
     if (feed) countBusy = true;
 #else
@@ -487,6 +490,9 @@ void loop() {
     }
     votes[voteIdx++ % 3] = score >= PERSON_THRESHOLD;
     bool present = score >= 0.85f || (votes[0] + votes[1] + votes[2]) >= 2;
+#if COUNT_PEOPLE
+    wasPresent = present;
+#endif
 
     static uint8_t cells[GRID * GRID];
     memcpy(prevEdges, edges, sizeof edges);
