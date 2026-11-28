@@ -22,7 +22,7 @@ N, Z, L and S), and books it.
 - **Ghost bookings:** the board (or the simulator) reports the people count. When a booked room is empty, a
   10-minute timer starts: at the start of the booking, or when everyone leaves. If nobody is back when it runs
   out, the booking is released and its time slots are free again. Meanwhile the room shows as `ghost` with the
-  release time. A sensor that goes silent for over 2 minutes never releases anything.
+  release time. Z.1.04 readings expire after 10 seconds. Release requires an empty reading at or after the deadline.
 - **Search:** typing a room number or name shows suggestions as you type (`z104`, `Z.1.04`, `107a` and `atrium`
   all work; the building letter may be left out), like campusplan.aau.at.
 - **Noise detector for partial bookings:** every room shows a live noise level, so someone who wants silence can

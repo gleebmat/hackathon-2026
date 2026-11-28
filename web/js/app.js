@@ -452,6 +452,7 @@ function seenText(r) {
 }
 
 function occupancyText(r) {
+  if (r.board && !r.sensor) return r.live ? "Camera reading unavailable" : "Board offline";
   if (!r.sensor) return `${r.people} here · ${r.capacity} max`;
   return r.booked ? `Booked for ${r.booked} · ${seenText(r)}` : `${seenText(r)} · ${r.capacity} max`;
 }

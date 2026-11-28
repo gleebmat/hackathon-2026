@@ -506,3 +506,23 @@ def test_mqtt_reading_is_stored_like_http(app_env):
     assert not main.mqtt_reading({"room_id": "V.9.99", "presence": True})   # unknown room
     assert not main.mqtt_reading({"room_id": "V.1.07a", "people": -3})      # invalid
     assert not main.mqtt_reading({"room_id": "V.1.07a"})                    # nothing measured
+
+
+def test_board_disconnect_and_recovery_during_demo(app_env, time_now, monkeypatch):
+    monkeypatch.setattr(booking, "GHOST_AFTER", timedelta(seconds=30))
+    c = user(1)
+    rid = booking.BOARD_ROOM
+    assert book(c, room=rid, start="2026-11-27T10:00").status_code == 201
+    for seconds in (0, 8, 16, 24):
+        time_now["t"] = NOW + timedelta(seconds=seconds)
+        reading(c, rid, people=0)
+    time_now["t"] = NOW + timedelta(seconds=30)
+    assert room(c, rid)["status"] == "ghost"  # no camera sample confirmed the deadline
+    time_now["t"] = NOW + timedelta(seconds=35)
+    assert not room(c, rid)["live"]
+    reading(c, rid, noise_db=51)
+    assert room(c, rid)["live"] and room(c, rid)["present"] is None
+    for seconds in range(36, 67, 2):
+        time_now["t"] = NOW + timedelta(seconds=seconds)
+        reading(c, rid, people=0)
+    assert c.get("/api/bookings/mine").json()[0]["status"] == "released"

@@ -25,7 +25,7 @@ feed: LiveNoiseFeed | None = None
 async def lifespan(_app: FastAPI):
     global feed
     db.init()
-    if os.environ.get("NOISE_FEED", "1") != "0":
+    if os.environ.get("NOISE_FEED", "0") != "0":
         feed = LiveNoiseFeed(room_id=booking.BOARD_ROOM)  # fallback path: bridge.py without a backend URL
         feed.start()
     mqtt_client = mqtt_feed.start(mqtt_reading) if os.environ.get("MQTT_FEED", "1") != "0" else None
