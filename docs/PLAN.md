@@ -78,11 +78,10 @@ not work on arduino-esp32 3.x) and `PubSubClient`. The sketch publishes one read
 **Tested in Velxio with a webcam (28 Nov):**
 | Feature | How | Result |
 |---|---|---|
-| Presence | Arshia's 96x96 RGB int8 model on the board, present at once at 0.70+, else 2 of the last 3 frames at 0.60+ | in view 0.70-0.98, empty mostly 0.1-0.5; ~0.95 s per frame; 101 KB arena |
+| Presence | Arshia's 96x96 RGB int8 model flags arrivals at once (0.70+, or 2 of 3 at 0.60+); the COCO detector confirms people and is the only one that can declare the room empty (no flicker) | in view 0.70-0.98, empty mostly 0.1-0.5; ~0.95 s per frame; 101 KB arena |
 | Noise | PDM mic RMS mapped to ~30-90 dB | 30-62 dB with the real mic (72 dB = Velxio's test tone when Mic is off) |
 | Ghost booking | presence -> backend ghost timer | marked after 5 s, released after 15 s with the demo timers |
-| Left items | Swift-YOLO COCO 320 detector (189 M MACs, 80 classes) on core 0 after people leave; counts bags, umbrellas, phones, bottles, cups, laptops, books | left = items now minus items before people came; ~70 s per check in Velxio (0.2 s on a real board). Switch: `FIND_ITEMS` |
-| People count | Swift-YOLO face detector 96x96 (22 M MACs) on core 0 while someone is present; `people` = max(faces, 1) | a few seconds per count in Velxio; needs faces towards the camera. Switch: `COUNT_PEOPLE` |
+| People count + left items | Swift-YOLO COCO 320 detector (189 M MACs, 80 classes) in a loop on core 0, on the sharp 320x240 camera frame (letterboxed); counts persons and bags, umbrellas, phones, bottles, cups, laptops, books | people = persons found; left = items now minus items before people came; ~95 s per run in Velxio (a few s on a real board) |
 
 **Left items (on the board).** No photo comparison any more (that version is the git tag `board-v1`). The COCO
 detector counts forgettable objects while the room is empty; the count before people came is the baseline, and after

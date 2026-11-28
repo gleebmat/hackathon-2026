@@ -53,6 +53,12 @@ and left items (yes/no) reach the website. 50 tests pass. Runbook: `README.md`.
 - -> gemini (Arshia): a counting model small enough for the ESP32-S3 (it would set `people`, `counted: true`).
 - -> claude-3 (Martha): new UI strings for booked vs present and left items are in `app.js`; restyle freely.
 
+**28 Nov: accurate detection (branch `gleb/accurate-detection`)**
+- Board: camera now 320x240 JPEG; the COCO detector runs in a loop on the sharp frame and gives people count + items
+  in one run, and decides presence (the 96x96 model only flags arrivals), so a standing person no longer flickers.
+  Face detector dropped (missed people not facing the camera). Serial: `status`, `snapshot`, `bgr`.
+- Backend: no private ("full") booking while people are in the room now. UI: an empty room always reads "Nobody here".
+
 ---
 
 ## claude-2 (3D model)
