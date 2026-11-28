@@ -1,4 +1,4 @@
-// Room V main page: campus map, room picker (picker.js), search, booking sheet and "My bookings".
+// Campus Booking System main page: campus map, room picker (picker.js), search, booking sheet and "My bookings".
 // Data: api.js (docs/PLAN.md, "Frontend flow"). Map: tom-claude's web/map3d/ when it is merged,
 // otherwise the 2D plan in plan2d.js (same module API).
 import * as api from "./api.js";
@@ -14,14 +14,16 @@ const HORIZON_DAYS = 14;
 const STATUS = { free: t("st_free"), partial: t("st_partial"), full: t("st_full"), ghost: t("st_ghost"), closed: t("st_closed"),
   unbookable: t("st_unbookable") };
 const PURPOSES = [
-  { id: "quiet_study", label: t("p_quiet_study"), emoji: "📚", noise: "quiet" },
-  { id: "group_study", label: t("p_group_study"), emoji: "🧠", noise: "moderate" },
-  { id: "meeting", label: t("p_meeting"), emoji: "💼", noise: "moderate" },
-  { id: "gaming", label: t("p_gaming"), emoji: "🎮", noise: "loud" },
-  { id: "board_games", label: t("p_board_games"), emoji: "🎲", noise: "loud" },
-  { id: "event", label: t("p_event"), emoji: "🎉", noise: "loud" },
-  { id: "custom", label: t("p_custom"), emoji: "✏️", noise: "moderate" },
+  { id: "quiet_study", label: t("p_quiet_study"), icon: "book", noise: "quiet" },
+  { id: "group_study", label: t("p_group_study"), icon: "bulb", noise: "moderate" },
+  { id: "meeting", label: t("p_meeting"), icon: "briefcase", noise: "moderate" },
+  { id: "gaming", label: t("p_gaming"), icon: "gamepad", noise: "loud" },
+  { id: "board_games", label: t("p_board_games"), icon: "dice", noise: "loud" },
+  { id: "event", label: t("p_event"), icon: "spark", noise: "loud" },
+  { id: "custom", label: t("p_custom"), icon: "pencil", noise: "moderate" },
 ];
+// Our own line icons (sprite in index.html) instead of emoji.
+const ic = (name) => `<svg class="ic" aria-hidden="true"><use href="#ic-${name}"/></svg>`;
 const PURPOSE = Object.fromEntries(PURPOSES.map((p) => [p.id, p]));
 
 const state = { user: null, rooms: [], mine: [], view: null, picker: null, sheet: null, myRatings: {}, notes: [] };
@@ -207,7 +209,7 @@ function bookingCard(b, { actions = true } = {}) {
       ${statusTag}
     </div>
     <div class="booking-tags">
-      <span class="tag">${PURPOSE[b.purpose]?.emoji ?? ""} ${esc(purposeText(b))}</span>
+      <span class="tag">${ic(PURPOSE[b.purpose]?.icon ?? "pencil")} ${esc(purposeText(b))}</span>
       <span class="tag">${mode}</span>
       <span class="tag">${people(b.seats)}</span>
       <span class="tag">${hoursText(b.hours)}</span>
@@ -253,7 +255,7 @@ function renderMine() {
     </section>`;
   }).join("");
   body.innerHTML = `
-    ${groups || `<div class="drawer-empty"><div class="big">🗓️</div><p><b>${t("no_upcoming")}</b></p><p>${t("no_upcoming_sub")}</p></div>`}
+    ${groups || `<div class="drawer-empty"><span class="empty-ic">${ic("cal")}</span><p><b>${t("no_upcoming")}</b></p><p>${t("no_upcoming_sub")}</p></div>`}
     <button class="btn btn-primary" type="button" data-action="find">${t("book_a_room")}</button>
     ${history.length ? `<details class="history"><summary>${t("history", { n: history.length })}</summary>
       ${history.map((b) => bookingCard(b, { actions: false })).join("")}</details>` : ""}`;
@@ -299,8 +301,40 @@ function newSheet(id, opts = {}) {
   };
 }
 
+// Rooms that can't be booked (55+ seats) get a small card on the map, not the booking panel.
+function showRoomInfo(r) {
+  closeSheet();
+  state.view?.focusRoom(r.id);
+  const card = document.querySelector(".map-card");
+  let box = card.querySelector(".map-info");
+  if (!box) {
+    box = document.createElement("div");
+    box.className = "map-info";
+    card.append(box);
+    box.addEventListener("click", (e) => {
+      if (!e.target.closest(".map-info-x")) return;
+      box.classList.remove("on");
+      state.view?.showAll();
+    });
+  }
+  box.innerHTML = `<button class="map-info-x" type="button" aria-label="Close">${ic("x")}</button>
+    <div class="map-info-id">${esc(r.label || r.id)}</div>
+    <div class="muted small">${esc(r.label ? `${r.id} · ${r.name}` : r.name)}</div>
+    <div class="map-info-facts"><span>${ic("seat")} ${esc(t("seats_n", { n: r.capacity }))}</span>
+      <span>${ic("sound")} ${Math.round(r.noise_db)} dB</span></div>
+    <p class="map-info-note">${ic("lock")} ${esc(t("info_not_bookable"))}</p>`;
+  box.classList.add("on");
+}
+
+function hideRoomInfo() {
+  document.querySelector(".map-info")?.classList.remove("on");
+}
+
 async function openRoom(id, opts) {
   closeSuggestions();
+  const known = state.rooms.find((r) => r.id === id);
+  if (known && known.bookable === false) return showRoomInfo(known);
+  hideRoomInfo();
   state.view?.focusRoom(id);
   state.sheet = newSheet(id, opts);
   const dlg = $("room-dialog");
@@ -434,6 +468,15 @@ function fixSelection() {
   if (sh.purpose && purposeBlocked(PURPOSE[sh.purpose])) sh.purpose = null;
 }
 
+// Ratings stay folded away until someone wants them.
+function ratingBox(r) {
+  const avg = r.rating != null
+    ? `<span class="stars"><s style="--p:${(r.rating / 5) * 100}%">★★★★★</s>${r.rating.toFixed(1)}</span> <span class="muted small">${esc(t("ratings_n", { n: r.votes }))}</span>`
+    : `<span class="muted">${esc(t("no_ratings"))}</span>`;
+  const mine = r.my_rating ? `<div class="muted small">${esc(t("your_stars", { n: r.my_rating }))}</div>` : "";
+  return `<details class="rating-box"><summary>${ic("star")} ${esc(t("ratings"))}</summary><div class="rating-body">${avg}${mine}</div></details>`;
+}
+
 function renderSheetHead() {
   const r = state.sheet.room;
   const live = r.live ? `<span class="live-badge">LIVE</span>` : "";
@@ -453,12 +496,12 @@ function renderSheetHead() {
       <button class="icon-btn" type="button" data-action="close" aria-label="${t("close")}"><svg class="icon"><use href="#i-close"/></svg></button>
     </div>`;
   const now = r.bookings_now.length
-    ? r.bookings_now.map((b) => `<div class="now-item"><span>${b.shareable ? "👥" : "🔒"} ${people(b.seats)} · ${esc(PURPOSE[b.purpose]?.label ?? b.purpose)}</span>
+    ? r.bookings_now.map((b) => `<div class="now-item"><span>${ic(b.shareable ? "users" : "lock")} ${people(b.seats)} · ${esc(PURPOSE[b.purpose]?.label ?? b.purpose)}</span>
         <span class="muted">${t(b.shareable ? "open_join" : "private_dot")}${t("until", { t: hm(b.end) })}</span></div>`).join("")
     : `<div class="now-item"><span>${t("nobody_booked")}</span></div>`;
   const ghost = r.status === "ghost" && r.ghost_release_at
     ? `<div class="ghost-alert" style="margin-top:8px">${t("ghost_room", { t: esc(r.ghost_release_at.slice(11, 19)) })}</div>` : "";
-  $("sh-now").innerHTML = `<div class="block-title"><h3>${t("right_now")}</h3></div>${r.board ? boardCard(r) : ""}<div class="now-list">${now}</div>${sensorCheck(r)}${ghost}`;
+  $("sh-now").innerHTML = `<div class="block-title"><h3>${t("right_now")}</h3></div>${r.board ? boardCard(r) : ""}<div class="now-list">${now}</div>${sensorCheck(r)}${ghost}${ratingBox(r)}`;
 }
 
 // The board room's live card: a big head count, the noise with a meter and the last minute as a line.
@@ -556,7 +599,7 @@ function renderSlots(popIndex) {
 function renderForm() {
   const sh = state.sheet;
   if (sh.room && sh.room.bookable === false) {   // lecture halls, Aula, atrium: 55+ seats (app/booking.py)
-    $("sh-form").innerHTML = `<div class="block"><div class="info-note">🔒 ${t("not_bookable")}</div></div>`;
+    $("sh-form").innerHTML = `<div class="block"><div class="info-note">${ic("lock")} ${t("not_bookable")}</div></div>`;
     return;
   }
   const r = range();
@@ -571,7 +614,7 @@ function renderForm() {
   const purposes = PURPOSES.map((p) => {
     const blocked = purposeBlocked(p);
     return `<button type="button" class="purpose ${sh.purpose === p.id ? "active" : ""}" data-purpose="${p.id}"
-      ${blocked ? `disabled title="${esc(blocked)}"` : ""}><span class="emoji">${p.emoji}</span>${p.label}</button>`;
+      ${blocked ? `disabled title="${esc(blocked)}"` : ""}>${ic(p.icon)}${p.label}</button>`;
   }).join("");
   const seatHint = t(sh.mode === "full" ? "seats_full" : "seats_share", { n: maxSeats });
   const alert = sh.error
@@ -589,9 +632,9 @@ function renderForm() {
     <div class="block"><span class="field-label">${t("who_join")}</span>
       <div class="modes">
         <button type="button" class="mode ${sh.mode === "full" ? "active" : ""}" data-mode="full" ${r.length && !canFull ? "disabled" : ""}>
-          <span class="emoji">🔒</span><b>${t("private_room")}</b><span>${t("private_room_sub")}</span></button>
+          ${ic("lock")}<b>${t("private_room")}</b><span>${t("private_room_sub")}</span></button>
         <button type="button" class="mode ${sh.mode === "partial" ? "active" : ""}" data-mode="partial">
-          <span class="emoji">👥</span><b>${t("open_share")}</b><span>${t("open_share_sub")}</span></button>
+          ${ic("users")}<b>${t("open_share")}</b><span>${t("open_share_sub")}</span></button>
       </div>
       ${r.length && !canFull ? `<p class="hint">${t("only_share")}</p>` : ""}
     </div>
@@ -649,7 +692,6 @@ async function submitBooking(btn) {
       room_id: sh.roomId, start: `${sh.date}T${r[0].start}`, hours: sh.hours, mode: sh.mode, seats: sh.seats,
       purpose: sh.purpose, custom_purpose: sh.purpose === "custom" ? sh.custom.trim() : null,
     });
-    confetti(btn);
     notify(`booked-${b.id}`, "booked", "note_booked",
       { room: b.room_id, day: dayLabel(sh.date), t: `${hm(b.start)}–${hm(b.end)}` }, b.room_id, { toast: false });
     toast(t("booked_toast", { room: b.room_id, day: dayLabel(sh.date), a: hm(b.start), b: hm(b.end) }), { action: { label: t("my_bookings"), run: openDrawer } });
@@ -804,7 +846,6 @@ function save(key, value) {
 
 function syncThemeButtons() {
   const root = document.documentElement.dataset;
-  for (const b of document.querySelectorAll("[data-theme]")) b.classList.toggle("active", b.dataset.theme === (root.theme || "violet"));
   for (const b of $("modes").querySelectorAll("button")) b.classList.toggle("active", b.dataset.mode === (root.mode || "auto"));
 }
 
@@ -814,13 +855,6 @@ function wireMenu() {
   const toggle = (open) => { menu.classList.toggle("hidden", !open); avatar.setAttribute("aria-expanded", String(open)); };
   avatar.addEventListener("click", (e) => { e.stopPropagation(); toggle(menu.classList.contains("hidden")); });
   document.addEventListener("click", (e) => { if (!menu.contains(e.target)) toggle(false); });
-  $("swatches").addEventListener("click", (e) => {
-    const b = e.target.closest("[data-theme]");
-    if (!b) return;
-    document.documentElement.dataset.theme = b.dataset.theme;
-    save("roomv-theme", b.dataset.theme);
-    syncThemeButtons();
-  });
   $("modes").addEventListener("click", (e) => {
     const b = e.target.closest("[data-mode]");
     if (!b) return;
@@ -877,7 +911,7 @@ function downloadIcs(b) {
   if (!b) return;
   const stamp = (iso) => iso.replace(/[-:]/g, "").slice(0, 15) + (iso.length <= 16 ? "00" : "");
   const room = `${b.room_id} ${roomName(b.room_id)}`.trim();
-  const ics = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//Room V//AAU//EN", "BEGIN:VEVENT",
+  const ics = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//Campus Booking System//AAU//EN", "BEGIN:VEVENT",
     `UID:roomv-${b.id}@aau`, `DTSTAMP:${new Date().toISOString().replace(/[-:]/g, "").slice(0, 15)}Z`,
     `DTSTART:${stamp(b.start)}`, `DTEND:${stamp(b.end)}`, `SUMMARY:${purposeText(b)} · ${room}`,
     `LOCATION:${room}, Universität Klagenfurt`, "END:VEVENT", "END:VCALENDAR"].join("\r\n");
@@ -904,7 +938,18 @@ function wireHelp() {
 
 function wireAssistant() {
   const input = $("ask-input");
-  $("ask-examples").innerHTML = ["ask_ex1", "ask_ex2", "ask_ex3"]
+  const panel = $("assistant");
+  const fab = $("ask-fab");
+  const setOpen = (open) => {
+    panel.hidden = !open;
+    fab.classList.toggle("on", open);
+    fab.setAttribute("aria-expanded", String(open));
+    if (open) setTimeout(() => input.focus(), 60);
+  };
+  fab.addEventListener("click", () => setOpen(panel.hidden));
+  panel.querySelector(".ask-x").addEventListener("click", () => setOpen(false));
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !panel.hidden) setOpen(false); });
+  $("ask-examples").innerHTML = ["ask_ex1", "ask_ex2"]
     .map((k) => `<button class="ask-example" type="button">${esc(t(k))}</button>`).join("");
   $("ask-examples").addEventListener("click", (e) => {
     const b = e.target.closest(".ask-example");
@@ -920,6 +965,7 @@ function wireAssistant() {
     const b = e.target.closest("button[data-ask-room]");
     if (!b) return;
     const u = state.asked;
+    setOpen(false);
     openRoom(b.dataset.askRoom, { date: u.date, time: u.time, hours: u.hours, mode: u.mode, seats: u.seats, purpose: u.purpose });
   });
 }
@@ -946,20 +992,20 @@ async function ask(text) {
   end.setMinutes(end.getMinutes() + u.hours * 60);
   const p = PURPOSE[u.purpose];
   const chips = [
-    `📅 ${esc(dayLabel(u.date))} · ${u.time}–${pad(end.getHours())}:${pad(end.getMinutes())}`,
-    `👥 ${esc(people(u.seats))}`,
-    `${p?.emoji ?? ""} ${esc(p?.label ?? u.purpose)}`,
+    `${ic("cal")} ${esc(dayLabel(u.date))} · ${u.time}–${pad(end.getHours())}:${pad(end.getMinutes())}`,
+    `${ic("users")} ${esc(people(u.seats))}`,
+    `${ic(p?.icon ?? "pencil")} ${esc(p?.label ?? u.purpose)}`,
     esc(t(u.mode === "full" ? "private_tag" : "share_tag")),
-    u.building ? `🏢 ${esc(t("ask_building", { b: u.building }))}` : "",
+    u.building ? `${ic("building")} ${esc(t("ask_building", { b: u.building }))}` : "",
   ].filter(Boolean).map((c) => `<span class="ask-chip">${c}</span>`).join("");
   const problem = res.problem ? `<p class="ask-problem">${esc(t(`ask_${res.problem === "none_free" ? "none" : res.problem}`))}</p>` : "";
   const rooms = res.rooms.map((r) => `
     <div class="ask-room">
       <div><b>${esc(r.label || r.id)}</b> <span class="muted small">${esc(r.label ? `${r.id} · ${r.name}` : r.name)}</span></div>
       <div class="ask-reasons">
-        <span class="noise-${esc(r.noise_class)}">🔊 ${esc(t(`noise_${r.noise_class}`))} · ${r.noise_db.toFixed(0)} dB</span>
-        <span>🪑 ${esc(t("ask_seats_free", { n: r.seats_free }))}</span>
-        ${r.rating ? `<span>⭐ ${r.rating}</span>` : ""}
+        <span class="noise-${esc(r.noise_class)}">${ic("sound")} ${esc(t(`noise_${r.noise_class}`))} · ${r.noise_db.toFixed(0)} dB</span>
+        <span>${ic("seat")} ${esc(t("ask_seats_free", { n: r.seats_free }))}</span>
+        ${r.rating ? `<span>${ic("star")} ${r.rating}</span>` : ""}
         ${r.board && r.live ? `<span class="live-badge">${esc(t("ask_live"))}</span>` : ""}
       </div>
       <button class="btn btn-primary btn-sm" type="button" data-ask-room="${esc(r.id)}">${t("ask_book")}</button>
@@ -996,13 +1042,13 @@ function renderNotes() {
   count.classList.toggle("hidden", !unread);
   $("notes-list").innerHTML = state.notes.length
     ? state.notes.map((n) => `<li class="note ${n.read ? "" : "unread"} ${esc(n.kind)}" data-room="${esc(n.room ?? "")}">
-        <span class="note-icon">${NOTE_ICON[n.kind] ?? "🔔"}</span>
+        <span class="note-icon">${ic(NOTE_ICON[n.kind] ?? "bell")}</span>
         <span><span class="note-text">${esc(t(n.msg, n.vars))}</span><span class="muted small">${esc(agoText(n.at))}</span></span></li>`).join("")
     : `<li class="note-empty muted small">${t("notes_empty")}</li>`;
 }
 
-const NOTE_ICON = { soon: "⏰", ending: "⏳", over: "🏁", ghost: "👻", released: "🚫", loud: "🔊", left: "🎒",
-  booked: "✅", cancelled: "🗑️" };
+const NOTE_ICON = { soon: "clock", ending: "hourglass", over: "done", ghost: "ghost", released: "ban", loud: "sound", left: "bag",
+  booked: "check", cancelled: "trash" };
 
 /** Adds a notification once (by key). `at` = when it happened (default now); only fresh ones (< 15 min) pop up. */
 function notify(key, kind, msg, vars, room, { toast: show = true, at = Date.now() } = {}) {

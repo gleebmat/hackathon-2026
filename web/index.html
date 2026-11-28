@@ -4,16 +4,15 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="google" content="notranslate">
-  <title>Room V · Book a room</title>
+  <title>Campus Booking System</title>
   <script>
     try {
-      document.documentElement.dataset.theme = localStorage.getItem("roomv-theme") || "violet";
       document.documentElement.dataset.mode = localStorage.getItem("roomv-mode") || "auto";
     } catch {}
   </script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Nunito+Sans:opsz,wght@6..12,400..900&display=swap">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500..800&family=Instrument+Sans:wght@400..700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
   <link rel="stylesheet" href="css/style.css">
   <script type="importmap">
     { "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
@@ -28,13 +27,41 @@
     <symbol id="i-prev" viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></symbol>
     <symbol id="i-next" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"/></symbol>
     <symbol id="i-users" viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0M16 4.5a3.5 3.5 0 0 1 0 7M18 14.5a6.5 6.5 0 0 1 3.5 5.5"/></symbol>
+    <symbol id="ic-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></symbol>
+    <symbol id="ic-lock" viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></symbol>
+    <symbol id="ic-users" viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0M16 4.5a3.5 3.5 0 0 1 0 7M18 14.5a6.5 6.5 0 0 1 3.5 5.5"/></symbol>
+    <symbol id="ic-book" viewBox="0 0 24 24"><path d="M5 4h11a3 3 0 0 1 3 3v13H8a3 3 0 0 1-3-3zM5 17a3 3 0 0 1 3-3h11"/></symbol>
+    <symbol id="ic-bulb" viewBox="0 0 24 24"><path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-3.5 10.9c.6.5 1 1.2 1 2.1h5c0-.9.4-1.6 1-2.1A6 6 0 0 0 12 3z"/></symbol>
+    <symbol id="ic-briefcase" viewBox="0 0 24 24"><rect x="3" y="7" width="18" height="13" rx="2"/><path d="M9 7V5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2M3 13h18"/></symbol>
+    <symbol id="ic-gamepad" viewBox="0 0 24 24"><path d="M7 8h10a4 4 0 0 1 4 4v1.5a3 3 0 0 1-5.4 1.8L14.5 14h-5l-1.1 1.3A3 3 0 0 1 3 13.5V12a4 4 0 0 1 4-4zM8 10.5v3M6.5 12h3M15.5 11.5h.01M17.5 13h.01"/></symbol>
+    <symbol id="ic-dice" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M9 9h.01M15 9h.01M9 15h.01M15 15h.01M12 12h.01"/></symbol>
+    <symbol id="ic-spark" viewBox="0 0 24 24"><path d="M12 3v4M12 17v4M3 12h4M17 12h4M6.5 6.5l2.3 2.3M15.2 15.2l2.3 2.3M6.5 17.5l2.3-2.3M15.2 8.8l2.3-2.3"/></symbol>
+    <symbol id="ic-pencil" viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16zM13 7l4 4"/></symbol>
+    <symbol id="ic-cal" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="3"/><path d="M3 10h18M8 3v4M16 3v4"/></symbol>
+    <symbol id="ic-building" viewBox="0 0 24 24"><path d="M4 21V5l8-2v18M12 8h8v13M3 21h18M7 8h2M7 12h2M7 16h2M15 12h2M15 16h2"/></symbol>
+    <symbol id="ic-sound" viewBox="0 0 24 24"><path d="M4 9v6h4l5 4V5L8 9H4zM17 8.5a5 5 0 0 1 0 7"/></symbol>
+    <symbol id="ic-seat" viewBox="0 0 24 24"><path d="M7 3h10v9H7zM5 12h14M7 12v9M17 12v9"/></symbol>
+    <symbol id="ic-star" viewBox="0 0 24 24"><path d="M12 3l2.8 5.8 6.2.8-4.5 4.4 1.1 6.3-5.6-3-5.6 3 1.1-6.3L3 9.6l6.2-.8z"/></symbol>
+    <symbol id="ic-bell" viewBox="0 0 24 24"><path d="M6 16v-5a6 6 0 1 1 12 0v5l2 2H4zM10 21h4"/></symbol>
+    <symbol id="ic-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol>
+    <symbol id="ic-hourglass" viewBox="0 0 24 24"><path d="M7 3h10M7 21h10M8 3v3l4 6-4 6v3M16 3v3l-4 6 4 6v3"/></symbol>
+    <symbol id="ic-done" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M8 12l3 3 5-6"/></symbol>
+    <symbol id="ic-ghost" viewBox="0 0 24 24"><path d="M6 20V10a6 6 0 0 1 12 0v10l-2-1.5-2 1.5-2-1.5-2 1.5-2-1.5zM10 10h.01M14 10h.01"/></symbol>
+    <symbol id="ic-ban" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M5.6 5.6l12.8 12.8"/></symbol>
+    <symbol id="ic-bag" viewBox="0 0 24 24"><path d="M6 8h12l-1 13H7zM9 8V6a3 3 0 0 1 6 0v2"/></symbol>
+    <symbol id="ic-check" viewBox="0 0 24 24"><path d="M5 12l4 4 10-10"/></symbol>
+    <symbol id="ic-trash" viewBox="0 0 24 24"><path d="M4 7h16M9 7V4h6v3M6 7l1 14h10l1-14"/></symbol>
+    <symbol id="ic-link" viewBox="0 0 24 24"><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/></symbol>
+    <symbol id="ic-clipboard" viewBox="0 0 24 24"><rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 3h6v3H9z"/></symbol>
+    <symbol id="ic-eye" viewBox="0 0 24 24"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></symbol>
+    <symbol id="ic-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/></symbol>
     <symbol id="i-sound" viewBox="0 0 24 24"><path d="M4 9v6h4l5 4V5L8 9H4zM17 8.5a5 5 0 0 1 0 7M19.5 6a8.5 8.5 0 0 1 0 12"/></symbol>
   </svg>
 
   <header class="topbar">
     <a class="brand" href="./">
-      <span class="brand-mark">V</span>
-      <span><span class="brand-name">Room V</span><br><span class="brand-sub" data-i18n="brand_sub">Find it. Book it. Study.</span></span>
+      <span class="brand-tile" aria-hidden="true">cb.</span>
+      <span><span class="brand-name">Campus Booking System</span><br><span class="brand-sub" data-i18n="brand_sub">Find it. Book it. Study.</span></span>
     </a>
 
     <div class="search" id="search">
@@ -67,13 +94,6 @@
         <button class="avatar" id="avatar" type="button" aria-haspopup="true" aria-expanded="false" data-i18n-title="profile">?</button>
         <div class="menu hidden" id="menu">
           <div class="menu-user"><strong id="user-name"></strong><span class="muted small" id="user-email"></span></div>
-          <div class="menu-label" data-i18n="colour_theme">Colour theme</div>
-          <div class="swatches" id="swatches">
-            <button class="swatch" data-theme="violet" title="Violet" style="background:linear-gradient(135deg,#6d5dfc,#22d3ee)"></button>
-            <button class="swatch" data-theme="ocean" title="Ocean" style="background:linear-gradient(135deg,#0ea5e9,#34d399)"></button>
-            <button class="swatch" data-theme="sunset" title="Sunset" style="background:linear-gradient(135deg,#f43f5e,#fb923c)"></button>
-            <button class="swatch" data-theme="mint" title="Mint" style="background:linear-gradient(135deg,#10b981,#a3e635)"></button>
-          </div>
           <div class="menu-label" data-i18n="mode">Mode</div>
           <div class="segmented" id="modes">
             <button type="button" data-mode="auto" data-i18n="mode_auto">Auto</button>
@@ -97,23 +117,13 @@
         <span><i style="background:var(--full)"></i><span data-i18n="legend_full">Full</span></span>
         <span><i style="background:var(--ghost)"></i><span data-i18n="legend_ghost">Ghost</span></span>
         <span><i style="background:#9aa0a6"></i><span data-i18n="legend_closed">Closed</span></span>
-        <span><i class="lock-dot">🔒</i><span data-i18n="legend_unbookable">Not bookable (55+ seats)</span></span>
+        <span><svg class="ic legend-lock" aria-hidden="true"><use href="#ic-lock"/></svg><span data-i18n="legend_unbookable">Not bookable (55+ seats)</span></span>
       </div>
     </section>
 
     <!-- Room panel: opens right under the map (not as an overlay) so the zoom to the room stays visible. -->
     <section class="sheet" id="room-dialog" aria-labelledby="room-title" hidden></section>
 
-    <!-- Room assistant: a request in plain words -> the best rooms (app/assistant.py) -->
-    <section class="assistant" id="assistant">
-      <form class="ask-form" id="ask-form">
-        <span class="ask-spark" aria-hidden="true">✨</span>
-        <input id="ask-input" type="text" maxlength="300" autocomplete="off" data-i18n-ph="ask_ph" data-i18n-aria="ask_aria">
-        <button class="btn btn-primary" type="submit" data-i18n="ask_btn">Ask</button>
-      </form>
-      <div class="ask-examples" id="ask-examples"></div>
-      <div class="ask-answer" id="ask-answer" aria-live="polite" hidden></div>
-    </section>
 
     <section class="picker" id="picker">
       <div class="cal">
@@ -134,7 +144,10 @@
         </div>
       </div>
 
-      <h2 class="picker-title"></h2>
+      <div class="picker-head">
+        <h2 class="picker-title"></h2>
+        <div class="kinds" role="group"></div>
+      </div>
       <div class="stage">
         <button class="arrow prev" type="button" data-i18n-aria="prev_rooms"><svg class="icon"><use href="#i-prev"/></svg></button>
         <div class="picks"></div>
@@ -145,6 +158,23 @@
   </main>
 
   <footer class="site-footer" id="footer"></footer>
+
+  <!-- Roomie, the room assistant: a small tile in the corner that opens a little panel (app/assistant.py) -->
+  <div class="ask-dock">
+    <section class="assistant" id="assistant" hidden aria-label="Roomie">
+      <div class="ask-head"><b>Roomie</b><span class="muted small" data-i18n="ask_aria">Ask the room assistant</span>
+        <button class="ask-x" type="button" aria-label="Close"><svg class="ic"><use href="#i-close"/></svg></button></div>
+      <form class="ask-form" id="ask-form">
+        <input id="ask-input" type="text" maxlength="300" autocomplete="off" data-i18n-ph="ask_ph" data-i18n-aria="ask_aria">
+        <button class="ask-send" type="submit" data-i18n-aria="ask_btn" aria-label="Ask"><svg class="ic"><use href="#i-next"/></svg></button>
+      </form>
+      <div class="ask-examples" id="ask-examples"></div>
+      <div class="ask-answer" id="ask-answer" aria-live="polite" hidden></div>
+    </section>
+    <button class="ask-fab" id="ask-fab" type="button" aria-label="Ask Roomie" aria-expanded="false">
+      <span class="fab-tile" aria-hidden="true">r.</span>
+    </button>
+  </div>
 
   <dialog class="drawer" id="mine-drawer" aria-labelledby="mine-title">
     <div class="drawer-head">
