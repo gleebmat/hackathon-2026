@@ -188,16 +188,16 @@ These features are for the room display only; the website shows none of them (ro
 - **Own soundscape:** the board mic also hears the sound the display plays. While a soundscape is on, readings from
   the display board keep the noise measured before it started, so the room never turns "loud" from its own sound.
 
-**The page (`web/display.html`).** Laid out for 800x480 and scaled to any window. Home: a ring of five cards you
-swipe through (finger or mouse, the arrows, or the arrow keys; tap a side card to bring it to the middle). The middle
-card is big, two smaller ones sit on each side, and any card can be in the middle. It starts (and returns after 90 s
-untouched) with the room card in the middle: status in words, people, booked until, minutes to the next break
-reminder. Around it: Book, Sounds | Selfie, Break. Top bar: university logo (`web/img/aau-logo.svg`, the University
+**The page (`web/display.html`).** Laid out for 800x480 and scaled to any window. Home: one row of big buttons that
+scrolls sideways like a list (finger, mouse drag, wheel, the arrows or the arrow keys; it moves as one row, nothing
+wraps around or jumps). First the room card (300 px wide: status in words, people, booked until, minutes to the next
+break reminder), then Book, Sounds, Selfie and Break (236x338 px each, about 28x40 mm on the 4.3" panel; the third
+one peeks in at the edge so it's clear the row scrolls). It goes back to the start after 90 s untouched. Top bar: university logo (`web/img/aau-logo.svg`, the University
 of Klagenfurt's logo as on Wikipedia, `Universitaet_klagenfurt_logo.svg`; a protected trademark of the university,
 used here for the AAU challenge; without the file the name is written out), room, time with the date, a small ear
 while the fire-alarm listener runs, language, SOS. Plain campus-system look on purpose: Arial, square boxes, grey
 lines, AAU blue (`#497284`, from the logo), no decoration; red only for SOS and the fire alarm. Text contrast at least
-4.5:1, touch targets at least 44 px (middle card 268x356), text at least 15 px, nothing overflows at 800x480 in
+4.5:1, touch targets at least 44 px (home buttons 236x338), text at least 15 px, nothing overflows at 800x480 in
 English or German (checked on every screen and state, overlays included), English/German (same `roomv-lang` choice as
 the website), screen-reader labels, reduced motion respected. SOS is always top right, asks "Call the police?" first,
 shows "Calling the police (133)…" for a few seconds, then "Police called" until someone presses "End emergency".
