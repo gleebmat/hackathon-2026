@@ -311,8 +311,11 @@ export function createBuilding(el, input, opts = {}) {
     const r = renderer.domElement.getBoundingClientRect();
     mouse.set(((ev.clientX - r.left) / r.width) * 2 - 1, -((ev.clientY - r.top) / r.height) * 2 + 1);
     ray.setFromCamera(mouse, camera);
-    const visible = [...rooms.values()].map((x) => x.mesh).filter((m) => m.visible && m.parent.visible);
-    const hit = ray.intersectObjects(visible, false)[0];
+    const shown = [...rooms.values()].filter((x) => x.mesh.visible && x.mesh.parent.visible);
+    // A room's badge (LIVE / OFFLINE, 55+) is drawn on top of everything, so it is checked first and counts as its room.
+    const badgeHit = ray.intersectObjects(shown.filter((x) => x.badge).map((x) => x.badge), false)[0];
+    if (badgeHit) return badgeHit.object.userData.roomId;
+    const hit = ray.intersectObjects(shown.map((x) => x.mesh), false)[0];
     return hit ? hit.object.userData.roomId : null;
   };
   renderer.domElement.addEventListener("pointerdown", (e) => (down = [e.clientX, e.clientY]));
@@ -505,6 +508,7 @@ export function createBuilding(el, input, opts = {}) {
           r.badge = kind === "live" ? badge("● LIVE", "#e0483e") : kind === "locked" ? badge("🔒 55+", "#475569")
             : badge(kind === "board-live" ? "LIVE" : "OFFLINE", kind === "board-live" ? "#e0483e" : "#6b7280", true);
           r.badge.position.set(0, r.h / 2 + (kind === "live" ? 1.4 : 3.2), 0);
+          r.badge.userData.roomId = r.data.id;   // clicking the badge acts like clicking the room
           r.mesh.add(r.badge);
         }
       }
