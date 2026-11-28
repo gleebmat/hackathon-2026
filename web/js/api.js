@@ -47,6 +47,10 @@ export const calendar = (date) => request("GET", `/api/calendar?${q({ date })}`)
 export const ask = (text) => request("GET", `/api/assistant?${q({ q: text })}`).then((a) => ({ ...a, rooms: a.rooms.map(named) }));
 export const rate = (id, stars) => request("POST", `/api/rooms/${encodeURIComponent(id)}/rating`, { stars });
 
+export const favorites = () => request("GET", "/api/favorites").then((list) => list.map(named));
+export const like = (id) => request("PUT", `/api/favorites/${encodeURIComponent(id)}`);
+export const unlike = (id) => request("DELETE", `/api/favorites/${encodeURIComponent(id)}`);
+
 export const myBookings = () => request("GET", "/api/bookings/mine");
 export const book = (booking) => request("POST", "/api/bookings", booking);
 export const cancel = (id) => request("DELETE", `/api/bookings/${id}`);
