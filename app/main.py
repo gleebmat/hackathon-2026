@@ -328,7 +328,7 @@ def display_state(room_id: str, request: Request, conn: Conn):
     return {"room_id": room_id, "label": state["label"], "name": state["name"], "status": state["status"],
             "people": state["people"], "noise_db": state["noise_db"], "board_online": display.online(room_id),
             "bookings_now": state["bookings_now"], "break_until": state["break_until"],
-            "sound": display.sound(room_id), "sounds": list(display.SOUNDS), "quiet": display.quiet(room_id),
+            "sound": display.sound(room_id), "sounds": list(display.SOUNDS),
             "emergency": emergency_out(emergency) if emergency else None,
             "booking_url": booking_link(request, room_id)}
 
@@ -350,17 +350,6 @@ class SoundRequest(BaseModel):
 def display_sound(room_id: str, body: SoundRequest, conn: Conn, token: DisplayToken = None):
     display_room(conn, room_id, token)
     return display.set_sound(room_id, body.kind, body.volume)
-
-
-class QuietRequest(BaseModel):
-    on: bool
-
-
-@app.post("/api/display/{room_id}/quiet")
-def display_quiet(room_id: str, body: QuietRequest, conn: Conn, token: DisplayToken = None):
-    """Quiet room (do not disturb): the website shows the room as silent study only."""
-    display_room(conn, room_id, token)
-    return {"room_id": room_id, "on": display.set_quiet(room_id, body.on)}
 
 
 class BreakRequest(BaseModel):

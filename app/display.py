@@ -5,8 +5,8 @@ online the backend opens a chromeless Edge/Chrome window (~480x320, like the Inf
 closes it again when the board goes offline. The page (frontend) calls /api/display/<room>/... with the token from its
 URL: book-a-room QR, soundscapes, selfie QR, emergency and take-a-break.
 
-State kept here, in memory: the playing soundscape and quiet-room switch per room, selfies (10 minutes, never written to
-disk), and when each display board was last heard. Breaks and emergencies are in the database (app/db.py).
+State kept here, in memory: the playing soundscape per room, selfies (10 minutes, never written to disk), and when
+each display board was last heard. Breaks and emergencies are in the database (app/db.py).
 """
 
 import logging
@@ -35,7 +35,6 @@ WINDOW_SIZE = (800, 520)    # the E84 kit's 4.3" 800x480 screen plus the title b
 TOKEN = os.environ.get("DISPLAY_TOKEN") or secrets.token_urlsafe(16)
 
 sounds: dict[str, dict] = {}                         # room -> {"kind", "volume"}
-quiet_rooms: set[str] = set()                        # rooms switched to "quiet room" (do not disturb) on the display
 selfies: dict[str, tuple[bytes, datetime]] = {}      # token -> (jpeg, expires)
 frames: dict[str, tuple[bytes, float]] = {}          # room -> (latest decrypted camera jpeg, time.monotonic())
 board_seen: dict[str, float] = {}                    # room -> time.monotonic() of the last reading with "display"
@@ -64,15 +63,6 @@ def sound(room_id: str) -> dict:
 def set_sound(room_id: str, kind: str, volume: int) -> dict:
     sounds[room_id] = {"kind": kind, "volume": volume}
     return sounds[room_id]
-
-
-def quiet(room_id: str) -> bool:
-    return room_id in quiet_rooms
-
-
-def set_quiet(room_id: str, on: bool) -> bool:
-    (quiet_rooms.add if on else quiet_rooms.discard)(room_id)
-    return on
 
 
 # --- camera frames and selfies ---

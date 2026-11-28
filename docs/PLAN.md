@@ -174,7 +174,7 @@ the page URL as header `X-Display-Token` (403 without it). QR codes use the publ
 
 | Method | Path | What it does |
 |---|---|---|
-| GET | `/api/display/{room}` | `{room_id, label, name, status, people, noise_db, board_online, bookings_now, break_until, sound:{kind, volume}, sounds:[...], quiet, emergency:{id, room_id, created_at, resolved_at}\|null, booking_url}`; poll it every 1-2 s; no token needed |
+| GET | `/api/display/{room}` | `{room_id, label, name, status, people, noise_db, board_online, bookings_now, break_until, sound:{kind, volume}, sounds:[...], emergency:{id, room_id, created_at, resolved_at}\|null, booking_url}`; poll it every 1-2 s; no token needed |
 | GET | `/api/display/{room}/qr` | SVG QR code of `booking_url` (1. book a room) |
 | POST | `/api/display/{room}/sound` | `{kind: off\|rain\|ocean\|forest\|cafe\|white\|pink\|brown, volume: 0-100}` (2. soundscapes): the backend only stores it, the page plays it (WebAudio or files) |
 | POST | `/api/display/{room}/selfie` | (3. selfie) optional `{image: base64 JPEG}` = the photo the display took with its webcam; without it, the board camera's newest frame → `{url, qr_svg, expires_at}`; the photo lives in memory for 10 min, never on disk; 409 when there's no image and the board camera isn't live; 400 when the image isn't a JPEG |
@@ -183,29 +183,31 @@ the page URL as header `X-Display-Token` (403 without it). QR codes use the publ
 | GET | `/api/emergencies` | open emergencies for the website (logged in) |
 | POST | `/api/emergencies/{id}/resolve` | marks one handled (logged in) |
 | POST / DELETE | `/api/display/{room}/break` | `{minutes: 5-30}` (5. take a break) → `{break_until}` on every running booking in the room; 409 when nobody booked. While it runs the booking is never released as a ghost; afterwards the empty timer starts again. DELETE ends it early |
-| POST | `/api/display/{room}/quiet` | `{on: true\|false}` (6. quiet room / do not disturb) → `{room_id, on}`; kept in memory like the sound |
 
-Website fields: every room has `break_until` (null or ISO time), `sound` (`"off"`, `"rain"`, ...), `quiet` (true
-while the display asks for silence) and `emergency` (true while one is open); bookings have `break_until`. Show "On
-break until 14:20", the playing sound, a "Quiet room" badge and a red emergency alert (`GET /api/emergencies`,
-resolve button).
+Website fields: every room has `break_until` (null or ISO time), `sound` (`"off"`, `"rain"`, ...) and `emergency`
+(true while one is open); bookings have `break_until`. Show "On break until 14:20", the playing sound and a red
+emergency alert (`GET /api/emergencies`, resolve button).
 
-**The page (`web/display.html`).** Laid out for 800x480 and scaled to any window. Home: two big tiles on the left
-(Book, Sounds), two on the right (Selfie, Break), and the room in the middle (status in words, people, booked until,
-the Quiet-room switch, minutes to the next water break). Top bar: university logo (`web/img/aau-logo.svg`, the
-University of Klagenfurt's logo as on Wikipedia, `Universitaet_klagenfurt_logo.svg`; a protected trademark of the
-university, used here for the AAU challenge; without the file the name is written out), room, time with the date, a small ear while the fire-alarm listener runs,
-language, SOS. AAU blue and white (`#497284` and `#57a0c7`, from the university logo), Barlow Condensed headings,
-Atkinson Hyperlegible text (designed for low-vision readers); red only for SOS and the fire alarm. Text contrast at
-least 4.5:1, touch targets at least 48 px (tiles 228x180), text at least 15 px, nothing overflows at 800x480 in English
-or German (checked on all 28 screens and states, overlays included), English/German (same `roomv-lang` choice as the
-website), screen-reader labels, reduced motion respected, back home after 90 s untouched. SOS asks "Are you sure?"
-first and shows "Help has been called" until the website resolves it. Selfie: this computer's webcam (preview
-mirrored, photo not), else the board camera's frame. Sounds are synthesised in the page (Web Audio), no files.
+**The page (`web/display.html`).** Laid out for 800x480 and scaled to any window. Home: a ring of five cards you
+swipe through (finger or mouse, the arrows, or the arrow keys; tap a side card to bring it to the middle). The middle
+card is big, two smaller ones sit on each side, and any card can be in the middle. It starts (and returns after 90 s
+untouched) with the room card in the middle: status in words, people, booked until, minutes to the next break
+reminder. Around it: Book, Sounds | Selfie, Break. Top bar: university logo (`web/img/aau-logo.svg`, the University
+of Klagenfurt's logo as on Wikipedia, `Universitaet_klagenfurt_logo.svg`; a protected trademark of the university,
+used here for the AAU challenge; without the file the name is written out), room, time with the date, a small ear
+while the fire-alarm listener runs, language, SOS. Plain campus-system look on purpose: Arial, square boxes, grey
+lines, AAU blue (`#497284`, from the logo), no decoration; red only for SOS and the fire alarm. Text contrast at least
+4.5:1, touch targets at least 44 px (middle card 268x356), text at least 15 px, nothing overflows at 800x480 in
+English or German (checked on every screen and state, overlays included), English/German (same `roomv-lang` choice as
+the website), screen-reader labels, reduced motion respected. SOS asks "Are you sure?" first and shows "Help has been
+called" until the website resolves it. Selfie: this computer's webcam (preview mirrored, photo not), else the board
+camera's frame. Sounds are synthesised in the page (Web Audio), no files; the café is murmuring voices, cups and
+spoons and the coffee machine.
 
 Shown without a button:
-- **Water and stretch reminder** every 45 minutes while people study in the room (people seen or a booking running,
-  not during a break): full screen for 60 s, tap anywhere to close early. `?water=<minutes>` changes the interval.
+- **Break reminder** ("Time for a break": stand up, stretch, drink some water) every 45 minutes while people study in
+  the room (people seen or a booking running, not during a break): full screen for 60 s, tap anywhere to close early.
+  `?water=<minutes>` changes the interval.
 - **Fire alarm for deaf students:** the page listens to the microphone and looks for a smoke alarm's beeps (a narrow
   tone at 2.5-4 kHz, 25 dB above the rest; three beeps of 0.2-1.2 s within 6 s, as in EN 14604 / ISO 8201, or one
   tone longer than 3 s). Then a full-screen bilingual "FIRE ALARM / FEUERALARM: leave the room" alert pulses at 1 Hz
@@ -213,7 +215,7 @@ Shown without a button:
   energy is looked at in the page. The display window gets camera and microphone without a prompt
   (`--use-fake-ui-for-media-stream` in `app/display.py`; it's its own browser profile on this page only). On a real
   board the same check is a Goertzel filter at ~3.1 kHz on the PDM microphone.
-- Demo: `?demo=1` then key **W** = water reminder, **F** = fire alarm for 15 s.
+- Demo: `?demo=1` then key **W** = break reminder, **F** = fire alarm for 15 s.
 
 ### Frontend flow (claude-3 / Martha; every call above is live on `uvicorn app.main:app`)
 1. **Login page:** `POST /api/login` or `POST /api/register`, then the main page. On load, `GET /api/me`; 401 →

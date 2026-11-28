@@ -55,7 +55,8 @@ API docs: http://localhost:8000/docs. The map alone: http://localhost:8000/map3d
   sharers but **don't block booking the whole room** (a private booking just moves them out).
 - **Room display (board room):** the board has no display or speaker, so when it runs the backend opens a small
   window (Edge or Chrome) that acts as its touch display: book-a-room QR, soundscapes, selfie QR (your webcam),
-  take a break, quiet room, emergency; big swipeable cards sized for the E84 kit's 4.3" 800x480 screen
+  take a break, emergency, a break reminder every 45 min and a fire-alarm alert for deaf students (from the alarm's
+  sound); a swipeable ring of cards sized for the E84 kit's 4.3" 800x480 screen
   (`web/display.html`, API in `docs/PLAN.md`, "Room display"). It closes when the board stops. Chrome somewhere else:
   set `DISPLAY_BROWSER`. Without the board: `$env:DISPLAY_TOKEN='dev-display'`, start the backend, open
   http://localhost:8000/display.html?room=Z.1.04&token=dev-display.

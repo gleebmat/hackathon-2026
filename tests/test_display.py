@@ -13,7 +13,7 @@ TOKEN = {"X-Display-Token": display.TOKEN}
 
 @pytest.fixture(autouse=True)
 def clean_display():
-    for state in (display.sounds, display.selfies, display.frames, display.board_seen, display.quiet_rooms):
+    for state in (display.sounds, display.selfies, display.frames, display.board_seen):
         state.clear()
 
 
@@ -37,7 +37,7 @@ def test_display_state_and_booking_qr(app_env, monkeypatch):
 
 def test_actions_need_the_display_token(app_env):
     for path, body in [("sound", {"kind": "rain"}), ("break", {"minutes": 10}), ("selfie", {}),
-                       ("emergency", {"confirm": True}), ("quiet", {"on": True})]:
+                       ("emergency", {"confirm": True})]:
         assert act(path, token={}, **body).status_code == 403
         assert act(path, token={"X-Display-Token": "guess"}, **body).status_code == 403
     assert act("break", method="delete", token={}).status_code == 403
@@ -101,15 +101,6 @@ def test_selfie_from_the_display_webcam(app_env):
     assert got.content == photo
     assert act("selfie", image="not base64!").status_code == 400
     assert act("selfie", image=base64.b64encode(b"GIF89a").decode()).status_code == 400
-
-
-def test_quiet_room(app_env):
-    c = TestClient(main.app)
-    assert c.get(f"/api/display/{ROOM}").json()["quiet"] is False and room(c, ROOM)["quiet"] is False
-    assert act("quiet", on=True).json() == {"room_id": ROOM, "on": True}
-    assert c.get(f"/api/display/{ROOM}").json()["quiet"] is True and room(c, ROOM)["quiet"] is True
-    act("quiet", on=False)
-    assert room(c, ROOM)["quiet"] is False
 
 
 def test_emergency(app_env):
