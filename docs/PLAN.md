@@ -192,8 +192,9 @@ resolve button).
 
 **The page (`web/display.html`).** Laid out for 800x480 and scaled to any window. Home: two big tiles on the left
 (Book, Sounds), two on the right (Selfie, Break), and the room in the middle (status in words, people, booked until,
-the Quiet-room switch, minutes to the next water break). Top bar: university logo (`web/img/aau-logo.svg`; without
-the file the name is written out), room, time with the date, a small ear while the fire-alarm listener runs,
+the Quiet-room switch, minutes to the next water break). Top bar: university logo (`web/img/aau-logo.svg`, the
+University of Klagenfurt's logo as on Wikipedia, `Universitaet_klagenfurt_logo.svg`; a protected trademark of the
+university, used here for the AAU challenge; without the file the name is written out), room, time with the date, a small ear while the fire-alarm listener runs,
 language, SOS. AAU blue and white (`#497284` and `#57a0c7`, from the university logo), Barlow Condensed headings,
 Atkinson Hyperlegible text (designed for low-vision readers); red only for SOS and the fire alarm. Text contrast at
 least 4.5:1, touch targets at least 48 px (tiles 228x180), text at least 15 px, nothing overflows at 800x480 in English
