@@ -10,10 +10,10 @@ import { TextGeometry } from "three/addons/geometries/TextGeometry.js";
 
 const FONT_URL = "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/fonts/helvetiker_bold.typeface.json";
 
-const TYPE_COLOR = { seminar: 0x2a8fb0, office: 0xd9dde3, wc: 0xa9c9e8, hall: 0xe3c99a, atrium: 0x9fd8b5, foyer: 0xf2f2f2 };
-const STATUS_COLOR = { free: 0xffffff, partial: 0xf5b642, full: 0xe0483e, ghost: 0x8b5cf6, closed: 0x9aa0a6,
-  unbookable: 0x334155 };   // unbookable (55+ seats): dark and see-through, with a lock badge   // ghost = the site's violet (--ghost)
-const HOVER_COLOR = new THREE.Color(0x4f8dff);   // the room under the mouse blends towards this blue
+const TYPE_COLOR = { seminar: 0xc7d3e6, office: 0xe3e7ee, wc: 0xd6dde8, hall: 0xdbe2ec, atrium: 0xd2e0dc, foyer: 0xf1f3f7 };
+const STATUS_COLOR = { free: 0xffffff, partial: 0xe2a43c, full: 0xc8412f, ghost: 0xc4b3e6, closed: 0x94a3b8,
+  unbookable: 0x8a97ab };   // unbookable (55+ seats): dark and see-through, with a lock badge   // ghost = the site's violet (--ghost)
+const HOVER_COLOR = new THREE.Color(0x2f5be0);   // the room under the mouse blends towards this blue
 const HIDDEN_BY_DEFAULT = new Set(["office", "wc", "foyer"]);  // "offices" toggle
 const SLAB = 0.35;
 
@@ -40,7 +40,7 @@ export function createBuilding(el, input, opts = {}) {
   controls.minDistance = 6;
   controls.maxDistance = 600;
 
-  scene.add(new THREE.HemisphereLight(0xffffff, 0x8899aa, 1.6));
+  scene.add(new THREE.HemisphereLight(0xffffff, 0x9aa6b8, 1.7));
   const sun = new THREE.DirectionalLight(0xffffff, 1.5);
   sun.position.set(-60, 120, 40);
   sun.castShadow = true;
@@ -49,9 +49,9 @@ export function createBuilding(el, input, opts = {}) {
   scene.add(sun);
 
   // --- materials ---
-  const slabMat = new THREE.MeshStandardMaterial({ color: 0xc9ccd1, roughness: 0.9 });
+  const slabMat = new THREE.MeshStandardMaterial({ color: 0xd5dce6, roughness: 0.9 });
   const roofMat = new THREE.MeshStandardMaterial({ color: 0xd4dee9, roughness: 0.4, transparent: true, opacity: 0.14, depthWrite: false });  // always see-through
-  const glass = new THREE.MeshStandardMaterial({ color: 0xdfe8f0, transparent: true, opacity: 0.16, depthWrite: false });
+  const glass = new THREE.MeshStandardMaterial({ color: 0xeef2f8, transparent: true, opacity: 0.18, depthWrite: false });
 
   // --- helpers ---
   const rect = (path, x, z, w, d) => {   // shape coords are (x, -z): the extrusion is rotated onto the ground
@@ -103,7 +103,7 @@ export function createBuilding(el, input, opts = {}) {
   const box = (x, z, w, d, y0, h, mat, parent, edgeOpacity = 0.35) => {
     const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
     m.position.set(x, y0 + h / 2, z);
-    edges(m, 0x8796a8, edgeOpacity);
+    edges(m, 0x8e9bb0, edgeOpacity);
     parent.add(m);
     return m;
   };
@@ -162,7 +162,7 @@ export function createBuilding(el, input, opts = {}) {
     for (const b of bd.blocks) {
       const bTop = (b.floors ?? bd.floors).length * H;     // low annexes can have fewer storeys
       const roof = slab(b, bTop, true, roofMat, 0.5);
-      edges(roof, 0x2b3440, 0.7);
+      edges(roof, 0x4b5768, 0.55);
       shell.add(roof);
       const pts = corners(b);
       pts.forEach(([x0, z0], i) => {                       // one glass wall per footprint edge
@@ -199,7 +199,7 @@ export function createBuilding(el, input, opts = {}) {
       mesh.position.set(r.x, r.floor * H + SLAB + h / 2, r.z);
       mesh.castShadow = true;
       mesh.userData.roomId = r.id;
-      edges(mesh, 0x334455, 0.5);
+      edges(mesh, 0x4b5768, 0.45);
       floorGroups.get(`${bd.id}:${r.floor}`).add(mesh);
       rooms.set(r.id, { mesh, data: r, baseColor: mat.color.getHex(), baseOpacity: mat.opacity, badge: null, loud: false, h, building: bd.id, text: null,
         baseY: mesh.position.y, hoverK: 0, statusColor: mat.color.clone() });
@@ -213,20 +213,34 @@ export function createBuilding(el, input, opts = {}) {
 
   // --- camera views: fit a box (whole campus or one building), optionally looking at one floor ---
   let anim = null;
+  let touched = false;   // true once the user (or a fly-to a room) moved the camera: then a resize doesn't re-frame
   const flyTo = (pos, target, ms = 900) => {
+    touched = true;
     anim = { t0: performance.now(), ms, p0: camera.position.clone(), q0: controls.target.clone(), p1: pos, q1: target };
   };
+  // Fit the box into the canvas: the distance comes from the field of view and the canvas aspect, so the campus
+  // is centred and whole at any size (the old fixed formula cut it off in wide, short containers).
+  const VIEW_DIR = new THREE.Vector3(0.22, 0.62, 0.75).normalize();
+  let lastArgs = null;   // the last box/floor framed, so a resize can frame it again
   const view = (box, floorY = null) => {
+    lastArgs = [box.clone(), floorY];
     const c = box.getCenter(new THREE.Vector3()), s = box.getSize(new THREE.Vector3());
-    const span = Math.max(s.x, s.z * 1.6, 30);
-    if (floorY === null) return { pos: c.clone().add(new THREE.Vector3(span * 0.25, span * 0.55, span * 0.75)), target: c };
-    const t = c.clone().setY(floorY);
-    return { pos: t.clone().add(new THREE.Vector3(span * 0.15, span * 0.55, span * 0.5)), target: t };
+    if (floorY !== null) c.setY(floorY);
+    c.z += Math.max(s.z, 20) * 0.08;   // nearer buildings sit low on screen; shift a little so the campus looks centred
+    const vfov = THREE.MathUtils.degToRad(camera.fov);
+    const hfov = 2 * Math.atan(Math.tan(vfov / 2) * camera.aspect);
+    const halfW = Math.max(s.x, 20) / 2, halfD = Math.max(s.z, 20) / 2;
+    const tilt = Math.sqrt(1 - VIEW_DIR.y ** 2);   // how much of the height shows on screen
+    const needW = halfW / Math.tan(hfov / 2);
+    const needH = (halfD * VIEW_DIR.y + s.y * tilt * 0.5 + halfD * 0.25) / Math.tan(vfov / 2);
+    const dist = Math.max(needW, needH, 25) * 1.08;
+    return { pos: c.clone().add(VIEW_DIR.clone().multiplyScalar(dist)), target: c };
   };
-  const goTo = (v) => flyTo(v.pos.clone(), v.target.clone());
+  const goTo = (v) => { flyTo(v.pos.clone(), v.target.clone()); touched = false; };
   const home = view(bounds);
   camera.position.copy(home.pos);
   controls.target.copy(home.target);
+  controls.addEventListener("start", () => { touched = true; });
 
   // --- picking ---
   const ray = new THREE.Raycaster(), mouse = new THREE.Vector2();
@@ -261,6 +275,11 @@ export function createBuilding(el, input, opts = {}) {
     renderer.setSize(el.clientWidth, el.clientHeight);
     camera.aspect = el.clientWidth / el.clientHeight;
     camera.updateProjectionMatrix();
+    if (!touched && !anim && lastArgs) {
+      const v = view(...lastArgs);
+      camera.position.copy(v.pos);
+      controls.target.copy(v.target);
+    }
   };
   new ResizeObserver(resize).observe(el);
   resize();
@@ -434,13 +453,13 @@ function mountControls(el, api, labels = {}) {
   if (getComputedStyle(el).position === "static") el.style.position = "relative";
   const box = document.createElement("div");
   box.style.cssText = "position:absolute;left:12px;bottom:12px;display:flex;flex-direction:column;gap:6px;" +
-    "font:12px/1 system-ui,sans-serif;z-index:5;pointer-events:none";
+    "font:600 12px/1 'Instrument Sans',system-ui,sans-serif;z-index:5;pointer-events:none";
   el.appendChild(box);
   let building = null, floor = null;
   const row = () => {
     const r = document.createElement("div");
     r.style.cssText = "display:flex;gap:3px;flex-wrap:wrap;padding:3px;border-radius:10px;" +
-      "background:rgba(15,20,30,.55);pointer-events:auto";
+      "background:rgba(249,251,255,.94);box-shadow:0 0 0 1px #e3e3e0;pointer-events:auto";
     box.appendChild(r);
     return r;
   };
@@ -450,7 +469,7 @@ function mountControls(el, api, labels = {}) {
     b.textContent = text;
     b.title = title ?? "";
     b.style.cssText = "border:0;border-radius:7px;padding:6px 9px;cursor:pointer;font:inherit;" +
-      (on ? "background:#2a8fb0;color:#fff" : "background:rgba(255,255,255,.9);color:#1d2430");
+      (on ? "background:#2f5be0;color:#fff" : "background:transparent;color:#6d685d");
     b.onclick = click;
     parent.appendChild(b);
   };
