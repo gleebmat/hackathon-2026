@@ -51,7 +51,10 @@ LINK_WIDTH = 8.0           # m: narrower parts of a building that reach another 
                            # corridors); the map hides them when one building is shown on its own
 ENTRANCE_FLOORS = {"O": {0}}   # floors with doors to the outside; others: 0 and 1 (the campus slopes up to Z)
 # Entrances the door detection misses (seen on campusplan.aau.at): building, floor, x, z, outward direction.
-EXTRA_DOORS = [("V", 1, -7.2, -26.6, (1, 0))]     # V north-west: the entrance building with its stairs
+EXTRA_DOORS = [("V", 1, -7.2, -26.6, (1, 0)),     # V north-west: the entrance building with its stairs
+               ("O", 0, 242.0, 12.0, (0, 1)),     # Nexus: south side of the small west ground-floor part
+               ("O", 0, 261.0, 11.5, (1, 0))]     # Nexus: east side of the ground floor, near the south-east corner
+MANUAL_DOORS = {"O"}       # buildings whose entrances are only the EXTRA_DOORS (the plan's doors there are not entrances)
 PILLARS = {"O"}            # buildings whose upper floors overhang the ground floor: legs under the overhang corners
 PILLAR_SIZE = 1.2          # m
 # Coffee and vending machines on floor 1, roughly where they are (x, z in metres); each is moved to the nearest free
@@ -216,7 +219,8 @@ def outside_doors(b, doors, everything):
     floor 1) and only the lowest of doors stacked above each other (the upper ones open onto terraces and balconies)."""
     out = []
     extra = [{"b": bid, "f": f, "x": x, "z": z} for bid, f, x, z, _ in EXTRA_DOORS]
-    for d in sorted(doors + extra, key=lambda d: d["f"]):
+    plan_doors = [d for d in doors if d["b"] not in MANUAL_DOORS]
+    for d in sorted(extra + plan_doors, key=lambda d: d["f"]):
         if d["b"] != b["id"] or d["f"] not in b["floors"] or d["f"] not in ENTRANCE_FLOORS.get(b["id"], {0, 1}):
             continue
         here = block_union(b, d["f"])

@@ -50,9 +50,8 @@ API docs: http://localhost:8000/docs. The map alone: http://localhost:8000/map3d
   drawn over everything, with a dot walking it, from the main entrance (Z, floor 1) along corridors, through the
   Aula, over the bridges and up or down the stairs to the room's door, plus distance and walking time. Rooms more
   than 150 m from the main entrance start at the nearest outside door instead (e.g. Nexus, the far ends of N).
-  Nexus's entrances are on floor 0 (its ground floor was filed under "Südtrakt" in the plan; `fetch_plan.py`
-  moves numberless spaces to the building they are in); entrances the plan misses are in `EXTRA_DOORS`
-  (`gen_campus.py`), e.g. V's north-west entrance building. Stairs
+  Entrances the plan misses or gets wrong are set in `EXTRA_DOORS` (`gen_campus.py`): V's north-west entrance
+  building, and Nexus's two ground-floor entrances (south and east side; Nexus uses only these). Stairs
   are found in the plan's drawings (rows of tread lines, the same stairwell on each floor), because the plan's
   "staircase" labels are unreliable; room doors come from the door swings in the plan.
   The map opens on floor 1 (also when you pick a building); a compass (top left) turns with it, click it to go back to the standard view; a single building is shown without the bridges and corridors to its
