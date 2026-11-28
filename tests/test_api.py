@@ -553,15 +553,11 @@ def test_recording_grace_and_release(app_env, time_now, monkeypatch, arrived_fir
         assert room(c, rid)["status"] == status
 
 
-def test_no_private_booking_while_people_are_inside(app_env):
+def test_whole_room_can_be_booked_while_unbooked_people_are_inside(app_env):
     a = user(1)
-    reading(a, "V.1.03", people=2)                       # two people in the room, nobody booked it
+    reading(a, "V.1.03", people=2)                       # two people sit there without a booking
     r = book(a, room="V.1.03", start="2026-11-27T10:00", hours=1, mode="full", seats=3)
-    assert r.status_code == 409 and "can't be booked privately" in r.json()["error"]
-    r = book(a, room="V.1.03", start="2026-11-27T10:00", hours=1, mode="partial", seats=3)
-    assert r.status_code == 201                          # sharing with them is fine
-    reading(a, "V.1.04", people=2)
-    assert book(a, room="V.1.04", start="2026-11-27T14:00", hours=1, mode="full", seats=2).status_code == 201
+    assert r.status_code == 201                          # they have no claim: the room can be booked privately
 
 
 def test_live_badge_follows_the_board_within_seconds(app_env, time_now):

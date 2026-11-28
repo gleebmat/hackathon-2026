@@ -34,7 +34,7 @@ PERSON = 0
 # The only things that count as left behind: COCO class -> (name, typical size of its longest side in metres).
 # Not suitcase, umbrella or book: tables, chairs and papers get mistaken for them.
 ITEMS = {24: ("backpack", 0.45), 26: ("handbag", 0.35), 39: ("bottle", 0.25), 41: ("cup", 0.10),
-         63: ("laptop", 0.33), 67: ("cell phone", 0.15)}
+         63: ("laptop", 0.33), 64: ("mouse", 0.11), 67: ("cell phone", 0.15)}
 PERSON_SCORE = 0.45
 ITEM_SCORE = 0.50
 ITEM_MAX_M = float(os.environ.get("ITEM_MAX_M", "3.5"))
