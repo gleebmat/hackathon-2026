@@ -32,7 +32,7 @@ export function createPicker(root, { onOpen, onError }) {
   const $ = (sel) => root.querySelector(sel);
   const state = {
     date: todayKey(), start: null, hours: 1, page: 0,
-    rooms: [], slots: {}, month: null, loadedFor: null,
+    rooms: [], slots: {}, month: null, loadedFor: null, kind: "all",
   };
   const perPage = () => (matchMedia("(max-width: 760px)").matches ? 1 : 3);
   const touch = matchMedia("(hover: none)").matches;
@@ -84,7 +84,7 @@ export function createPicker(root, { onOpen, onError }) {
   }
 
   function sortedCards() {
-    return state.rooms.map((room) => ({ room, st: cardState(room) })).sort((a, b) =>
+    return state.rooms.filter((r) => state.kind === "all" || roomKind(r) === state.kind).map((room) => ({ room, st: cardState(room) })).sort((a, b) =>
       RANK[a.st.kind] - RANK[b.st.kind]
       || (b.st.hours ?? 0) - (a.st.hours ?? 0)
       || (a.st.people ?? 0) - (b.st.people ?? 0)
@@ -94,16 +94,29 @@ export function createPicker(root, { onOpen, onError }) {
 
   // ---------- Rendering ----------
 
+  // Lecture halls and seminar rooms, from the room's name or label (campus.json / app/db.py).
+  function roomKind(room) {
+    const text = `${room.name} ${room.label || ""}`.toLowerCase();
+    if (/lecture|hörsaal|horsaal|\bhs\b/.test(text)) return "lecture";
+    if (/seminar/.test(text)) return "seminar";
+    return "other";
+  }
+
+  function drawKinds() {
+    $(".kinds").innerHTML = ["all", "seminar", "lecture"].map((k) =>
+      `<button type="button" class="${k === state.kind ? "on" : ""}" data-kind="${k}">${t(`kind_${k}`)}</button>`).join("");
+  }
+
   function cardHtml({ room, st }) {
     const rating = room.rating != null
       ? `<div class="line"><span>${t("rating")}</span><span class="stars"><s style="--p:${(room.rating / 5) * 100}%">★★★★★</s>${room.rating.toFixed(1)}${room.votes ? ` <small>(${room.votes})</small>` : ""}</span></div>`
-      : "";
+      : `<div class="line"><span>${t("rating")}</span><span class="muted">${t("no_ratings")}</span></div>`;
     const noise = st.noise
       ? `<div class="line"><span>${t("noise")}</span><span class="noise ${esc(st.noise.cls)}"><span class="bars"><b></b><b></b><b></b></span>${esc(st.noise.text)}${st.noise.live ? ` <em class="live">LIVE</em>` : ""}</span></div>`
       : "";
     const action = st.kind === "closed" ? "" : `<span class="book">${st.kind === "full" ? t("other_times") : t("book")}</span>`;
     return `<button type="button" class="pick ${st.kind === "full" || st.kind === "closed" ? "dim" : ""}" data-room="${esc(room.id)}">
-      <div class="pick-top"><div class="pick-id">${esc(room.id)}${room.favorite ? ` <span class="pick-fav" title="${esc(t("favorites"))}">♥</span>` : ""}</div><div class="pick-name">${esc(room.name)}</div></div>
+      <div class="pick-top"><div class="pick-id">${esc(room.id)}${room.favorite ? ` <svg class="ic pick-fav" aria-label="${esc(t("favorites"))}"><use href="#ic-heart"/></svg>` : ""}</div><div class="pick-name">${esc(room.name)}</div></div>
       <div class="pick-status"><div class="st-main ${st.kind}"><i></i>${esc(st.main)}</div><div class="st-sub">${esc(st.sub)}</div></div>
       <div class="pick-drawer"><div><div class="pick-drawer-in">${rating}${noise}${action}</div></div></div>
     </button>`;
@@ -268,6 +281,15 @@ export function createPicker(root, { onOpen, onError }) {
       : { date: state.date, time: slotTime(state.start), hours: state.hours });
   });
   addEventListener("resize", () => render());
+  $(".kinds").addEventListener("click", (e) => {
+    const b = e.target.closest("[data-kind]");
+    if (!b || b.dataset.kind === state.kind) return;
+    state.kind = b.dataset.kind;
+    state.page = 0;
+    drawKinds();
+    render("left");
+  });
+  drawKinds();
   state.month = new Date();
   state.month.setDate(1);
   drawCalendar();
