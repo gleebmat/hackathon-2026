@@ -351,7 +351,7 @@ async function openRoom(id, opts) {
             <span><i style="background:var(--free)"></i>${t("legend_free")}</span>
             <span><i style="background:var(--shared)"></i>${t("leg_shared_left")}</span>
             <span><i style="background:var(--full)"></i>${t("legend_full")}</span>
-            <span><i style="background:var(--brand)"></i>${t("leg_yours")}</span>
+            <span><i style="background:transparent;box-shadow:inset 0 0 0 2px var(--brand)"></i>${t("leg_yours")}</span>
           </div>
         </div>
       </div>
@@ -587,9 +587,12 @@ function renderSlots(popIndex) {
     const inRange = i >= sh.start && i < end;
     let cls = s.status;
     let note = s.status === "partial" ? t("s_left", { n: s.seats_free }) : t(`s_${s.status}`);
-    if (busy) {
-      cls = "mine";
-      note = t(busy.room_id === sh.roomId ? "s_yours" : "s_booked");
+    if (busy && busy.room_id === sh.roomId) {
+      cls = `${s.status} own`;     // your booking here: the room's real status colour, framed in blue
+      note = t("s_yours");
+    } else if (busy) {
+      cls = "mine";                // you're booked in another room at that time
+      note = t("s_booked");
     }
     return `<button type="button" class="slot ${cls} ${inRange ? "in-range" : ""} ${i === sh.start ? "start" : ""} ${i === popIndex ? "just-picked" : ""}"
       data-slot="${i}" ${selectable(i) ? "" : "disabled"} title="${s.start}–${s.end}">${s.start}<small>${esc(note)}</small></button>`;
