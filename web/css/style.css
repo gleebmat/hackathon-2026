@@ -929,3 +929,18 @@ h1, h2, h3, .brand-name, .picker-title, .sheet-title h2, .pick-id, .map-info-id,
 /* Map panel chrome in the site's style */
 .map-card { border: 1px solid var(--border); }
 .map-legend { background: color-mix(in srgb, var(--surface) 92%, transparent); color: var(--muted); border: 1px solid var(--border); }
+
+/* Blue accents: map frame, a light blue area behind the calendar and cards, search bar */
+.map-card { border: 2px solid var(--accent); }
+.picker {
+  padding: 22px 22px 26px; border-radius: var(--radius-lg);
+  background: color-mix(in srgb, var(--accent) 7%, var(--bg));
+  border: 1px solid color-mix(in srgb, var(--accent) 18%, var(--border));
+}
+.picker .kinds { background: color-mix(in srgb, var(--accent) 10%, var(--surface)); }
+.search input { background: var(--surface); border: 1.5px solid color-mix(in srgb, var(--accent) 35%, var(--border)); }
+.search input:hover { border-color: color-mix(in srgb, var(--accent) 60%, var(--border)); }
+.search input:focus { border-color: var(--accent); box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 14%, transparent); }
+.search-field .icon { color: var(--accent); }
+.kbd { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 35%, var(--border)); }
+@media (max-width: 760px) { .picker { padding: 16px 12px 20px; } }
