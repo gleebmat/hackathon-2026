@@ -22,6 +22,9 @@ CREATE TABLE IF NOT EXISTS rooms (
 CREATE TABLE IF NOT EXISTS ratings (
     user_id INTEGER NOT NULL REFERENCES users(id), room_id TEXT NOT NULL REFERENCES rooms(id),
     stars INTEGER NOT NULL CHECK (stars BETWEEN 1 AND 5), updated_at TEXT NOT NULL, PRIMARY KEY (user_id, room_id));
+CREATE TABLE IF NOT EXISTS favorites (
+    user_id INTEGER NOT NULL REFERENCES users(id), room_id TEXT NOT NULL REFERENCES rooms(id),
+    created_at TEXT NOT NULL, PRIMARY KEY (user_id, room_id));
 CREATE TABLE IF NOT EXISTS bookings (
     id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id), room_id TEXT NOT NULL REFERENCES rooms(id),
     start TEXT NOT NULL, end TEXT NOT NULL, mode TEXT NOT NULL, seats INTEGER NOT NULL, purpose TEXT NOT NULL,

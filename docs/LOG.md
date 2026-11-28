@@ -72,6 +72,9 @@ and left items (yes/no) reach the website. 50 tests pass. Runbook: `README.md`.
   Board room: board badge on the 3D map, live card (people, noise meter, last minute), no fake noise while offline.
 - Assistant (28 Nov): "Ask Room V" box (`app/assistant.py`, EN/DE, rule-based) suggests the 3 best rooms with a
   one-click prefilled booking; smart alerts for loud quiet rooms, ghost release and left items.
+- Favorite rooms (28 Nov, backend only): `favorites` table per account, `GET /api/favorites`,
+  `PUT/DELETE /api/favorites/{id}`, `favorite` flag on rooms and `likes` count on room detail (see PLAN API).
+  UI heart button still to do.
 
 ---
 

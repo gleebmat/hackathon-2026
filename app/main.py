@@ -147,10 +147,12 @@ def me(user: User):
 # --- rooms ---
 
 @app.get("/api/rooms")
-def rooms(conn: Conn, q: str | None = Query(None, max_length=50)):
+def rooms(request: Request, conn: Conn, q: str | None = Query(None, max_length=50)):
     now = clock.now()
     found = booking.search(conn, q) if q and q.strip() else booking.listed_rooms(conn)
-    return [booking.room_state(conn, r, now) for r in found]
+    user = session_user(conn, request)
+    favorites = booking.favorite_ids(conn, user and user["id"])
+    return [{**booking.room_state(conn, r, now), "favorite": r["id"] in favorites} for r in found]
 
 
 @app.get("/api/search")
@@ -170,6 +172,8 @@ def room_detail(room_id: str, request: Request, conn: Conn):
     return {**booking.room_state(conn, room, now),
             "bookings_today": [booking.booking_out(conn, b, now, user and user["id"]) for b in today],
             "my_rating": booking.my_rating(conn, user["id"], room_id) if user else None,
+            "favorite": room_id in booking.favorite_ids(conn, user and user["id"]),
+            "likes": booking.likes(conn, room_id),
             "can_rate": bool(user) and booking.can_rate(conn, user["id"], room_id, now)}
 
 
@@ -195,6 +199,28 @@ class RatingRequest(BaseModel):
 @app.post("/api/rooms/{room_id}/rating")
 def rate_room(room_id: str, body: RatingRequest, user: User, conn: Conn):
     return booking.rate_room(conn, user["id"], room_id, body.stars, clock.now())
+
+
+# --- favorite rooms (per account) ---
+
+@app.get("/api/favorites")
+def my_favorites(user: User, conn: Conn):
+    """The rooms this account liked, newest like first, with their live state."""
+    now = clock.now()
+    rows = conn.execute("SELECT r.*, f.created_at AS liked_at FROM favorites f JOIN rooms r ON r.id = f.room_id "
+                        "WHERE f.user_id = ? AND r.listed = 1 ORDER BY f.created_at DESC, r.id",
+                        (user["id"],)).fetchall()
+    return [{**booking.room_state(conn, r, now), "favorite": True, "liked_at": r["liked_at"]} for r in rows]
+
+
+@app.put("/api/favorites/{room_id}")
+def add_favorite(room_id: str, user: User, conn: Conn):
+    return booking.set_favorite(conn, user["id"], room_id, True, clock.now())
+
+
+@app.delete("/api/favorites/{room_id}")
+def remove_favorite(room_id: str, user: User, conn: Conn):
+    return booking.set_favorite(conn, user["id"], room_id, False, clock.now())
 
 
 # --- bookings ---

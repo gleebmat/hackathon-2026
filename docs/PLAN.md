@@ -125,6 +125,8 @@ can't take it). Times are campus time (Europe/Vienna) without a zone: `"2026-11-
 | GET | `/api/rooms/{id}/availability?date=YYYY-MM-DD` | `{room_id, date, open, close, slots:[{start:"HH:MM", end, status, seats_free, shareable, noise}]}`; slot `status` is `free`, `partial`, `full`, `closed` or `past` |
 | GET | `/api/calendar?date=YYYY-MM-DD` | **The picker's calendar, one call for all rooms:** `{date, open, close, rooms: {room_id: {free_hours, slots:[same as availability]}}}`. `free_hours` = bookable hours left that day |
 | POST | `/api/rooms/{id}/rating` | `{stars: 1-5}` → `{room_id, rating, votes, my_rating}`. Only after the user had an active booking there that has started (403 otherwise); rating again replaces the old vote |
+| GET | `/api/favorites` | the logged-in user's liked rooms, newest like first: `[room + {favorite: true, liked_at}]` (401 when logged out) |
+| PUT / DELETE | `/api/favorites/{id}` | like / unlike a room → `{room_id, favorite, likes}`; both idempotent, 404 for an unknown room |
 | POST | `/api/bookings` | `{room_id, start:"YYYY-MM-DDTHH:MM", hours, mode:"full"|"partial", seats, purpose, custom_purpose}` returns 201 with the booking, or `409 {error, suggestions:[room_id,...]}` |
 | GET | `/api/bookings/mine` | the user's bookings, newest first |
 | DELETE | `/api/bookings/{id}` | cancels one of the user's bookings |
@@ -132,7 +134,7 @@ can't take it). Times are campus time (Europe/Vienna) without a zone: `"2026-11-
 | POST | `/api/readings` | `{room_id, noise_db?, people?, presence?}` from the board (or a model); `presence` true/false counts as 1/0 people; header `X-Token` if `READINGS_TOKEN` is set |
 
 - Every room object also has `label` (map name such as `HS 1`, or null; search accepts it), `rating` (average,
-  null without votes) and `votes`. `GET /api/rooms/{id}` adds `my_rating` and `can_rate`; bookings carry
+  null without votes) and `votes`. `GET /api/rooms` and `/api/rooms/{id}` carry `favorite` (this account liked it; false when logged out); `GET /api/rooms/{id}` adds `my_rating`, `can_rate` and `likes` (how many accounts liked it); bookings carry
   `my_rating` for their room. Files under `web/` are served with `Cache-Control: no-cache`.
 
 - A booking is `{id, room_id, start, end, hours, mode, seats, purpose, custom_purpose, status, checked_in,
