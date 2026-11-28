@@ -7,194 +7,238 @@
 <!--
   The board room's touch display (app/display.py opens it as a small window: /display.html?room=Z.1.04&token=...).
   Laid out for the Infineon E84 kit's 4.3" 800x480 panel and scaled to whatever window it gets.
-  One large card per feature (swipe, arrows, dots or keyboard). Quiet, academic look: paper and ink, serif headings,
-  hairline rules, numbered sections, one accent colour; red only for SOS.
-  API: docs/PLAN.md, "Room display". The selfie uses this computer's webcam; without one, the board camera's frame.
+  Home: two tiles left, two right, the room's status in the middle. AAU colours (blue and white, taken from the
+  university logo), Barlow Condensed headings, Atkinson Hyperlegible text (made for low-vision readers).
+  Shown without a button: a water-and-stretch reminder every 45 minutes of study, and a fire-alarm alert for deaf
+  students when the microphone hears a smoke alarm's beeps (~3 kHz, three beeps in a row). Sound is analysed in the
+  page and never recorded or sent.
+  URL options: room, token, water=<minutes> (default 45), demo=1 (keys W = water reminder, F = fire alarm test).
+  API: docs/PLAN.md, "Room display".
 -->
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400..700&family=Newsreader:opsz,wght@6..72,400..600&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&family=Barlow+Condensed:wght@500;600;700&display=swap">
 <style>
   :root {
-    --paper: #f4f1ea; --card: #fbfaf6; --ink: #17171a; --ink-2: #3b3a36; --muted: #5f5a50;
-    --rule: #d8d2c4; --rule-strong: #b9b1a0; --accent: #22408f; --accent-soft: #e3e8f4;
-    --free: #1d7a4c; --shared: #9a5a00; --full: #a3231b; --ghost: #5f43c9; --closed: #6b7280; --break: #9a5a00;
-    --sos: #b3261e; --focus: #c2410c;
-    --serif: "Newsreader", Georgia, "Times New Roman", serif;
-    --sans: "Instrument Sans", system-ui, "Segoe UI", sans-serif;
+    --aau: #497284;          /* AAU dark blue (logo) */
+    --aau-light: #57a0c7;    /* AAU light blue (logo) */
+    --aau-deep: #2f4f5e;     /* darker shade for pressed states and small text on light blue */
+    --wash: #eef5f9;         /* page background: a whisper of the light blue */
+    --white: #ffffff; --line: #cfe0ea; --text: #1d2a31; --muted: #51626c;
+    --free: #1f7a4a; --shared: #a15c00; --full: #b3261e; --ghost: #6247c4; --closed: #6b7780; --break: #a15c00;
+    --sos: #c62828; --focus: #f2a900;
+    --head: "Barlow Condensed", "Arial Narrow", sans-serif;
+    --body: "Atkinson Hyperlegible", Verdana, sans-serif;
   }
   * { box-sizing: border-box; }
-  html, body { margin: 0; height: 100%; background: #2a2925; overflow: hidden; }
-  body { font-family: var(--sans); color: var(--ink); }
+  html, body { margin: 0; height: 100%; background: #1d2a31; overflow: hidden; }
+  body { font-family: var(--body); color: var(--text); }
   button { font: inherit; color: inherit; border: 0; background: none; cursor: pointer; padding: 0; }
   button:focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; }
   button:disabled { opacity: .35; cursor: default; }
   .hidden { display: none !important; }
-  svg.i { width: 1em; height: 1em; stroke: currentColor; fill: none; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; flex: none; }
-  .serif { font-family: var(--serif); font-weight: 500; letter-spacing: -.01em; }
-  .label { font-size: 16px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+  svg.i { width: 1em; height: 1em; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; flex: none; }
+  .h { font-family: var(--head); font-weight: 600; letter-spacing: .01em; }
+  .caps { font-family: var(--head); font-weight: 600; font-size: 17px; letter-spacing: .12em; text-transform: uppercase; }
 
-  /* the fixed 800x480 screen, scaled to the window */
   #screen { position: absolute; left: 0; top: 0; width: 800px; height: 480px; transform-origin: 0 0;
-            background: var(--paper); overflow: hidden; user-select: none; -webkit-user-select: none; }
+            background: var(--wash); overflow: hidden; user-select: none; -webkit-user-select: none; }
 
-  /* top bar */
-  .bar { height: 64px; display: flex; align-items: center; gap: 14px; padding: 0 12px 0 24px; border-bottom: 1px solid var(--rule); }
-  .room { flex: 1; min-width: 0; display: flex; align-items: baseline; gap: 16px; }
-  .room b { font-family: var(--serif); font-size: 30px; font-weight: 500; }
-  .status { display: flex; align-items: center; gap: 8px; font-size: 16px; color: var(--ink-2); min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .status .dot { width: 10px; height: 10px; border-radius: 50%; flex: none; }
-  .tag { font-size: 16px; font-weight: 600; padding: 6px 12px; border: 1px solid var(--accent); color: var(--accent); border-radius: 999px; display: inline-flex; gap: 6px; align-items: center; white-space: nowrap; }
-  .clock { font-size: 20px; color: var(--ink-2); font-variant-numeric: tabular-nums; }
-  .ghostbtn { height: 48px; min-width: 56px; padding: 0 12px; border-radius: 10px; border: 1px solid var(--rule-strong); font-size: 16px; font-weight: 600; }
-  .sos { height: 48px; padding: 0 18px; border-radius: 10px; background: var(--sos); color: #fff; font-size: 18px; font-weight: 700;
-         letter-spacing: .06em; display: inline-flex; align-items: center; gap: 8px; }
+  /* top bar: white, logo, room, date + time, SOS */
+  .bar { height: 72px; background: var(--white); display: flex; align-items: center; gap: 14px; padding: 0 12px 0 18px;
+         border-bottom: 4px solid var(--aau-light); }
+  .logo { height: 40px; display: flex; align-items: center; flex: none; }
+  .logo img { height: 40px; width: auto; display: block; }
+  .logo .word { font-family: var(--head); font-weight: 600; font-size: 16px; line-height: 1.05; letter-spacing: .08em; text-transform: uppercase; color: var(--aau); }
+  .logo .word span { display: block; color: var(--aau-light); }
+  .vr { width: 1px; height: 36px; background: var(--line); flex: none; }
+  .roomid { font-family: var(--head); font-weight: 700; font-size: 32px; color: var(--aau); flex: 1; min-width: 0; white-space: nowrap; }
+  .when { text-align: right; line-height: 1.05; flex: none; }
+  .when b { display: block; font-family: var(--head); font-weight: 600; font-size: 28px; color: var(--text); font-variant-numeric: tabular-nums; }
+  .when span { font-size: 15px; color: var(--muted); }
+  .ear { font-size: 24px; color: var(--aau); flex: none; display: grid; place-items: center; width: 28px; }
+  .langbtn { height: 48px; min-width: 52px; padding: 0 10px; border-radius: 8px; border: 2px solid var(--line); font-family: var(--head); font-weight: 600; font-size: 19px; color: var(--aau); }
+  .sos { height: 52px; padding: 0 18px; border-radius: 8px; background: var(--sos); color: #fff; font-family: var(--head); font-weight: 700;
+         font-size: 24px; letter-spacing: .08em; display: inline-flex; align-items: center; gap: 8px; }
+  .sos svg { font-size: 22px; }
 
-  /* home: carousel */
-  #home { position: absolute; top: 64px; left: 0; right: 0; bottom: 0; }
-  .track { position: absolute; left: 0; right: 0; top: 24px; height: 304px; display: flex; gap: 28px; padding: 0 120px;
-           overflow-x: auto; scroll-snap-type: x mandatory; scrollbar-width: none; scroll-behavior: smooth; overscroll-behavior-x: contain; }
-  .track::-webkit-scrollbar { display: none; }
-  .track.dragging { scroll-snap-type: none; scroll-behavior: auto; }
-  .card { flex: 0 0 560px; height: 304px; scroll-snap-align: center; background: var(--card); border: 1px solid var(--rule);
-          border-radius: 4px; padding: 26px 32px 28px; text-align: left; display: flex; flex-direction: column; position: relative;
-          box-shadow: 0 1px 0 #00000008, 0 12px 30px -22px #3a2e1a55; transition: opacity .3s, transform .3s; }
-  .card:not(.current) { opacity: .45; transform: scale(.95); }
-  .card .num { display: flex; justify-content: space-between; align-items: center; padding-bottom: 12px; border-bottom: 1px solid var(--rule); }
-  .card .num svg { font-size: 30px; color: var(--accent); }
-  .card h2 { font-family: var(--serif); font-weight: 500; font-size: 42px; line-height: 1.05; margin: 18px 0 8px; letter-spacing: -.015em; }
-  .card p { margin: 0; font-size: 20px; line-height: 1.4; color: var(--muted); max-width: 470px; }
-  .card .cta { margin-top: auto; height: 60px; border-radius: 6px; background: var(--ink); color: var(--card); font-size: 20px; font-weight: 600;
-               display: flex; align-items: center; justify-content: space-between; padding: 0 22px; }
-  .card .cta svg { font-size: 24px; }
-  .card.on { border-color: var(--accent); }
-  .card.on .cta { background: var(--accent); }
-  .nav { position: absolute; top: 144px; width: 64px; height: 64px; border-radius: 50%; background: var(--card); border: 1px solid var(--rule-strong);
-         display: grid; place-items: center; font-size: 28px; z-index: 2; box-shadow: 0 6px 16px -10px #3a2e1a66; }
-  .nav.prev { left: 24px; } .nav.next { right: 24px; }
-  .nav:disabled { opacity: 0; pointer-events: none; }
-  .dots { position: absolute; left: 0; right: 0; bottom: 18px; display: flex; justify-content: center; gap: 4px; }
-  .dots button { width: 44px; height: 44px; display: grid; place-items: center; }
-  .dots button span { width: 22px; height: 3px; background: var(--rule-strong); transition: background .2s, width .2s; }
-  .dots button[aria-current="true"] span { width: 34px; background: var(--ink); }
+  /* home: tile | status panel | tile */
+  #home { position: absolute; top: 72px; left: 0; right: 0; bottom: 0; padding: 16px; display: grid;
+          grid-template-columns: 228px 1fr 228px; grid-template-rows: 1fr 1fr; gap: 16px; }
+  .tile { background: var(--white); border: 1px solid var(--line); border-bottom: 5px solid var(--aau-light); border-radius: 10px;
+          padding: 16px 18px 14px; text-align: left; display: flex; flex-direction: column; min-width: 0; position: relative; }
+  .tile:active { background: #f4f9fc; }
+  .tile .icon { width: 50px; height: 50px; border-radius: 12px; background: var(--wash); color: var(--aau); display: grid; place-items: center; font-size: 28px; }
+  .tile h2 { font-family: var(--head); font-weight: 700; font-size: 30px; line-height: 1; margin: 14px 0 6px; color: var(--text); }
+  .tile p { margin: 0; font-size: 16px; line-height: 1.3; color: var(--muted); }
+  .tile .go { position: absolute; right: 16px; top: 22px; font-size: 24px; color: var(--aau-light); }
+  .tile.l1 { grid-column: 1; grid-row: 1; } .tile.l2 { grid-column: 1; grid-row: 2; }
+  .tile.r1 { grid-column: 3; grid-row: 1; } .tile.r2 { grid-column: 3; grid-row: 2; }
+
+  .panel { grid-column: 2; grid-row: 1 / span 2; background: var(--aau); color: var(--white); border-radius: 10px; padding: 18px 22px;
+           display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+  .panel .caps { color: #e7f2f8; font-size: 16px; }
+  .state { display: flex; align-items: center; gap: 12px; }
+  .state .dot { width: 18px; height: 18px; border-radius: 50%; border: 3px solid #fff; flex: none; }
+  .state b { font-family: var(--head); font-weight: 700; font-size: 52px; line-height: 1; }
+  .panel .sub { font-size: 18px; line-height: 1.35; color: #e7f2f8; margin: 0; }
+  .panel hr { border: 0; border-top: 1px solid rgb(255 255 255 / 28%); margin: 4px 0; width: 100%; }
+  .quiet { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; min-height: 56px; text-align: left; }
+  .quiet .t { font-family: var(--head); font-weight: 600; font-size: 24px; display: block; }
+  .quiet small { display: block; font-size: 15px; color: #e7f2f8; }
+  .switch { width: 66px; height: 38px; border-radius: 19px; background: rgb(255 255 255 / 25%); position: relative; flex: none; transition: background .2s; }
+  .switch::after { content: ""; position: absolute; top: 4px; left: 4px; width: 30px; height: 30px; border-radius: 50%; background: #fff; transition: left .2s; }
+  .quiet[aria-checked="true"] .switch { background: var(--aau-light); }
+  .quiet[aria-checked="true"] .switch::after { left: 32px; }
+  .water { display: flex; align-items: center; gap: 10px; font-size: 16px; color: #e7f2f8; margin-top: auto; }
+  .water svg { font-size: 22px; color: #bfe0f1; }
 
   /* feature sheets */
-  .sheet { position: absolute; top: 64px; left: 0; right: 0; bottom: 0; padding: 0 24px 22px; display: flex; flex-direction: column; }
-  .sheet-head { height: 84px; flex: none; display: flex; align-items: center; gap: 18px; border-bottom: 1px solid var(--rule); margin-bottom: 20px; }
-  .back { height: 52px; padding: 0 18px 0 12px; border-radius: 10px; border: 1px solid var(--rule-strong); font-size: 18px; font-weight: 600; display: inline-flex; align-items: center; gap: 6px; flex: none; }
-  .back svg { font-size: 24px; }
-  .sheet-head .num { font-size: 16px; font-weight: 600; letter-spacing: .08em; color: var(--accent); flex: none; }
-  .sheet-head h2 { margin: 0; font-family: var(--serif); font-weight: 500; font-size: 34px; letter-spacing: -.01em; flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .sheet-body { flex: 1; min-height: 0; display: flex; gap: 32px; align-items: center; }
-  .lead { font-size: 22px; line-height: 1.4; margin: 0; color: var(--ink-2); }
-  .small { font-size: 16px; color: var(--muted); margin: 0; overflow-wrap: anywhere; }
-  .btn { height: 64px; border-radius: 8px; font-size: 21px; font-weight: 600; display: inline-flex; align-items: center; justify-content: center; gap: 10px; padding: 0 24px; }
+  .sheet { position: absolute; top: 72px; left: 0; right: 0; bottom: 0; padding: 0 18px 18px; display: flex; flex-direction: column; background: var(--wash); }
+  .sheet-head { height: 80px; flex: none; display: flex; align-items: center; gap: 16px; }
+  .back { height: 54px; padding: 0 18px 0 10px; border-radius: 8px; background: var(--white); border: 2px solid var(--line); font-family: var(--head); font-weight: 600; font-size: 22px; color: var(--aau); display: inline-flex; align-items: center; gap: 4px; flex: none; }
+  .back svg { font-size: 26px; }
+  .sheet-head h2 { margin: 0; font-family: var(--head); font-weight: 700; font-size: 38px; color: var(--text); flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .sheet-body { flex: 1; min-height: 0; display: flex; gap: 24px; align-items: stretch; }
+  .card { background: var(--white); border: 1px solid var(--line); border-radius: 10px; padding: 20px 22px; }
+  .lead { font-size: 21px; line-height: 1.4; margin: 0; color: var(--text); }
+  .small { font-size: 16px; color: var(--muted); margin: 0; overflow-wrap: anywhere; line-height: 1.35; }
+  .btn { height: 64px; border-radius: 8px; font-family: var(--head); font-weight: 700; font-size: 25px; letter-spacing: .02em; display: inline-flex; align-items: center; justify-content: center; gap: 10px; padding: 0 22px; }
   .btn svg { font-size: 24px; }
-  .btn.ink { background: var(--ink); color: var(--card); }
-  .btn.accent { background: var(--accent); color: #fff; }
-  .btn.line { border: 1px solid var(--rule-strong); background: var(--card); }
-  .round { width: 56px; height: 56px; border-radius: 50%; border: 1px solid var(--rule-strong); background: var(--card); font-size: 26px; display: grid; place-items: center; flex: none; }
-  .qr { background: #fff; border: 1px solid var(--rule); padding: 12px; flex: none; display: grid; place-items: center; }
+  .btn.blue { background: var(--aau); color: #fff; }
+  .btn.line { background: var(--white); border: 2px solid var(--line); color: var(--aau); }
+  .btn.go { background: var(--free); color: #fff; }
+  .round { width: 60px; height: 60px; border-radius: 50%; background: var(--white); border: 2px solid var(--line); color: var(--aau); font-size: 30px; font-weight: 700; display: grid; place-items: center; flex: none; }
+  .qr { background: #fff; padding: 12px; flex: none; display: grid; place-items: center; border: 1px solid var(--line); border-radius: 10px; }
   .qr img, .qr svg { display: block; width: 100%; height: 100%; }
-  .col { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 16px; }
-  hr.rule { border: 0; border-top: 1px solid var(--rule); margin: 0; width: 100%; }
+  .col { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 14px; }
 
-  /* sounds: eight large tiles */
+  /* sounds */
   .sounds { flex: 1; display: grid; grid-template-columns: repeat(4, 1fr); grid-template-rows: repeat(2, 1fr); gap: 12px; }
-  .snd { border: 1px solid var(--rule); background: var(--card); border-radius: 6px; padding: 16px 16px 14px; text-align: left;
-         display: flex; flex-direction: column; justify-content: space-between; min-width: 0; }
-  .snd svg { font-size: 36px; color: var(--accent); }
-  .snd span { font-size: 21px; font-weight: 600; line-height: 1.15; hyphens: auto; overflow-wrap: break-word; }
-  .snd small { display: block; font-size: 15px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; margin-top: 4px; }
-  .snd[aria-pressed="true"] { background: var(--ink); color: var(--card); border-color: var(--ink); }
-  .snd[aria-pressed="true"] svg { color: var(--card); }
-  .vol { display: flex; align-items: center; gap: 10px; flex: none; }
-  .vol output { width: 64px; text-align: center; font-size: 20px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .snd { background: var(--white); border: 1px solid var(--line); border-bottom: 5px solid var(--line); border-radius: 10px; padding: 14px 16px 12px;
+         text-align: left; display: flex; flex-direction: column; justify-content: space-between; min-width: 0; }
+  .snd svg { font-size: 34px; color: var(--aau-light); }
+  .snd span { font-family: var(--head); font-weight: 700; font-size: 26px; line-height: 1; overflow-wrap: break-word; hyphens: auto; }
+  .snd small { display: block; font-family: var(--head); font-weight: 600; font-size: 16px; letter-spacing: .1em; text-transform: uppercase; margin-top: 4px; }
+  .snd[aria-pressed="true"] { background: var(--aau); color: #fff; border-color: var(--aau); border-bottom-color: var(--aau-light); }
+  .snd[aria-pressed="true"] svg { color: #fff; }
+  .vol { display: flex; align-items: center; gap: 8px; flex: none; }
+  .vol output { width: 70px; text-align: center; font-family: var(--head); font-weight: 600; font-size: 26px; font-variant-numeric: tabular-nums; }
 
   /* selfie */
-  .cam { width: 380px; height: 285px; background: #111; position: relative; overflow: hidden; flex: none; border: 1px solid var(--rule-strong); }
+  .cam { width: 380px; height: 285px; background: #13202a; position: relative; overflow: hidden; flex: none; border-radius: 10px; align-self: center; }
   .cam video, .cam img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
   .cam video { transform: scaleX(-1); }
-  .cam .count { position: absolute; inset: 0; display: grid; place-items: center; font-family: var(--serif); font-size: 160px; color: #fff; text-shadow: 0 4px 30px #000a; }
+  .cam .count { position: absolute; inset: 0; display: grid; place-items: center; font-family: var(--head); font-weight: 700; font-size: 170px; color: #fff; text-shadow: 0 4px 30px #000a; }
   .cam .flash { position: absolute; inset: 0; background: #fff; opacity: 0; pointer-events: none; transition: opacity .4s; }
   .cam .flash.go { opacity: 1; transition: none; }
-  .cam .camnote { position: absolute; inset: 0; display: grid; place-items: center; text-align: center; padding: 36px; font-size: 18px; color: #d6d0c4; line-height: 1.4; }
+  .cam .camnote { position: absolute; inset: 0; display: grid; place-items: center; text-align: center; padding: 36px; font-size: 18px; color: #cfe0ea; line-height: 1.4; }
 
   /* break */
-  .numeral { font-family: var(--serif); font-weight: 500; font-size: 110px; line-height: .9; font-variant-numeric: tabular-nums; letter-spacing: -.03em; }
-  .numeral small { font-family: var(--sans); font-size: 22px; font-weight: 600; letter-spacing: .04em; margin-left: 6px; color: var(--muted); }
+  .numeral { font-family: var(--head); font-weight: 700; font-size: 120px; line-height: .9; color: var(--aau); font-variant-numeric: tabular-nums; }
 
   /* emergency */
-  .modal { position: absolute; inset: 0; background: rgb(23 23 26 / 72%); display: grid; place-items: center; z-index: 10; }
-  .mcard { width: 600px; background: var(--card); border-top: 6px solid var(--sos); padding: 28px 36px 30px; display: flex; flex-direction: column; gap: 14px; box-shadow: 0 30px 60px -20px #000a; }
+  .modal { position: absolute; inset: 0; background: rgb(29 42 49 / 70%); display: grid; place-items: center; z-index: 10; }
+  .mcard { width: 600px; background: var(--white); border-top: 8px solid var(--sos); border-radius: 10px; padding: 24px 32px 28px; display: flex; flex-direction: column; gap: 12px; box-shadow: 0 30px 60px -20px #000a; }
   .mcard .kicker { color: var(--sos); display: flex; align-items: center; gap: 8px; }
-  .mcard .kicker svg { font-size: 22px; }
-  .mcard h2 { margin: 0; font-family: var(--serif); font-weight: 500; font-size: 36px; line-height: 1.1; }
-  .mcard .row { display: flex; gap: 14px; margin-top: 8px; }
+  .mcard h2 { margin: 0; font-family: var(--head); font-weight: 700; font-size: 40px; line-height: 1.05; }
+  .mcard .row { display: flex; gap: 14px; margin-top: 6px; }
   .mcard .row .btn { flex: 1; }
   .btn.danger { background: var(--sos); color: #fff; }
   .pulse { animation: pulse 1.6s ease-in-out infinite; }
   @keyframes pulse { 50% { opacity: .45; } }
-  .banner { position: absolute; left: 0; right: 0; bottom: 0; height: 56px; background: var(--sos); color: #fff; display: flex; align-items: center; justify-content: center; gap: 10px; font-size: 18px; font-weight: 600; z-index: 5; }
+  .banner { position: absolute; left: 0; right: 0; bottom: 0; height: 56px; background: var(--sos); color: #fff; display: flex; align-items: center; justify-content: center; gap: 10px; font-size: 18px; font-weight: 700; z-index: 5; }
 
-  .toast { position: absolute; left: 50%; bottom: 20px; transform: translateX(-50%); width: max-content; max-width: 680px; background: var(--ink); color: var(--card);
+  /* water + stretch reminder (no button: shows by itself, tap anywhere or wait to close) */
+  .water-note { position: absolute; top: 72px; left: 0; right: 0; bottom: 0; background: #2e6d91; color: #fff; z-index: 8;
+                display: flex; align-items: center; gap: 36px; padding: 0 56px; }
+  .water-note .drop { font-size: 150px; flex: none; color: #bfe0f1; }
+  .water-note .drop svg { stroke-width: 1.4; }
+  .water-note h2 { font-family: var(--head); font-weight: 700; font-size: 58px; line-height: .95; margin: 0 0 14px; }
+  .water-note p { font-size: 22px; line-height: 1.4; margin: 0; max-width: 470px; }
+  .water-note .timeline { position: absolute; left: 0; bottom: 0; height: 8px; background: #fff; animation: shrink linear forwards; }
+  @keyframes shrink { from { width: 100%; } to { width: 0; } }
+
+  /* fire alarm (from the alarm's sound): big, bilingual, slow pulse (1 Hz, well under the 3 flashes/s seizure limit) */
+  .fire { position: absolute; top: 72px; left: 0; right: 0; bottom: 0; z-index: 9; color: #fff; display: grid;
+          grid-template-columns: 170px 1fr; align-items: center; gap: 26px; padding: 0 40px; animation: fire 1s steps(1) infinite; }
+  @keyframes fire { 0% { background: #b71c1c; } 50% { background: #7f1010; } }
+  .fire .bell { font-size: 150px; }
+  .fire .bell svg { stroke-width: 1.6; }
+  .fire h2 { font-family: var(--head); font-weight: 700; font-size: 66px; line-height: .9; margin: 0; letter-spacing: .02em; }
+  .fire h3 { font-family: var(--head); font-weight: 600; font-size: 34px; line-height: 1; margin: 4px 0 14px; opacity: .9; }
+  .fire p { font-size: 21px; line-height: 1.35; margin: 0 0 6px; }
+  .fire p.de { opacity: .85; font-size: 18px; }
+  .fire .src { margin-top: 12px; font-size: 15px; opacity: .8; display: flex; gap: 8px; align-items: center; }
+
+  .toast { position: absolute; left: 50%; bottom: 20px; transform: translateX(-50%); width: max-content; max-width: 680px; background: var(--text); color: #fff;
            font-size: 18px; line-height: 1.35; padding: 14px 22px; border-radius: 8px; z-index: 20; box-shadow: 0 14px 30px -12px #000a; text-align: center; }
-  .offline { position: absolute; left: 0; right: 0; top: 64px; background: #f2d9a6; color: var(--ink); font-size: 16px; font-weight: 600; text-align: center; padding: 6px; z-index: 6; border-bottom: 1px solid #d9b56b; }
+  .offline { position: absolute; left: 0; right: 0; top: 72px; background: #ffe3a3; color: var(--text); font-size: 16px; font-weight: 700; text-align: center; padding: 6px; z-index: 6; }
 
   @media (prefers-reduced-motion: reduce) {
-    *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
+    *, *::before, *::after { animation: none !important; transition: none !important; }
+    .fire { background: #b71c1c; }
   }
 </style>
 </head>
 <body>
 <div id="screen">
   <header class="bar">
-    <div class="room"><b id="label">Room</b><span class="status"><span class="dot" id="dot"></span><span id="statusText">…</span></span></div>
-    <span class="tag hidden" id="quietTag"></span>
-    <span class="clock" id="clock" aria-hidden="true">--:--</span>
-    <button class="ghostbtn" id="lang"></button>
+    <div class="logo" id="logo"><img src="img/aau-logo.svg" alt="Universität Klagenfurt" id="logoImg"></div>
+    <span class="vr"></span>
+    <span class="roomid" id="label">Room</span>
+    <span class="ear hidden" id="ear" role="img"></span>
+    <div class="when" aria-hidden="true"><b id="clock">--:--</b><span id="date"></span></div>
+    <button class="langbtn" id="lang"></button>
     <button class="sos" id="sos"></button>
   </header>
 
   <div class="offline hidden" id="offline" role="alert"></div>
 
   <main id="home">
-    <button class="nav prev" id="prev"></button>
-    <div class="track" id="track" role="group" aria-roledescription="carousel"></div>
-    <button class="nav next" id="next"></button>
-    <div class="dots" id="dots" role="tablist"></div>
+    <button class="tile l1" data-open="book"></button>
+    <button class="tile l2" data-open="sound"></button>
+    <section class="panel" aria-labelledby="stateLabel">
+      <span class="caps" id="stateLabel"></span>
+      <div class="state"><span class="dot" id="dot"></span><b id="stateText">…</b></div>
+      <p class="sub" id="stateSub"></p>
+      <hr>
+      <button class="quiet" id="quiet" role="switch" aria-checked="false">
+        <span><span class="t" id="quietT"></span><small id="quietS"></small></span><span class="switch" aria-hidden="true"></span>
+      </button>
+      <div class="water" id="waterLine"></div>
+    </section>
+    <button class="tile r1" data-open="selfie"></button>
+    <button class="tile r2" data-open="break"></button>
   </main>
 
-  <!-- 01 book -->
+  <!-- book -->
   <section class="sheet hidden" id="sheet-book" aria-labelledby="h-book">
-    <div class="sheet-head"><button class="back" data-back></button><span class="num">01</span><h2 id="h-book" data-t="book_title"></h2></div>
+    <div class="sheet-head"><button class="back" data-back></button><h2 id="h-book" data-t="book_title"></h2></div>
     <div class="sheet-body">
-      <div class="qr" style="width:290px;height:290px"><img id="bookQr" alt=""></div>
-      <div class="col">
+      <div class="qr" style="width:300px;height:300px;align-self:center"><img id="bookQr" alt=""></div>
+      <div class="col card" style="justify-content:center">
         <p class="lead" data-t="book_lead"></p>
-        <hr class="rule">
-        <p class="label" data-t="book_now_label"></p>
-        <p class="lead serif" style="font-size:30px;margin-top:-10px" id="bookNow"></p>
+        <span class="caps" style="color:var(--aau);margin-top:6px" data-t="book_now_label"></span>
+        <p class="h" style="font-size:38px;margin:-8px 0 0;color:var(--text)" id="bookNow"></p>
         <p class="small" id="bookUrl"></p>
       </div>
     </div>
   </section>
 
-  <!-- 02 soundscapes -->
+  <!-- soundscapes -->
   <section class="sheet hidden" id="sheet-sound" aria-labelledby="h-sound">
     <div class="sheet-head">
-      <button class="back" data-back></button><span class="num">02</span><h2 id="h-sound" data-t="sound_title"></h2>
-      <div class="vol" role="group" id="volGroup">
-        <button class="round" id="volDown">−</button><output id="volVal" aria-live="polite"></output><button class="round" id="volUp">+</button>
-      </div>
+      <button class="back" data-back></button><h2 id="h-sound" data-t="sound_title"></h2>
+      <div class="vol" role="group"><button class="round" id="volDown">−</button><output id="volVal" aria-live="polite"></output><button class="round" id="volUp">+</button></div>
     </div>
     <div class="sounds" id="sounds"></div>
   </section>
 
-  <!-- 03 selfie -->
+  <!-- selfie -->
   <section class="sheet hidden" id="sheet-selfie" aria-labelledby="h-selfie">
-    <div class="sheet-head"><button class="back" data-back></button><span class="num">03</span><h2 id="h-selfie" data-t="selfie_title"></h2></div>
-    <div class="sheet-body" style="align-items:stretch">
+    <div class="sheet-head"><button class="back" data-back></button><h2 id="h-selfie" data-t="selfie_title"></h2></div>
+    <div class="sheet-body">
       <div class="cam" id="cam">
         <video id="video" autoplay playsinline muted></video>
         <img id="shot" class="hidden" alt="">
@@ -202,67 +246,82 @@
         <div class="count hidden" id="count" aria-live="assertive"></div>
         <div class="flash" id="flash"></div>
       </div>
-      <div class="col" id="selfieCtrl" style="justify-content:space-between">
+      <div class="col card" id="selfieCtrl" style="justify-content:space-between">
         <p class="lead" data-t="selfie_lead"></p>
-        <button class="btn ink" style="height:76px" id="shoot"></button>
+        <button class="btn blue" style="height:76px" id="shoot"></button>
       </div>
-      <div class="col hidden" id="selfieDone" style="align-items:center;gap:12px">
-        <div class="qr" style="width:176px;height:176px;padding:10px" id="selfieQr"></div>
-        <p class="small" style="text-align:center;color:var(--ink-2)" id="selfieExp"></p>
-        <div style="display:flex;gap:12px;width:100%;margin-top:auto">
-          <button class="btn line" style="flex:1" id="retake"></button>
-          <button class="btn ink" style="flex:1" data-back data-t="done"></button>
+      <div class="col card hidden" id="selfieDone" style="align-items:center;gap:10px;padding:16px 18px">
+        <div class="qr" style="width:170px;height:170px;padding:8px" id="selfieQr"></div>
+        <p class="small" style="text-align:center;color:var(--text)" id="selfieExp"></p>
+        <div style="display:flex;gap:10px;width:100%;margin-top:auto">
+          <button class="btn line" style="flex:1;height:58px" id="retake"></button>
+          <button class="btn blue" style="flex:1;height:58px" data-back data-t="done"></button>
         </div>
       </div>
     </div>
   </section>
 
-  <!-- 04 break -->
+  <!-- break -->
   <section class="sheet hidden" id="sheet-break" aria-labelledby="h-break">
-    <div class="sheet-head"><button class="back" data-back></button><span class="num">04</span><h2 id="h-break" data-t="break_title"></h2></div>
+    <div class="sheet-head"><button class="back" data-back></button><h2 id="h-break" data-t="break_title"></h2></div>
     <div class="sheet-body" id="breakSetup">
-      <div style="width:330px;flex:none;display:flex;flex-direction:column;align-items:center;gap:22px">
+      <div class="card" style="width:330px;flex:none;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px">
         <div class="numeral" id="bMin" aria-live="polite"></div>
-        <div style="display:flex;gap:18px;align-items:center">
-          <button class="round" style="width:72px;height:72px;font-size:32px" id="bDown">−</button>
-          <span class="label" style="width:110px;text-align:center" data-t="minutes_label"></span>
-          <button class="round" style="width:72px;height:72px;font-size:32px" id="bUp">+</button>
+        <div style="display:flex;gap:16px;align-items:center">
+          <button class="round" style="width:72px;height:72px;font-size:34px" id="bDown">−</button>
+          <span class="caps" style="width:100px;text-align:center;color:var(--muted)" data-t="minutes_label"></span>
+          <button class="round" style="width:72px;height:72px;font-size:34px" id="bUp">+</button>
         </div>
       </div>
-      <div class="col" style="align-self:stretch;justify-content:space-between;border-left:1px solid var(--rule);padding-left:32px">
-        <div style="display:flex;flex-direction:column;gap:12px">
+      <div class="col card" style="justify-content:space-between">
+        <div style="display:flex;flex-direction:column;gap:10px">
           <p class="lead" data-t="break_lead"></p>
           <p class="small" id="bBackBy"></p>
         </div>
-        <button class="btn ink" id="bStart"></button>
+        <button class="btn blue" id="bStart"></button>
       </div>
     </div>
-    <div class="sheet-body hidden" id="breakActive" style="flex-direction:column;justify-content:center;gap:10px;text-align:center">
-      <p class="label" data-t="break_held"></p>
-      <div class="numeral" style="font-size:120px" id="bLeft" role="timer"></div>
+    <div class="sheet-body hidden card" id="breakActive" style="flex-direction:column;justify-content:center;align-items:center;gap:8px;text-align:center">
+      <span class="caps" style="color:var(--muted)" data-t="break_held"></span>
+      <div class="numeral" style="font-size:130px" id="bLeft" role="timer"></div>
       <p class="lead" id="bUntil"></p>
-      <div style="display:flex;gap:14px;justify-content:center;margin-top:8px">
-        <button class="btn line" style="min-width:180px" id="bMore"></button>
-        <button class="btn ink" style="min-width:240px" id="bBack"></button>
+      <div style="display:flex;gap:14px;margin-top:6px">
+        <button class="btn line" style="min-width:170px" id="bMore"></button>
+        <button class="btn go" style="min-width:230px" id="bBack"></button>
       </div>
     </div>
   </section>
+
+  <!-- water + stretch reminder (shows by itself) -->
+  <div class="water-note hidden" id="waterNote" role="status" aria-live="polite">
+    <div class="drop" id="waterDrop"></div>
+    <div><h2 id="waterTitle"></h2><p id="waterText"></p></div>
+    <div class="timeline" id="waterTimeline"></div>
+  </div>
+
+  <!-- fire alarm (from the alarm's sound) -->
+  <div class="fire hidden" id="fire" role="alert">
+    <div class="bell" id="fireIcon"></div>
+    <div>
+      <h2>FIRE ALARM</h2><h3>FEUERALARM</h3>
+      <p>Leave the room now. Use the stairs, not the lift. Go to the assembly point.</p>
+      <p class="de">Raum sofort verlassen. Treppe benutzen, nicht den Aufzug. Zum Sammelplatz gehen.</p>
+      <div class="src" id="fireSrc"></div>
+    </div>
+  </div>
 
   <!-- emergency -->
   <div class="modal hidden" id="sosAsk" role="alertdialog" aria-modal="true" aria-labelledby="sosAskTitle">
     <div class="mcard">
-      <p class="label kicker" id="sosAskKicker"></p>
+      <span class="caps kicker" id="sosAskKicker"></span>
       <h2 id="sosAskTitle" data-t="sos_ask"></h2>
       <p class="lead" style="font-size:20px" data-t="sos_ask_lead"></p>
-      <div class="row">
-        <button class="btn line" id="sosNo" data-t="cancel"></button>
-        <button class="btn danger" id="sosYes" data-t="sos_yes"></button>
-      </div>
+      <div class="row"><button class="btn line" id="sosNo" data-t="cancel"></button><button class="btn danger" id="sosYes" data-t="sos_yes"></button></div>
     </div>
   </div>
   <div class="modal hidden" id="sosOpen" role="alertdialog" aria-modal="true" aria-labelledby="sosOpenTitle">
     <div class="mcard">
-      <p class="label kicker pulse" id="sosOpenKicker"></p>
+      <span class="caps kicker pulse" id="sosOpenKicker"></span>
       <h2 id="sosOpenTitle" data-t="sos_open"></h2>
       <p class="lead" style="font-size:20px" id="sosOpenText"></p>
       <div class="row"><button class="btn line" id="sosHide" data-t="sos_hide"></button></div>
@@ -279,26 +338,26 @@
   const ROOM = params.get("room") || "Z.1.04";
   const TOKEN = params.get("token") || "";
   const API = `/api/display/${encodeURIComponent(ROOM)}`;
+  const WATER_MIN = Math.max(1, Number(params.get("water")) || 45);   // reminder every N minutes of study
+  const DEMO = params.get("demo") === "1";
   const BREAK_MIN = 5, BREAK_MAX = 30, BREAK_STEP = 5;
   const IDLE_MS = 90000;
 
   /* ---------- text (English / German, like the website) ---------- */
   const T = {
     en: {
-      lang_btn: "DE", lang_aria: "Deutsch", sos: "SOS", sos_aria: "Emergency",
-      prev: "Previous", next: "Next", back: "Back", done: "Done", cancel: "Cancel",
-      st_free: "Free", st_partial: "Shared", st_full: "Booked", st_ghost: "Booked, nobody here",
-      st_closed: "Closed", st_unbookable: "Live status only", st_break: "On break until {t}",
-      people_0: "nobody here", people_1: "1 person here", people_n: "{n} people here",
-      quiet_tag: "Quiet room",
-      c_book: "Book this room", c_book_p: "Scan a QR code with your phone to reserve it.", c_book_cta: "Show the QR code",
-      c_sound: "Soundscapes", c_sound_p: "Rain, ocean, forest and more, to help you focus.", c_sound_cta: "Choose a sound",
-      c_sound_on: "Now playing: {s}.",
-      c_selfie: "Group selfie", c_selfie_p: "Take a photo together and download it by QR code.", c_selfie_cta: "Open the camera",
-      c_break: "Take a break", c_break_p: "Step out for a while without losing the room.", c_break_cta: "Plan a break",
-      c_break_on: "On break: {m} min left.",
-      c_quiet: "Quiet room", c_quiet_p_off: "Ask everyone to keep silent. The website shows it too.",
-      c_quiet_p_on: "On. Others see this as a silent study room.", c_quiet_cta_off: "Turn on", c_quiet_cta_on: "Turn off",
+      lang_btn: "DE", lang_aria: "Deutsch", sos: "SOS", sos_aria: "Emergency", back: "Back", done: "Done", cancel: "Cancel",
+      state_label: "This room now",
+      st_free: "Free", st_partial: "Shared", st_full: "Booked", st_ghost: "Booked", st_closed: "Closed", st_unbookable: "Open",
+      st_break: "On break", ghost_sub: "Nobody here: the booking may be released soon.",
+      people_0: "Nobody here right now.", people_1: "1 person here.", people_n: "{n} people here.",
+      until: "Booked until {t}.", break_sub: "Held for the group until {t}.",
+      quiet_t: "Quiet room", quiet_off: "Tap to ask for silence", quiet_on: "On: silent study only",
+      water_in: "Water and stretch break in {m} min", water_idle: "Water reminder every {m} min of study",
+      t_book: "Book room", t_book_p: "QR code to reserve this room",
+      t_sound: "Sounds", t_sound_p: "Rain, ocean, forest and more", t_sound_on: "Playing: {s}",
+      t_selfie: "Selfie", t_selfie_p: "Group photo, download by QR",
+      t_break: "Break", t_break_p: "Step out, keep the room", t_break_on: "{m} min left",
       book_title: "Book this room", book_lead: "Point your phone camera at the code. It opens this room on the booking website.",
       book_now_label: "Right now", book_free: "Free", book_until: "Booked until {t}",
       sound_title: "Soundscapes", playing: "Playing", vol_down: "Quieter", vol_up: "Louder",
@@ -311,6 +370,9 @@
       break_title: "Take a break", break_lead: "The room stays yours while everyone steps out. It won't be released as empty.",
       minutes_label: "minutes", start_break: "Start the break", break_held: "The room is held for you", back_by: "Back by {t}",
       more5: "+5 min", im_back: "I'm back", minus: "Five minutes less", plus: "Five minutes more",
+      water_title: "Time for water", water_text: "You've been studying for {m} minutes. Stand up, stretch, and drink a glass of water.",
+      ear: "Listening for fire alarms. Sound stays on this device.",
+      fire_src: "Smoke alarm sound detected at {t}",
       sos_kicker: "Emergency", sos_ask: "Call emergency services?", sos_ask_lead: "Campus security is told that there is an emergency in this room.",
       sos_yes: "Yes, call now", sos_open_kicker: "Emergency reported", sos_open: "Help has been called",
       sos_open_text: "Reported at {t}. Stay calm, and stay in the room if it is safe.",
@@ -320,20 +382,18 @@
       err_no_camera: "no webcam here and the room camera is off."
     },
     de: {
-      lang_btn: "EN", lang_aria: "English", sos: "SOS", sos_aria: "Notfall",
-      prev: "Zurück", next: "Weiter", back: "Zurück", done: "Fertig", cancel: "Abbrechen",
-      st_free: "Frei", st_partial: "Geteilt", st_full: "Gebucht", st_ghost: "Gebucht, niemand da",
-      st_closed: "Geschlossen", st_unbookable: "Nur Live-Status", st_break: "Pause bis {t}",
-      people_0: "niemand da", people_1: "1 Person da", people_n: "{n} Personen da",
-      quiet_tag: "Ruheraum",
-      c_book: "Raum buchen", c_book_p: "QR-Code mit dem Handy scannen und reservieren.", c_book_cta: "QR-Code zeigen",
-      c_sound: "Klangwelten", c_sound_p: "Regen, Meer, Wald und mehr, zum Konzentrieren.", c_sound_cta: "Klang wählen",
-      c_sound_on: "Es läuft: {s}.",
-      c_selfie: "Gruppen-Selfie", c_selfie_p: "Gemeinsam ein Foto machen und per QR-Code laden.", c_selfie_cta: "Kamera öffnen",
-      c_break: "Pause machen", c_break_p: "Kurz raus, ohne den Raum zu verlieren.", c_break_cta: "Pause planen",
-      c_break_on: "Pause: noch {m} Min.",
-      c_quiet: "Ruheraum", c_quiet_p_off: "Alle um Ruhe bitten. Die Website zeigt es auch.",
-      c_quiet_p_on: "An. Andere sehen hier einen Ruheraum.", c_quiet_cta_off: "Einschalten", c_quiet_cta_on: "Ausschalten",
+      lang_btn: "EN", lang_aria: "English", sos: "SOS", sos_aria: "Notfall", back: "Zurück", done: "Fertig", cancel: "Abbrechen",
+      state_label: "Dieser Raum jetzt",
+      st_free: "Frei", st_partial: "Geteilt", st_full: "Gebucht", st_ghost: "Gebucht", st_closed: "Geschlossen", st_unbookable: "Offen",
+      st_break: "Pause", ghost_sub: "Niemand da: Die Buchung wird bald freigegeben.",
+      people_0: "Gerade niemand da.", people_1: "1 Person da.", people_n: "{n} Personen da.",
+      until: "Gebucht bis {t}.", break_sub: "Für die Gruppe reserviert bis {t}.",
+      quiet_t: "Ruheraum", quiet_off: "Antippen, um Ruhe zu bitten", quiet_on: "An: nur stilles Lernen",
+      water_in: "Wasser- und Streckpause in {m} Min.", water_idle: "Wasser-Erinnerung alle {m} Min. Lernzeit",
+      t_book: "Buchen", t_book_p: "QR-Code zum Reservieren",
+      t_sound: "Klänge", t_sound_p: "Regen, Meer, Wald und mehr", t_sound_on: "Läuft: {s}",
+      t_selfie: "Selfie", t_selfie_p: "Gruppenfoto per QR laden",
+      t_break: "Pause", t_break_p: "Kurz raus, Raum behalten", t_break_on: "Noch {m} Min.",
       book_title: "Raum buchen", book_lead: "Handykamera auf den Code richten. Er öffnet diesen Raum auf der Buchungsseite.",
       book_now_label: "Gerade", book_free: "Frei", book_until: "Gebucht bis {t}",
       sound_title: "Klangwelten", playing: "Läuft", vol_down: "Leiser", vol_up: "Lauter",
@@ -346,6 +406,9 @@
       break_title: "Pause machen", break_lead: "Der Raum bleibt deiner, während alle kurz rausgehen. Er wird nicht als leer freigegeben.",
       minutes_label: "Minuten", start_break: "Pause starten", break_held: "Der Raum ist für dich reserviert", back_by: "Zurück bis {t}",
       more5: "+5 Min.", im_back: "Bin zurück", minus: "Fünf Minuten weniger", plus: "Fünf Minuten mehr",
+      water_title: "Zeit für Wasser", water_text: "Ihr lernt seit {m} Minuten. Aufstehen, strecken und ein Glas Wasser trinken.",
+      ear: "Achtet auf Feueralarm. Der Ton bleibt auf diesem Gerät.",
+      fire_src: "Rauchmelder-Ton erkannt um {t}",
       sos_kicker: "Notfall", sos_ask: "Notruf absetzen?", sos_ask_lead: "Der Campus-Sicherheitsdienst erfährt, dass es in diesem Raum einen Notfall gibt.",
       sos_yes: "Ja, jetzt rufen", sos_open_kicker: "Notfall gemeldet", sos_open: "Hilfe wurde gerufen",
       sos_open_text: "Gemeldet um {t}. Ruhig bleiben und, wenn es sicher ist, im Raum bleiben.",
@@ -360,16 +423,18 @@
   if (!T[lang]) lang = "en";
   const t = (k, vars = {}) => (T[lang][k] ?? T.en[k] ?? k).replace(/\{(\w+)\}/g, (_, v) => vars[v] ?? "");
 
-  /* ---------- icons (thin line, one style) ---------- */
+  /* ---------- icons ---------- */
   const P = {
-    qr: '<rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><path d="M14 14h3v3h-3zM20 14v.01M14 20h.01M17 20h4M20 17v3"/>',
+    qr: '<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M14 14h3v3h-3zM20 14v.01M14 20h.01M17 20h4M20 17v3"/>',
     music: '<path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/>',
     camera: '<path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3z"/><circle cx="12" cy="13" r="3.5"/>',
     coffee: '<path d="M17 8h1a4 4 0 0 1 0 8h-1"/><path d="M3 8h14v9a4 4 0 0 1-4 4H7a4 4 0 0 1-4-4z"/><path d="M6 2v2M10 2v2M14 2v2"/>',
-    moon: '<path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/>',
     alert: '<path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4M12 17h.01"/>',
     left: '<path d="M15 18l-6-6 6-6"/>', right: '<path d="M9 18l6-6-6-6"/>', arrow: '<path d="M5 12h14M13 6l6 6-6 6"/>',
     phone: '<path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1 1 .4 1.9.7 2.8a2 2 0 0 1-.5 2.1L8 9.9a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.8.7a2 2 0 0 1 1.7 2z"/>',
+    drop: '<path d="M12 2.7s-6.5 7.3-6.5 12a6.5 6.5 0 0 0 13 0c0-4.7-6.5-12-6.5-12z"/><path d="M9 15a3 3 0 0 0 3 3"/>',
+    bell: '<path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/><path d="M2 8a10 10 0 0 1 2-5M22 8a10 10 0 0 0-2-5"/>',
+    ear: '<path d="M6 8.5a6 6 0 0 1 12 0c0 3.5-3 4.5-3 7a3.5 3.5 0 0 1-6.5 1.8"/><path d="M15 8.5a3 3 0 0 0-6 0"/>',
     off: '<circle cx="12" cy="12" r="9"/><path d="M5.6 5.6l12.8 12.8"/>',
     rain: '<path d="M20 15.5A4.5 4.5 0 0 0 17.5 7 6 6 0 0 0 6 9a4 4 0 0 0 0 8"/><path d="M8 19v2M12 17v2M16 19v2"/>',
     ocean: '<path d="M2 12c2 0 2-2 4-2s2 2 4 2 2-2 4-2 2 2 4 2 2-2 4-2M2 17c2 0 2-2 4-2s2 2 4 2 2-2 4-2 2 2 4 2 2-2 4-2"/>',
@@ -394,6 +459,12 @@
   }
   new ResizeObserver(fit).observe(document.documentElement); fit();
 
+  /* ---------- logo: web/img/aau-logo.svg if it's there, else the name in AAU blue ---------- */
+  const noLogo = () => { $("logo").innerHTML = '<span class="word" aria-label="Universität Klagenfurt">Universität<span>Klagenfurt</span></span>'; };
+  const logoImg = $("logoImg");
+  if (logoImg.complete && !logoImg.naturalWidth) noLogo();     // already failed before this script ran
+  else logoImg.addEventListener("error", noLogo);
+
   /* ---------- API ---------- */
   async function api(method, path = "", body) {
     const res = await fetch(API + path, {
@@ -404,148 +475,82 @@
     if (!res.ok) throw Object.assign(new Error(data?.error || `Error ${res.status}`), { status: res.status });
     return data;
   }
-
   let toastT;
   function toast(msg) {
     const el = $("toast"); el.textContent = msg; el.classList.remove("hidden");
     clearTimeout(toastT); toastT = setTimeout(() => el.classList.add("hidden"), 5000);
   }
-  // backend errors a person can run into, in the display's language
   const ERRORS = { "Nobody has booked this room right now": "err_no_booking", "The camera isn't live right now": "err_no_camera" };
   const errText = (e) => e.status === 403 ? t("no_token") : ERRORS[e.message] ? t(ERRORS[e.message]) : e.message;
   function fail(e) { toast(errText(e)); }
 
   /* ---------- state from the backend ---------- */
-  let S = null;                 // last GET /api/display/{room}
-  let soundLocalAt = 0;         // last time this screen changed the sound (a poll mustn't undo it)
+  let S = null, soundLocalAt = 0;
   async function poll() {
-    try {
-      S = await api("GET");
-      $("offline").classList.add("hidden");
-      render();
-    } catch {
-      $("offline").textContent = t("offline"); $("offline").classList.remove("hidden");
-    }
+    try { S = await api("GET"); $("offline").classList.add("hidden"); render(); }
+    catch { $("offline").textContent = t("offline"); $("offline").classList.remove("hidden"); }
   }
-
   const SOUND_KINDS = ["off", "rain", "ocean", "forest", "cafe", "white", "pink", "brown"];
-  let sound = { kind: "off", volume: 50 };
-  let quiet = false;
-
+  let sound = { kind: "off", volume: 50 }, quiet = false;
   const breakUntil = () => { const b = parseLocal(S && S.break_until); return b && b > new Date() ? b : null; };
 
   function render() {
     if (!S) return;
     $("label").textContent = S.label || ROOM;
-    // status: dot + words (never colour alone)
-    let st = S.status, text = t("st_" + st);
+    let st = S.status, sub;
     const brk = breakUntil();
-    if (brk) { st = "break"; text = t("st_break", { t: hhmm(brk) }); }
+    const ends = (S.bookings_now || []).map((b) => parseLocal(b.end)).filter(Boolean).sort((a, b) => b - a);
     const n = S.people;
-    if (n !== null && n !== undefined && st !== "break") text += " · " + (n === 0 ? t("people_0") : n === 1 ? t("people_1") : t("people_n", { n }));
-    $("statusText").textContent = text;
+    const people = n === null || n === undefined ? "" : n === 0 ? t("people_0") : n === 1 ? t("people_1") : t("people_n", { n });
+    if (brk) { st = "break"; sub = t("break_sub", { t: hhmm(brk) }); }
+    else if (st === "ghost") sub = t("ghost_sub");
+    else sub = [people, ends.length ? t("until", { t: hhmm(ends[0]) }) : ""].filter(Boolean).join(" ");
+    $("stateText").textContent = t("st_" + st);
+    $("stateSub").textContent = sub;
     $("dot").style.background = `var(--${{ free: "free", partial: "shared", full: "full", ghost: "ghost", break: "break" }[st] || "closed"})`;
-
     quiet = !!S.quiet;
-    $("quietTag").classList.toggle("hidden", !quiet);
-    $("quietTag").innerHTML = ic("moon") + t("quiet_tag");
-
     if (Date.now() - soundLocalAt > 4000 && S.sound && (S.sound.kind !== sound.kind || S.sound.volume !== sound.volume)) {
       sound = { ...S.sound }; Synth.apply(sound);
     }
-    renderCards(); renderBook(); renderSound(); renderBreak(); renderEmergency();
+    studyTick();
+    renderTiles(); renderQuiet(); renderBook(); renderSound(); renderBreak(); renderEmergency();
   }
 
-  /* ---------- clock ---------- */
-  function clock() { $("clock").textContent = hhmm(new Date()); }
-  setInterval(clock, 1000); clock();
+  /* ---------- clock + date ---------- */
+  function clock() {
+    const d = new Date();
+    $("clock").textContent = hhmm(d);
+    $("date").textContent = new Intl.DateTimeFormat(lang === "de" ? "de-AT" : "en-GB", { weekday: "short", day: "numeric", month: "short" }).format(d);
+  }
+  setInterval(clock, 1000);
 
-  /* ---------- carousel ---------- */
-  const CARDS = [
-    { id: "book", icon: "qr" }, { id: "sound", icon: "music" }, { id: "selfie", icon: "camera" },
-    { id: "break", icon: "coffee" }, { id: "quiet", icon: "moon" }
-  ];
-  const track = $("track"), dots = $("dots");
-  let current = 0;
-  CARDS.forEach((c, i) => {
-    const el = document.createElement("button");
-    el.className = "card"; el.dataset.id = c.id;
-    el.setAttribute("aria-roledescription", "slide");
-    track.appendChild(el);
-    el.addEventListener("click", () => { if (!dragMoved) { if (i !== current) goTo(i); else openCard(c.id); } });
-    const d = document.createElement("button");
-    d.setAttribute("role", "tab"); d.innerHTML = "<span></span>";
-    d.addEventListener("click", () => goTo(i));
-    dots.appendChild(d);
-  });
-  function renderCards() {
-    CARDS.forEach((c, i) => {
-      const el = track.children[i];
-      const title = t("c_" + c.id);
-      let p = t("c_" + c.id + "_p"), cta = t("c_" + c.id + "_cta");
-      if (c.id === "sound" && sound.kind !== "off") p = t("c_sound_on", { s: t("s_" + sound.kind) });
+  /* ---------- home tiles ---------- */
+  const TILES = { book: "qr", sound: "music", selfie: "camera", break: "coffee" };
+  function renderTiles() {
+    document.querySelectorAll(".tile").forEach((el) => {
+      const id = el.dataset.open;
+      let p = t(`t_${id}_p`);
+      if (id === "sound" && sound.kind !== "off") p = t("t_sound_on", { s: t("s_" + sound.kind) });
       const brk = breakUntil();
-      if (c.id === "break" && brk) p = t("c_break_on", { m: Math.ceil((brk - new Date()) / 60000) });
-      if (c.id === "quiet") { p = t(quiet ? "c_quiet_p_on" : "c_quiet_p_off"); cta = t(quiet ? "c_quiet_cta_on" : "c_quiet_cta_off"); }
-      el.classList.toggle("on", c.id === "quiet" && quiet);
-      el.setAttribute("aria-label", `${title}. ${p} ${i + 1} / ${CARDS.length}`);
-      const html = `<div class="num"><span class="label">${pad2(i + 1)} / ${pad2(CARDS.length)}</span>${ic(c.icon)}</div>
-        <h2>${title}</h2><p>${p}</p>
-        <span class="cta"><span>${cta}</span>${ic("arrow")}</span>`;
-      // only touch the DOM on a real change: a re-layout makes Chrome snap the carousel back mid-swipe
+      if (id === "break" && brk) p = t("t_break_on", { m: Math.ceil((brk - new Date()) / 60000) });
+      const html = `<span class="icon">${ic(TILES[id])}</span><span class="go">${ic("arrow")}</span><h2>${t("t_" + id)}</h2><p>${p}</p>`;
       if (el.dataset.html !== html) { el.dataset.html = html; el.innerHTML = html; }
-      dots.children[i].setAttribute("aria-label", title);
+      el.setAttribute("aria-label", `${t("t_" + id)}. ${p}`);
     });
   }
-  function cardStep() { return track.children[1].offsetLeft - track.children[0].offsetLeft; }
-  function goTo(i, smooth = true) {
-    current = Math.max(0, Math.min(CARDS.length - 1, i));
-    track.scrollTo({ left: current * cardStep(), behavior: smooth ? "smooth" : "auto" });
-    markCurrent();
+  function renderQuiet() {
+    $("quiet").setAttribute("aria-checked", quiet ? "true" : "false");
+    $("quietT").textContent = t("quiet_t");
+    $("quietS").textContent = t(quiet ? "quiet_on" : "quiet_off");
   }
-  function markCurrent() {
-    [...track.children].forEach((el, i) => { el.classList.toggle("current", i === current); el.tabIndex = i === current ? 0 : -1; });
-    [...dots.children].forEach((d, i) => d.setAttribute("aria-current", i === current ? "true" : "false"));
-    $("prev").disabled = current === 0; $("next").disabled = current === CARDS.length - 1;
-  }
-  // after a swipe settles, the card in the middle becomes the current one (never mid-animation)
-  let dragX = null, dragStart = 0, dragMoved = false;
-  const settle = () => {
-    if (dragX !== null) return;
-    const i = Math.round(track.scrollLeft / cardStep());
-    if (i !== current) { current = i; markCurrent(); }
-  };
-  if ("onscrollend" in window) track.addEventListener("scrollend", settle);
-  else { let scrollT; track.addEventListener("scroll", () => { clearTimeout(scrollT); scrollT = setTimeout(settle, 150); }); }
-  $("prev").addEventListener("click", () => goTo(current - 1));
-  $("next").addEventListener("click", () => goTo(current + 1));
-
-  // mouse drag = swipe (touch screens and touchpads already scroll natively)
-  track.addEventListener("pointerdown", (e) => {
-    if (e.pointerType !== "mouse") return;
-    dragX = e.clientX; dragStart = track.scrollLeft; dragMoved = false;
-  });
-  addEventListener("pointermove", (e) => {
-    if (dragX === null) return;
-    const dx = (e.clientX - dragX) / (screen.getBoundingClientRect().width / 800);
-    if (Math.abs(dx) > 8) { dragMoved = true; track.classList.add("dragging"); }
-    if (dragMoved) track.scrollLeft = dragStart - dx;
-  });
-  addEventListener("pointerup", () => {
-    if (dragX === null) return;
-    dragX = null;
-    if (dragMoved) {
-      track.classList.remove("dragging");
-      const moved = track.scrollLeft - dragStart;
-      goTo(current + (Math.abs(moved) > cardStep() * 0.2 ? Math.sign(moved) : 0));
-      setTimeout(() => { dragMoved = false; }, 0);
-    }
+  $("quiet").addEventListener("click", async () => {
+    try { const r = await api("POST", "/quiet", { on: !quiet }); quiet = r.on; if (S) S.quiet = r.on; renderQuiet(); }
+    catch (e) { fail(e); }
   });
 
   /* ---------- sheets ---------- */
   let openSheet = null;
   function openCard(id) {
-    if (id === "quiet") return toggleQuiet();
     closeSheet();
     openSheet = id;
     $("home").classList.add("hidden");
@@ -555,22 +560,17 @@
   }
   function closeSheet() {
     if (!openSheet) return;
-    if (openSheet === "selfie") { selfieReset(); camStop(); }
-    $("sheet-" + openSheet).classList.add("hidden");
+    const was = openSheet;
+    if (was === "selfie") { selfieReset(); camStop(); }
+    $("sheet-" + was).classList.add("hidden");
     $("home").classList.remove("hidden");
     openSheet = null;
-    track.children[current].focus({ preventScroll: true });
+    document.querySelector(`.tile[data-open=${was}]`).focus({ preventScroll: true });
   }
+  document.querySelectorAll(".tile").forEach((b) => b.addEventListener("click", () => openCard(b.dataset.open)));
   document.querySelectorAll("[data-back]").forEach((b) => b.addEventListener("click", closeSheet));
 
-  async function toggleQuiet() {
-    try {
-      const r = await api("POST", "/quiet", { on: !quiet });
-      quiet = r.on; if (S) S.quiet = r.on; render();
-    } catch (e) { fail(e); }
-  }
-
-  /* ---------- 01 book ---------- */
+  /* ---------- book ---------- */
   $("bookQr").src = `${API}/qr`;
   function renderBook() {
     $("bookUrl").textContent = S.booking_url || "";
@@ -578,7 +578,7 @@
     $("bookNow").textContent = ends.length ? t("book_until", { t: hhmm(ends[0]) }) : t("book_free");
   }
 
-  /* ---------- 02 soundscapes (synthesised in the page: no sound files) ---------- */
+  /* ---------- soundscapes (synthesised in the page: no sound files) ---------- */
   const Synth = (() => {
     let ctx, master, nodes = [], timers = [], playing = "off";
     function ensure() {
@@ -678,7 +678,7 @@
   let soundPostT;
   function setSound(next) {
     sound = next; soundLocalAt = Date.now();
-    Synth.apply(sound); renderSound(); renderCards();
+    Synth.apply(sound); renderSound(); renderTiles();
     clearTimeout(soundPostT);
     soundPostT = setTimeout(() => api("POST", "/sound", sound).catch(fail), 250);
   }
@@ -696,7 +696,7 @@
   $("volDown").addEventListener("click", () => vol(-10));
   $("volUp").addEventListener("click", () => vol(10));
 
-  /* ---------- 03 selfie (this computer's webcam; the board camera if there is none) ---------- */
+  /* ---------- selfie (this computer's webcam; the board camera if there is none) ---------- */
   const video = $("video");
   let stream = null, countdownT = 0, useBoardCam = false;
   async function camStart() {
@@ -752,7 +752,7 @@
   }
   $("retake").addEventListener("click", selfieReset);
 
-  /* ---------- 04 take a break ---------- */
+  /* ---------- break ---------- */
   let breakMinutes = 15;
   $("bDown").addEventListener("click", () => { breakMinutes = Math.max(BREAK_MIN, breakMinutes - BREAK_STEP); renderBreak(); });
   $("bUp").addEventListener("click", () => { breakMinutes = Math.min(BREAK_MAX, breakMinutes + BREAK_STEP); renderBreak(); });
@@ -783,16 +783,88 @@
   }
   setInterval(() => { if (openSheet === "break") renderBreak(); }, 1000);
 
+  /* ---------- water + stretch reminder: every WATER_MIN minutes while people study here ---------- */
+  let studySince = null, lastWater = null, waterHideT = 0;
+  function studyTick() {
+    const studying = S && !breakUntil() && ((S.people || 0) > 0 || (S.bookings_now || []).length > 0);
+    const now = Date.now();
+    if (!studying) { studySince = null; lastWater = null; }
+    else if (studySince === null) { studySince = now; lastWater = now; }
+    if (studying && now - lastWater >= WATER_MIN * 60000) { lastWater = now; showWater(); }
+    const left = studying ? Math.max(1, Math.ceil((lastWater + WATER_MIN * 60000 - now) / 60000)) : null;
+    $("waterLine").innerHTML = ic("drop") + `<span>${left ? t("water_in", { m: left }) : t("water_idle", { m: WATER_MIN })}</span>`;
+  }
+  function showWater(seconds = 60) {
+    $("waterTitle").textContent = t("water_title");
+    $("waterText").textContent = t("water_text", { m: WATER_MIN });
+    const tl = $("waterTimeline"); tl.style.animation = "none"; void tl.offsetWidth; tl.style.animation = `shrink ${seconds}s linear forwards`;
+    $("waterNote").classList.remove("hidden");
+    clearTimeout(waterHideT); waterHideT = setTimeout(() => $("waterNote").classList.add("hidden"), seconds * 1000);
+  }
+  $("waterNote").addEventListener("pointerdown", () => { clearTimeout(waterHideT); $("waterNote").classList.add("hidden"); });
+
+  /* ---------- fire alarm from the alarm's sound ----------
+     Smoke alarms beep at about 3 kHz (EN 14604 / ISO 8201: three 0.5 s beeps, then a pause). Every 50 ms the page
+     looks at the microphone's spectrum: a beep = a narrow peak between 2.5 and 4 kHz that stands 25 dB above the rest.
+     Three beeps of 0.2-1.2 s within 6 s (or one tone longer than 3 s) = alarm. It stays up until no beep for 20 s.
+     Nothing is recorded or sent: only the band energy is looked at, in this window. */
+  const Alarm = (() => {
+    let ctx, an, buf, on = false, onAt = 0, beeps = [], lastTone = 0, active = false, timer = 0;
+    async function start(stream) {
+      try {
+        stream = stream || await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } });
+      } catch { $("ear").classList.add("hidden"); return; }
+      ctx = new (window.AudioContext || window.webkitAudioContext)();
+      an = ctx.createAnalyser(); an.fftSize = 4096; an.smoothingTimeConstant = 0;
+      ctx.createMediaStreamSource(stream).connect(an);
+      buf = new Float32Array(an.frequencyBinCount);
+      $("ear").innerHTML = ic("ear"); $("ear").classList.remove("hidden");
+      const resume = () => { if (ctx.state === "suspended") ctx.resume(); };
+      resume(); addEventListener("pointerdown", resume);
+      clearInterval(timer); timer = setInterval(listen, 50);
+    }
+    function listen() {
+      an.getFloatFrequencyData(buf);
+      const hz = ctx.sampleRate / an.fftSize, lo = Math.round(2500 / hz), hi = Math.round(4000 / hz);
+      let peak = -Infinity;
+      for (let i = lo; i <= hi; i++) if (buf[i] > peak) peak = buf[i];
+      const ref = [...buf.slice(Math.round(300 / hz), Math.round(8000 / hz))].sort((a, b) => a - b);
+      const median = ref[ref.length >> 1];
+      const tone = peak > -70 && peak - median > 25;
+      const now = performance.now();
+      if (tone) {
+        lastTone = now;
+        if (!on) { on = true; onAt = now; }
+        if (now - onAt > 3000) raise();
+      } else if (on) {
+        on = false;
+        const len = now - onAt;
+        if (len >= 200 && len <= 1200) {
+          beeps = beeps.filter((b) => now - b < 6000); beeps.push(now);
+          if (beeps.length >= 3) raise();
+        }
+      }
+      if (active && now - lastTone > 20000) clear();
+    }
+    function raise() {
+      if (active) return;
+      active = true;
+      $("fireSrc").innerHTML = ic("ear") + t("fire_src", { t: hhmm(new Date()) });
+      $("fire").classList.remove("hidden");
+    }
+    function clear() { active = false; beeps = []; $("fire").classList.add("hidden"); }
+    return { start, raise, clear, get active() { return active; } };
+  })();
+  $("fireIcon").innerHTML = ic("bell");
+
   /* ---------- emergency ---------- */
-  let sosHidden = null;   // id of the emergency whose big message was hidden
+  let sosHidden = null;
   $("sos").addEventListener("click", () => { $("sosAsk").classList.remove("hidden"); $("sosNo").focus(); });
   $("sosNo").addEventListener("click", () => { $("sosAsk").classList.add("hidden"); $("sos").focus(); });
   $("sosYes").addEventListener("click", async () => {
     $("sosAsk").classList.add("hidden");
-    try {
-      const em = await api("POST", "/emergency", { confirm: true });
-      if (S) S.emergency = em; sosHidden = null; renderEmergency();
-    } catch (e) { fail(e); }
+    try { const em = await api("POST", "/emergency", { confirm: true }); if (S) S.emergency = em; sosHidden = null; renderEmergency(); }
+    catch (e) { fail(e); }
   });
   $("sosHide").addEventListener("click", () => { sosHidden = S && S.emergency && S.emergency.id; renderEmergency(); });
   function renderEmergency() {
@@ -800,10 +872,7 @@
     const at = em ? hhmm(parseLocal(em.created_at)) : "";
     $("sosOpen").classList.toggle("hidden", !em || sosHidden === em.id);
     $("sosBanner").classList.toggle("hidden", !em || sosHidden !== em.id);
-    if (em) {
-      $("sosOpenText").textContent = t("sos_open_text", { t: at });
-      $("sosBanner").innerHTML = ic("phone") + t("sos_banner", { t: at });
-    }
+    if (em) { $("sosOpenText").textContent = t("sos_open_text", { t: at }); $("sosBanner").innerHTML = ic("phone") + t("sos_banner", { t: at }); }
   }
 
   /* ---------- static text + language ---------- */
@@ -811,9 +880,8 @@
     document.documentElement.lang = lang;
     $("lang").textContent = t("lang_btn"); $("lang").setAttribute("aria-label", t("lang_aria"));
     $("sos").innerHTML = ic("alert") + t("sos"); $("sos").setAttribute("aria-label", t("sos_aria"));
-    $("prev").innerHTML = ic("left"); $("prev").setAttribute("aria-label", t("prev"));
-    $("next").innerHTML = ic("right"); $("next").setAttribute("aria-label", t("next"));
-    track.setAttribute("aria-label", S ? S.label : ROOM);
+    $("stateLabel").textContent = t("state_label");
+    $("ear").setAttribute("aria-label", t("ear")); $("ear").title = t("ear");
     document.querySelectorAll("[data-back]").forEach((b) => { if (!b.dataset.t) b.innerHTML = ic("left") + t("back"); });
     document.querySelectorAll("[data-t]").forEach((el) => { el.textContent = t(el.dataset.t); });
     $("shoot").innerHTML = ic("camera") + t("shoot");
@@ -823,7 +891,8 @@
     $("bDown").setAttribute("aria-label", t("minus")); $("bUp").setAttribute("aria-label", t("plus"));
     $("volDown").setAttribute("aria-label", t("vol_down")); $("volUp").setAttribute("aria-label", t("vol_up"));
     $("sosAskKicker").innerHTML = ic("alert") + t("sos_kicker"); $("sosOpenKicker").innerHTML = ic("phone") + t("sos_open_kicker");
-    renderCards(); renderSound(); renderBreak();
+    $("waterDrop").innerHTML = ic("drop");
+    clock(); renderTiles(); renderQuiet(); renderSound(); renderBreak(); studyTick();
     if (S) render();
   }
   $("lang").addEventListener("click", () => {
@@ -835,25 +904,25 @@
   /* ---------- keyboard ---------- */
   addEventListener("keydown", (e) => {
     if (!$("sosAsk").classList.contains("hidden")) { if (e.key === "Escape") $("sosNo").click(); return; }
-    if (openSheet) { if (e.key === "Escape") closeSheet(); return; }
-    if (e.key === "ArrowRight") goTo(current + 1);
-    else if (e.key === "ArrowLeft") goTo(current - 1);
+    if (e.key === "Escape" && openSheet) closeSheet();
+    if (DEMO && (e.key === "w" || e.key === "W")) showWater(15);
+    if (DEMO && (e.key === "f" || e.key === "F")) { Alarm.raise(); setTimeout(() => Alarm.clear(), 15000); }
   });
 
-  /* ---------- back to the first card after 90 s without a touch ---------- */
+  /* ---------- back to the start after 90 s without a touch ---------- */
   let lastTouch = Date.now();
   ["pointerdown", "keydown"].forEach((ev) => addEventListener(ev, () => { lastTouch = Date.now(); }, true));
   setInterval(() => {
     if (Date.now() - lastTouch < IDLE_MS || countdownT || !$("sosAsk").classList.contains("hidden")) return;
     if (openSheet) closeSheet();
-    if (current !== 0) goTo(0);
     lastTouch = Date.now();
   }, 5000);
 
   /* ---------- go ---------- */
   applyText();
-  goTo(0, false);
   poll(); setInterval(poll, 1500);
+  Alarm.start();
+  window.roomDisplay = { showWater, Alarm };   // for demos and tests
 })();
 </script>
 </body>

@@ -190,17 +190,29 @@ while the display asks for silence) and `emergency` (true while one is open); bo
 break until 14:20", the playing sound, a "Quiet room" badge and a red emergency alert (`GET /api/emergencies`,
 resolve button).
 
-**The page (`web/display.html`).** Laid out for 800x480 and scaled to any window. Built for a 4.3" touch screen: one
-big swipeable card per feature (Book, Soundscapes, Selfie, Take a break, Quiet room) instead of a grid of small
-buttons; arrows, dots and the keyboard (arrows, Esc) work too. Quiet academic look: ink on warm paper (`#17171a` on
-`#f4f1ea`), Newsreader serif headings, Instrument Sans text (as the website), hairline rules, numbered sections
-01-05, one accent (`#22408f`), red only for SOS. Sound tiles about 180x140 px. Touch targets at least 48 px (main
-buttons 60-76 px), text at least 15 px (body 18-22 px), nothing overflows at 800x480 in English or German (checked on
-all 28 screens and states), status in words and colour (never colour alone), visible focus ring, English/German (same
-`roomv-lang` choice as the website), screen-reader labels, reduced motion respected, back to the first card after
-90 s untouched. SOS is always top right, asks "Are you sure?" first, and shows "Help has been called" until the
-website resolves it. Selfie: this computer's webcam (preview mirrored, photo not), else the board camera's frame.
-Sounds are synthesised in the page (Web Audio), no files.
+**The page (`web/display.html`).** Laid out for 800x480 and scaled to any window. Home: two big tiles on the left
+(Book, Sounds), two on the right (Selfie, Break), and the room in the middle (status in words, people, booked until,
+the Quiet-room switch, minutes to the next water break). Top bar: university logo (`web/img/aau-logo.svg`; without
+the file the name is written out), room, time with the date, a small ear while the fire-alarm listener runs,
+language, SOS. AAU blue and white (`#497284` and `#57a0c7`, from the university logo), Barlow Condensed headings,
+Atkinson Hyperlegible text (designed for low-vision readers); red only for SOS and the fire alarm. Text contrast at
+least 4.5:1, touch targets at least 48 px (tiles 228x180), text at least 15 px, nothing overflows at 800x480 in English
+or German (checked on all 28 screens and states, overlays included), English/German (same `roomv-lang` choice as the
+website), screen-reader labels, reduced motion respected, back home after 90 s untouched. SOS asks "Are you sure?"
+first and shows "Help has been called" until the website resolves it. Selfie: this computer's webcam (preview
+mirrored, photo not), else the board camera's frame. Sounds are synthesised in the page (Web Audio), no files.
+
+Shown without a button:
+- **Water and stretch reminder** every 45 minutes while people study in the room (people seen or a booking running,
+  not during a break): full screen for 60 s, tap anywhere to close early. `?water=<minutes>` changes the interval.
+- **Fire alarm for deaf students:** the page listens to the microphone and looks for a smoke alarm's beeps (a narrow
+  tone at 2.5-4 kHz, 25 dB above the rest; three beeps of 0.2-1.2 s within 6 s, as in EN 14604 / ISO 8201, or one
+  tone longer than 3 s). Then a full-screen bilingual "FIRE ALARM / FEUERALARM: leave the room" alert pulses at 1 Hz
+  (well under the 3 flashes/s seizure limit) until no beep for 20 s. Nothing is recorded or sent; only the band
+  energy is looked at in the page. The display window gets camera and microphone without a prompt
+  (`--use-fake-ui-for-media-stream` in `app/display.py`; it's its own browser profile on this page only). On a real
+  board the same check is a Goertzel filter at ~3.1 kHz on the PDM microphone.
+- Demo: `?demo=1` then key **W** = water reminder, **F** = fire alarm for 15 s.
 
 ### Frontend flow (claude-3 / Martha; every call above is live on `uvicorn app.main:app`)
 1. **Login page:** `POST /api/login` or `POST /api/register`, then the main page. On load, `GET /api/me`; 401 →
