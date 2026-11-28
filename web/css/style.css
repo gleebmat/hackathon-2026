@@ -969,3 +969,80 @@ h1, h2, h3, .brand-name, .picker-title, .sheet-title h2, .pick-id, .map-info-id,
 .kbd { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 35%, var(--border)); }
 @media (max-width: 760px) { .picker { padding: 16px 12px 20px; } }
 .bell-btn .count { background: var(--accent); color: #fff; }
+
+/* Map full screen: button top right (the map's compass is top left, its floor selector bottom left) */
+.map-full {
+  position: absolute; top: 12px; right: 12px; z-index: 5; width: 36px; height: 36px; display: grid; place-items: center; padding: 0;
+  border: 1px solid var(--border); border-radius: var(--radius-sm); color: var(--text);
+  background: color-mix(in srgb, var(--surface) 92%, transparent); box-shadow: var(--shadow-sm);
+  transition: border-color .2s var(--ease), color .2s var(--ease);
+}
+.map-full:hover { border-color: var(--accent); color: var(--accent); }
+.map-full .ic { width: 18px; height: 18px; }
+.map-card:fullscreen, .map-card.is-full { border: 0; border-radius: 0; }
+.map-card.is-full { position: fixed; inset: 0; z-index: 60; }
+.map-card:fullscreen .building, .map-card.is-full .building { height: 100vh; height: 100dvh; }
+.map-info { top: 58px; }
+@media (max-width: 760px) { .map-legend { top: 56px; } }
+
+/* ===== Top bar while scrolling (body.scrolled, set in app.js) =====
+   The name folds into the cb. tile, the search folds left into a button, the bell / My bookings / language tuck
+   into the account (with a badge on the avatar), and the bar itself turns transparent. */
+.topbar { transition: background .35s var(--ease), border-color .35s var(--ease), padding .35s var(--ease), backdrop-filter .35s var(--ease); }
+.brand-text { display: inline-block; max-width: 320px; overflow: hidden; white-space: nowrap; transition: max-width .5s var(--ease), opacity .3s var(--ease), transform .5s var(--ease); }
+.search { justify-self: start; width: 100%; transition: width .5s var(--ease); }
+.search input { transition: padding .4s var(--ease), border-color .2s, box-shadow .2s, background .2s; }
+.search-field .icon, .kbd { transition: left .4s var(--ease), opacity .25s var(--ease); }
+.top-actions { transition: gap .4s var(--ease); }
+.top-actions > .top-lang, #notes-btn, #mine-btn {
+  max-width: 260px; transition: max-width .45s var(--ease), opacity .25s var(--ease), padding .45s var(--ease), border-width .45s, margin .45s;
+}
+.menu-wrap { position: relative; }
+.avatar-count { position: absolute; top: -6px; right: -6px; min-width: 18px; height: 18px; padding: 0 5px; font-size: 11px; font-weight: 800;
+  display: grid; place-items: center; border-radius: var(--pill); pointer-events: none; transform: scale(0); transition: transform .3s var(--spring); }
+.menu-quick { display: none; gap: 2px; margin: -4px 0 12px; padding-bottom: 10px; border-bottom: 1px solid var(--border); }
+.menu-item { display: flex; align-items: center; gap: 10px; width: 100%; padding: 9px 8px; border: 0; border-radius: var(--radius-sm); background: none; font-weight: 600; text-align: left; }
+.menu-item:hover { background: var(--surface-2); }
+.menu-item .ic { width: 17px; height: 17px; color: var(--muted); }
+.menu-item .count { margin-left: auto; min-width: 20px; height: 20px; padding: 0 6px; display: grid; place-items: center; border-radius: var(--pill); font-size: 12px; font-weight: 800; }
+
+body.scrolled .topbar {
+  background: transparent; border-bottom-color: transparent; backdrop-filter: none; -webkit-backdrop-filter: none;
+  padding-top: 8px; padding-bottom: 8px; pointer-events: none;
+}
+body.scrolled .topbar > * { pointer-events: auto; }
+body.scrolled .brand-text { max-width: 0; opacity: 0; transform: translateX(-8px); }
+body.scrolled .search { width: 46px; }
+body.scrolled .search input { padding-left: 44px; padding-right: 0; cursor: pointer; box-shadow: var(--shadow-sm); }
+body.scrolled .search input::placeholder { color: transparent; }
+body.scrolled .search-field .icon { left: 13px; }
+body.scrolled .kbd { opacity: 0; }
+body.scrolled .topbar.search-open .search { width: min(440px, 100%); }
+body.scrolled .topbar.search-open .search input { padding-right: 44px; cursor: text; }
+body.scrolled .topbar.search-open .search input::placeholder { color: var(--muted); }
+body.scrolled .top-actions { gap: 0; }
+body.scrolled .top-actions > .top-lang, body.scrolled #notes-btn, body.scrolled #mine-btn {
+  max-width: 0; opacity: 0; padding-left: 0; padding-right: 0; border-width: 0; margin: 0; overflow: hidden; pointer-events: none;
+}
+body.scrolled .avatar { box-shadow: var(--shadow); }
+body.scrolled .avatar-count:not(.hidden) { transform: scale(1); }
+body.scrolled .avatar-count.hidden { display: grid; transform: scale(0); }
+body.scrolled .menu-quick { display: grid; }
+
+@media (max-width: 900px) {
+  body.scrolled .topbar { grid-template-columns: auto auto 1fr; }
+  body.scrolled .search { grid-column: 2; grid-row: 1; }
+  body.scrolled .top-actions { grid-column: 3; }
+  body.scrolled .topbar.search-open .search { width: min(320px, calc(100vw - 140px)); }
+}
+
+/* The search sits in the middle while at the top and slides all the way left (next to cb.) when it folds */
+@media (min-width: 901px) {
+  .topbar { grid-template-columns: auto minmax(0, 1fr) auto; justify-content: stretch; }
+  .search { width: min(560px, 100%); margin-left: max(0px, calc((100% - 560px) / 2)); transition: width .5s var(--ease), margin-left .5s var(--ease); }
+  body.scrolled .search { width: 46px; margin-left: 0; }
+  body.scrolled .topbar.search-open .search { width: min(440px, 100%); margin-left: 0; }
+}
+@media (max-width: 900px) {
+  .search { width: 100%; margin-left: 0; }
+}

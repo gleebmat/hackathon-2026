@@ -186,6 +186,7 @@ async function refreshMine() {
     void count.offsetWidth;
     count.classList.add("bump");
   }
+  syncTopCounts();
   if ($("mine-drawer").open && json !== mineJson) renderMine();
   mineJson = json;
 }
@@ -333,10 +334,72 @@ function hideRoomInfo() {
   document.querySelector(".map-info")?.classList.remove("on");
 }
 
+// ---------- Top bar while scrolling ----------
+// Scrolled down: the name folds into the cb. tile, the search folds to the left into a button, the bell, My bookings
+// and the language switch tuck into the account, and the bar turns transparent (CSS: body.scrolled).
+
+function wireTopbarScroll() {
+  const bar = document.querySelector(".topbar");
+  const input = $("search-input");
+  let frame = 0;
+  const update = () => {
+    frame = 0;
+    const on = window.scrollY > 60;
+    if (on === document.body.classList.contains("scrolled")) return;
+    document.body.classList.toggle("scrolled", on);
+    if (!on) bar.classList.remove("search-open");
+  };
+  addEventListener("scroll", () => { if (!frame) frame = requestAnimationFrame(update); }, { passive: true });
+  input.addEventListener("focus", () => bar.classList.add("search-open"));
+  input.addEventListener("blur", () => { if (!input.value.trim()) bar.classList.remove("search-open"); });
+  update();
+}
+
+// ---------- Map full screen ----------
+// The browser's own full screen when it has one; otherwise the map card covers the window (CSS .is-full).
+
+const mapCard = () => document.querySelector(".map-card");
+const mapIsFull = () => document.fullscreenElement === mapCard() || mapCard().classList.contains("is-full");
+
+function syncMapFull() {
+  const on = mapIsFull();
+  mapCard().classList.toggle("is-full", on);
+  const btn = $("map-full");
+  btn.querySelector("use").setAttribute("href", on ? "#ic-collapse" : "#ic-expand");
+  btn.title = t(on ? "map_full_exit" : "map_full");
+  btn.setAttribute("aria-label", btn.title);
+  btn.setAttribute("aria-pressed", String(on));
+}
+
+async function setMapFull(on) {
+  const card = mapCard();
+  if (on && !mapIsFull()) {
+    // Some embedded browsers leave the request pending: after 0.5 s fall back to covering the window.
+    const ok = await Promise.race([
+      card.requestFullscreen().then(() => true, () => false),
+      new Promise((done) => setTimeout(() => done(false), 500)),
+    ]);
+    if (!ok && document.fullscreenElement !== card) card.classList.add("is-full");
+  } else if (!on && mapIsFull()) {
+    if (document.fullscreenElement) await document.exitFullscreen().catch(() => {});
+    card.classList.remove("is-full");
+  }
+  syncMapFull();
+}
+
+function wireMapFull() {
+  $("map-full").addEventListener("click", () => setMapFull(!mapIsFull()));
+  document.addEventListener("fullscreenchange", syncMapFull);
+  document.addEventListener("keydown", (e) => {   // Esc for the fallback mode (the browser handles its own)
+    if (e.key === "Escape" && mapCard().classList.contains("is-full") && !document.fullscreenElement) setMapFull(false);
+  });
+}
+
 async function openRoom(id, opts) {
   closeSuggestions();
   const known = state.rooms.find((r) => r.id === id);
   if (known && known.bookable === false) return showRoomInfo(known);
+  if (mapIsFull()) await setMapFull(false);   // the booking panel sits under the map
   hideRoomInfo();
   state.view?.focusRoom(id);
   state.sheet = newSheet(id, opts);
@@ -904,6 +967,8 @@ function wireMenu() {
   const avatar = $("avatar");
   const toggle = (open) => { menu.classList.toggle("hidden", !open); avatar.setAttribute("aria-expanded", String(open)); };
   avatar.addEventListener("click", (e) => { e.stopPropagation(); toggle(menu.classList.contains("hidden")); });
+  $("menu-mine").addEventListener("click", () => { toggle(false); openDrawer(); });
+  $("menu-notes").addEventListener("click", (e) => { e.stopPropagation(); toggle(false); openNotes(); });
   document.addEventListener("click", (e) => { if (!menu.contains(e.target)) toggle(false); });
   $("modes").addEventListener("click", (e) => {
     const b = e.target.closest("[data-mode]");
@@ -1097,7 +1162,21 @@ function renderNotes() {
         <span class="note-icon">${ic(NOTE_ICON[n.kind] ?? "bell")}</span>
         <span><span class="note-text">${esc(t(n.msg, n.vars))}</span><span class="muted small">${esc(agoText(n.at))}</span></span></li>`).join("")
     : `<li class="note-empty muted small">${t("notes_empty")}</li>`;
+  syncTopCounts();
 }
+
+// While the page is scrolled the bell and My bookings hide in the account menu: mirror their counts there.
+function syncTopCounts() {
+  const mine = $("mine-count")?.textContent || "0";
+  const unread = state.notes.filter((n) => !n.read).length;
+  $("menu-mine-count").textContent = mine;
+  $("menu-notes-count").textContent = unread;
+  $("menu-notes-count").classList.toggle("hidden", !unread);
+  $("avatar-count").textContent = unread;
+  $("avatar-count").classList.toggle("hidden", !unread);
+}
+
+let openNotes = () => {};
 
 const NOTE_ICON = { soon: "clock", ending: "hourglass", over: "done", ghost: "ghost", released: "ban", loud: "sound", left: "bag",
   booked: "check", cancelled: "trash" };
@@ -1119,6 +1198,7 @@ function wireNotes() {
   const panel = $("notes-panel");
   const btn = $("notes-btn");
   const toggle = (open) => { panel.classList.toggle("hidden", !open); btn.setAttribute("aria-expanded", String(open)); };
+  openNotes = () => { toggle(true); renderNotes(); };
   btn.addEventListener("click", (e) => { e.stopPropagation(); toggle(panel.classList.contains("hidden")); renderNotes(); });
   document.addEventListener("click", (e) => { if (!panel.contains(e.target) && e.target !== btn) toggle(false); });
   $("notes-read").addEventListener("click", () => { for (const n of state.notes) n.read = true; saveNotes(); renderNotes(); });
@@ -1200,6 +1280,8 @@ async function main() {
   $("user-email").textContent = state.user.email;
   wireMenu();
   wireCursorGlow();
+  wireMapFull();
+  wireTopbarScroll();
   wireSearch();
   wireSheet();
   wirePage();
