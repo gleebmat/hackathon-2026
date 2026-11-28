@@ -714,6 +714,22 @@ details.history .booking { opacity: .7; margin-top: 8px; }
 .menu .lang-switch { display: grid; grid-auto-flow: column; width: 100%; }
 .sheet-tools { display: flex; align-items: center; gap: 8px; align-self: flex-start; }
 
+/* Favourite rooms: heart in the room panel, list in "My bookings", mark on the room cards */
+.fav-btn { gap: 6px; }
+.fav-btn .heart, .fav-x .heart { transition: transform var(--speed) var(--ease-bounce), fill var(--speed); }
+.fav-btn:hover .heart { transform: scale(1.15); }
+.fav-btn.on, .fav-x { color: #e5484d; }
+.fav-btn.on .heart, .fav-x .heart { fill: currentColor; }
+.fav-n { font-variant-numeric: tabular-nums; }
+.fav-group { margin-bottom: 18px; }
+.fav-list { display: grid; gap: 8px; margin-top: 8px; }
+.fav-chip { display: flex; align-items: center; gap: 6px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); }
+.fav-open { flex: 1; min-width: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; padding: 10px 12px; background: none; border: 0; text-align: left; color: inherit; cursor: pointer; }
+.fav-open:hover b { text-decoration: underline; }
+.fav-x { display: grid; place-items: center; width: 36px; height: 36px; margin-right: 6px; border: 0; border-radius: 50%; background: none; cursor: pointer; }
+.fav-x:hover { background: var(--surface-2); }
+.pick-fav { color: #e5484d; }
+
 .site-footer { margin-top: 32px; border-top: 1px solid var(--border); background: var(--surface); }
 .foot-grid { max-width: 1240px; margin: 0 auto; padding: 32px 28px 20px; display: grid; gap: 28px; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
 .foot-col h4 { margin: 0 0 12px; font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }

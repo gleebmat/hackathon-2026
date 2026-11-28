@@ -253,6 +253,7 @@ function renderMine() {
     </section>`;
   }).join("");
   body.innerHTML = `
+    ${favoritesHtml()}
     ${groups || `<div class="drawer-empty"><div class="big">🗓️</div><p><b>${t("no_upcoming")}</b></p><p>${t("no_upcoming_sub")}</p></div>`}
     <button class="btn btn-primary" type="button" data-action="find">${t("book_a_room")}</button>
     ${history.length ? `<details class="history"><summary>${t("history", { n: history.length })}</summary>
@@ -449,6 +450,7 @@ function renderSheetHead() {
       </div>
     </div>
     <div class="sheet-tools">
+      ${favButton(r)}
       <button class="btn btn-sm" type="button" data-action="share">${t("copy_link")}</button>
       <button class="icon-btn" type="button" data-action="close" aria-label="${t("close")}"><svg class="icon"><use href="#i-close"/></svg></button>
     </div>`;
@@ -459,6 +461,53 @@ function renderSheetHead() {
   const ghost = r.status === "ghost" && r.ghost_release_at
     ? `<div class="ghost-alert" style="margin-top:8px">${t("ghost_room", { t: esc(r.ghost_release_at.slice(11, 19)) })}</div>` : "";
   $("sh-now").innerHTML = `<div class="block-title"><h3>${t("right_now")}</h3></div>${r.board ? boardCard(r) : ""}<div class="now-list">${now}</div>${sensorCheck(r)}${ghost}`;
+}
+
+// ---------- Favourite rooms (stored per account in the backend) ----------
+
+const HEART_SVG = `<svg class="icon heart" viewBox="0 0 24 24"><path d="M12 20s-7-4.4-9.2-9A5 5 0 0 1 12 6a5 5 0 0 1 9.2 5c-2.2 4.6-9.2 9-9.2 9z"/></svg>`;
+
+function favButton(r) {
+  const label = t(r.favorite ? "fav_remove" : "fav_add");
+  const likes = r.likes ? `<span class="fav-n">${r.likes}</span>` : "";
+  return `<button class="btn btn-sm fav-btn ${r.favorite ? "on" : ""}" type="button" data-action="fav" data-room="${esc(r.id)}"
+    aria-pressed="${r.favorite}" aria-label="${esc(label)}" title="${esc(label)}">${HEART_SVG}${likes}</button>`;
+}
+
+const favRooms = () => state.rooms.filter((r) => r.favorite);
+
+function favoritesHtml() {
+  const list = favRooms();
+  const chips = list.map((r) => `<div class="fav-chip">
+      <button type="button" class="fav-open" data-action="open-fav" data-room="${esc(r.id)}">
+        <b>${esc(r.label || r.id)}</b><span class="pill ${esc(r.status)}">${STATUS[r.status] ?? esc(r.status)}</span>
+        <span class="muted small">${esc(r.name)}</span></button>
+      <button type="button" class="fav-x" data-action="fav" data-room="${esc(r.id)}" aria-label="${esc(t("fav_remove"))}" title="${esc(t("fav_remove"))}">${HEART_SVG}</button>
+    </div>`).join("");
+  return `<section class="fav-group"><div class="day-head"><b>${t("favorites")}</b><span class="hours">${list.length || ""}</span></div>
+    ${chips ? `<div class="fav-list">${chips}</div>` : `<p class="muted small">${t("no_favs")}</p>`}</section>`;
+}
+
+async function toggleFavorite(btn) {
+  const id = btn.dataset.room;
+  const room = state.rooms.find((r) => r.id === id);
+  const on = !(room?.favorite ?? state.sheet?.room?.favorite);
+  btn.disabled = true;
+  try {
+    const res = await (on ? api.like(id) : api.unlike(id));
+    if (room) room.favorite = res.favorite;
+    if (state.sheet?.roomId === id && state.sheet.room) {
+      Object.assign(state.sheet.room, { favorite: res.favorite, likes: res.likes });
+      renderSheetHead();
+    }
+    state.picker.setRooms(state.rooms);
+    if ($("mine-drawer").open) renderMine();
+    toast(t(on ? "fav_added" : "fav_removed", { room: room?.label || id }));
+  } catch (err) {
+    if (!handleAuth(err)) toast(err.message, { error: true });
+  } finally {
+    if (btn.isConnected) btn.disabled = false;
+  }
 }
 
 // The board room's live card: a big head count, the noise with a meter and the last minute as a line.
@@ -679,6 +728,7 @@ function wireSheet() {
     if (!t || t.disabled) return;
     if (t.dataset.action === "close") return closeSheet();
     if (t.dataset.action === "share") return copyRoomLink(sh.roomId);
+    if (t.dataset.action === "fav") return toggleFavorite(t);
     if (t.dataset.date) {
       sh.date = t.dataset.date;
       sh.start = null;
@@ -850,6 +900,8 @@ function wirePage() {
     if (!t || t.disabled) return;
     if (t.dataset.action === "cancel") return cancelBooking(t);
     if (t.dataset.action === "rate") return rateRoom(t);
+    if (t.dataset.action === "fav") return toggleFavorite(t);
+    if (t.dataset.action === "open-fav") { closeDrawer(); return openRoom(t.dataset.room); }
     if (t.dataset.action === "find") { closeDrawer(); setTimeout(() => $("search-input").focus(), 220); return; }
     if (t.dataset.action === "ics") return downloadIcs(state.mine.find((x) => x.id === Number(t.dataset.id)));
     if (t.dataset.action === "add") {

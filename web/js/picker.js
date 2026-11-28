@@ -103,7 +103,7 @@ export function createPicker(root, { onOpen, onError }) {
       : "";
     const action = st.kind === "closed" ? "" : `<span class="book">${st.kind === "full" ? t("other_times") : t("book")}</span>`;
     return `<button type="button" class="pick ${st.kind === "full" || st.kind === "closed" ? "dim" : ""}" data-room="${esc(room.id)}">
-      <div class="pick-top"><div class="pick-id">${esc(room.id)}</div><div class="pick-name">${esc(room.name)}</div></div>
+      <div class="pick-top"><div class="pick-id">${esc(room.id)}${room.favorite ? ` <span class="pick-fav" title="${esc(t("favorites"))}">♥</span>` : ""}</div><div class="pick-name">${esc(room.name)}</div></div>
       <div class="pick-status"><div class="st-main ${st.kind}"><i></i>${esc(st.main)}</div><div class="st-sub">${esc(st.sub)}</div></div>
       <div class="pick-drawer"><div><div class="pick-drawer-in">${rating}${noise}${action}</div></div></div>
     </button>`;

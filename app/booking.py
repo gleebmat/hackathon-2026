@@ -131,6 +131,27 @@ def my_rating(conn: sqlite3.Connection, user_id: int, room_id: str) -> int | Non
     return row["stars"] if row else None
 
 
+def favorite_ids(conn: sqlite3.Connection, user_id: int | None) -> set[str]:
+    if user_id is None:
+        return set()
+    return {r["room_id"] for r in conn.execute("SELECT room_id FROM favorites WHERE user_id = ?", (user_id,))}
+
+
+def likes(conn: sqlite3.Connection, room_id: str) -> int:
+    return conn.execute("SELECT COUNT(*) FROM favorites WHERE room_id = ?", (room_id,)).fetchone()[0]
+
+
+def set_favorite(conn: sqlite3.Connection, user_id: int, room_id: str, on: bool, now: datetime) -> dict:
+    """Like or unlike a room. Idempotent: liking twice keeps the first date, unliking an unliked room is fine."""
+    get_room(conn, room_id)
+    if on:
+        conn.execute("INSERT OR IGNORE INTO favorites (user_id, room_id, created_at) VALUES (?, ?, ?)",
+                     (user_id, room_id, now.isoformat()))
+    else:
+        conn.execute("DELETE FROM favorites WHERE user_id = ? AND room_id = ?", (user_id, room_id))
+    return {"room_id": room_id, "favorite": on, "likes": likes(conn, room_id)}
+
+
 def simulating() -> bool:
     return os.environ.get("SIMULATE", "1") != "0"
 
