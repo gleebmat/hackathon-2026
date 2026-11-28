@@ -152,7 +152,10 @@ class Launcher:
         profile = Path(tempfile.gettempdir()) / f"room-display-{room_id}"
         self.windows[room_id] = subprocess.Popen([
             self.browser, f"--app={self.url(room_id)}", f"--window-size={WINDOW_SIZE[0]},{WINDOW_SIZE[1]}",
-            f"--user-data-dir={profile}", "--no-first-run", "--autoplay-policy=no-user-gesture-required"])
+            f"--user-data-dir={profile}", "--no-first-run", "--autoplay-policy=no-user-gesture-required",
+            # the window's own profile, only ever on this page: allow webcam (selfie) and microphone (fire-alarm
+            # detection) without a prompt nobody is there to click
+            "--use-fake-ui-for-media-stream"])
         log.warning("display: board %s online, display window opened", room_id)
 
     def close(self, room_id: str) -> None:

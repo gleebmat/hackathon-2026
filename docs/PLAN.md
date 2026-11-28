@@ -188,14 +188,34 @@ These features are for the room display only; the website shows none of them (ro
 - **Own soundscape:** the board mic also hears the sound the display plays. While a soundscape is on, readings from
   the display board keep the noise measured before it started, so the room never turns "loud" from its own sound.
 
-**The page (`web/display.html`).** Laid out for 800x480 and scaled to any window. Built for a 4.3" touch screen: one
-big swipeable card per feature (Book, Soundscapes, Selfie, Take a break) instead of a grid of small
-buttons; arrows, dots and the keyboard (arrows, Esc) work too. Touch targets at least 56 px, text at least 17 px,
-white on near-black, status in words and colour (never colour alone), visible focus ring, English/German (same
-`roomv-lang` choice as the website), screen-reader labels, reduced motion respected, back to the first card after
-90 s untouched. SOS is always top right, asks "Call the police?" first, shows "Calling the police (133)…" for a few
-seconds, then "Police called" until someone presses "End emergency". Selfie: this computer's webcam (preview mirrored, photo not), else the board camera's frame.
-Sounds are synthesised in the page (Web Audio), no files.
+**The page (`web/display.html`).** Laid out for 800x480 and scaled to any window. Home: a ring of five cards you
+swipe through (finger or mouse, the arrows, or the arrow keys; tap a side card to bring it to the middle). The middle
+card is big, two smaller ones sit on each side, and any card can be in the middle. It starts (and returns after 90 s
+untouched) with the room card in the middle: status in words, people, booked until, minutes to the next break
+reminder. Around it: Book, Sounds | Selfie, Break. Top bar: university logo (`web/img/aau-logo.svg`, the University
+of Klagenfurt's logo as on Wikipedia, `Universitaet_klagenfurt_logo.svg`; a protected trademark of the university,
+used here for the AAU challenge; without the file the name is written out), room, time with the date, a small ear
+while the fire-alarm listener runs, language, SOS. Plain campus-system look on purpose: Arial, square boxes, grey
+lines, AAU blue (`#497284`, from the logo), no decoration; red only for SOS and the fire alarm. Text contrast at least
+4.5:1, touch targets at least 44 px (middle card 268x356), text at least 15 px, nothing overflows at 800x480 in
+English or German (checked on every screen and state, overlays included), English/German (same `roomv-lang` choice as
+the website), screen-reader labels, reduced motion respected. SOS is always top right, asks "Call the police?" first,
+shows "Calling the police (133)…" for a few seconds, then "Police called" until someone presses "End emergency".
+Selfie: this computer's webcam (preview mirrored, photo not), else the board camera's frame. Sounds are synthesised
+in the page (Web Audio), no files; the café is murmuring voices, cups and spoons and the coffee machine.
+
+Shown without a button:
+- **Break reminder** ("Time for a break": stand up, stretch, drink some water) every 45 minutes while people study in
+  the room (people seen or a booking running, not during a break): full screen for 60 s, tap anywhere to close early.
+  `?water=<minutes>` changes the interval.
+- **Fire alarm for deaf students:** the page listens to the microphone and looks for a smoke alarm's beeps (a narrow
+  tone at 2.5-4 kHz, 25 dB above the rest; three beeps of 0.2-1.2 s within 6 s, as in EN 14604 / ISO 8201, or one
+  tone longer than 3 s). Then a full-screen bilingual "FIRE ALARM / FEUERALARM: leave the room" alert pulses at 1 Hz
+  (well under the 3 flashes/s seizure limit) until no beep for 20 s. Nothing is recorded or sent; only the band
+  energy is looked at in the page. The display window gets camera and microphone without a prompt
+  (`--use-fake-ui-for-media-stream` in `app/display.py`; it's its own browser profile on this page only). On a real
+  board the same check is a Goertzel filter at ~3.1 kHz on the PDM microphone.
+- Demo: `?demo=1` then key **W** = break reminder, **F** = fire alarm for 15 s.
 
 ### Frontend flow (claude-3 / Martha; every call above is live on `uvicorn app.main:app`)
 1. **Login page:** `POST /api/login` or `POST /api/register`, then the main page. On load, `GET /api/me`; 401 →
