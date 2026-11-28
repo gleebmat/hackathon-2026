@@ -33,6 +33,13 @@ BOOKABLE_NAMES = {"Seminarraum": "Seminar room", "Computerraum": "Computer room"
 OTHER_NAMES = {"Lesesaal": "Reading room", "Leseraum": "Reading room", "Labor": "Lab", "Katalograum": "Catalogue room",
                "Büro": "Office", "Besprechungsraum": "Meeting room", "Küche": "Kitchen", "Kopierraum": "Copy room"}
 BOARD_ROOM = "Z.1.04"
+# Offices worth drawing: real offices and meeting rooms, box-shaped and not tiny. Kitchens, server, copy, technical and
+# workshop rooms that the plan files as "office" are part of the building but not drawn; toilets aren't drawn either.
+REAL_OFFICES = {"Büro", "Großraumbüro", "Besprechungsraum", "Projektraum"}
+MIN_OFFICE_AREA = 6.0
+BOX_FILL = 0.85        # area / its tightest rectangle: at least this to count as box-shaped
+OUTLINE_TOLERANCE = 0.35   # m: building outlines are simplified this much (fewer polygons, same look)
+ROOM_TOLERANCE = 0.2       # m: room outlines (lecture-hall fans keep their shape)
 COURTYARD_MIN_AREA = 150   # unnamed "corridor" spaces this big are courtyards, not building
 
 
@@ -43,6 +50,12 @@ def poly(s):
 
 def is_courtyard(s):
     return s["type"] == CORRIDOR and not s["code"] and poly(s).area > COURTYARD_MIN_AREA
+
+
+def is_box(g):
+    """Roughly rectangular (an office), not an odd leftover shape."""
+    r = g.minimum_rotated_rectangle
+    return r.area > 0 and g.area / r.area >= BOX_FILL
 
 
 def rings(geom):
@@ -59,10 +72,10 @@ def floor_outlines(by_floor, taken):
     """Each floor's outline: its spaces joined (small gaps closed), minus what earlier buildings already cover."""
     out = {}
     for f, gs in by_floor.items():
-        g = unary_union(gs).buffer(0.25, join_style=2).buffer(-0.25, join_style=2).simplify(0.03)
+        g = unary_union(gs).buffer(0.4, join_style=2).buffer(-0.4, join_style=2).simplify(OUTLINE_TOLERANCE)
         if f in taken:
             g = g.difference(taken[f])
-        out[f] = unary_union(list(rings(g)))
+        out[f] = unary_union([p for p in rings(g) if p.area >= 8])   # drop slivers
     return out
 
 
@@ -88,9 +101,11 @@ def shell_blocks(outlines):
         runs.append(run)
         geom = set_precision(unary_union(cells).buffer(0.02, join_style=2).buffer(-0.02, join_style=2), 0.01)
         for p in rings(geom):
+            if p.area < 8:   # slivers between floor outlines
+                continue
             for r in runs:
                 b = {"poly": coords(p.exterior), "floors": r}
-                holes = [coords(i) for i in p.interiors if Polygon(i).area > 1]
+                holes = [coords(i) for i in p.interiors if Polygon(i).area > 4]
                 if holes:
                     b["holes"] = holes
                 blocks.append(b)
@@ -113,7 +128,11 @@ def room_entry(s, floor, storeys, geom):
     cap = s["cap"] or (max(4, int(geom.area / 2)) if bookable else (2 if geom.area < 25 else 4) if kind == "office" else 0)
     if code == BOARD_ROOM:   # the sensor-board room: a bookable seminar room in our system
         kind, label, eng, bookable, cap = "seminar", None, "Seminar room", True, 51
-    shrunk = geom.buffer(-0.12, join_style=2)   # small gap between neighbouring rooms
+    shrunk = geom.buffer(-0.12, join_style=2).simplify(ROOM_TOLERANCE)   # small gap between neighbours, fewer points
+    if kind == "office":                       # offices are drawn as clean boxes
+        box_ = shrunk.minimum_rotated_rectangle
+        if box_.area and shrunk.area / box_.area >= BOX_FILL:
+            shrunk = box_.intersection(geom.buffer(-0.12, join_style=2)).simplify(ROOM_TOLERANCE)
     if shrunk.is_empty:
         return None
     shrunk = max(rings(set_precision(shrunk, 0.01)), key=lambda p: p.area, default=geom)
@@ -182,8 +201,9 @@ def main():
         per_code = defaultdict(list)
         for s in mine:
             name_s = s["name"].strip()
-            keep = (s["type"] in (TEACHING, OFFICE, WC) or name_s.startswith("Hörsaal")) and s["code"]
-            if keep and poly(s).area >= 3:
+            teaching = s["type"] == TEACHING or name_s.startswith("Hörsaal") or s["code"] == BOARD_ROOM
+            office = s["type"] == OFFICE and name_s in REAL_OFFICES and poly(s).area >= MIN_OFFICE_AREA and is_box(poly(s))
+            if (teaching or office) and s["code"] and poly(s).area >= 3:
                 per_code[s["code"]].append(s)
         rooms, placed = [], defaultdict(list)
         teaching_first = sorted(per_code.items(), key=lambda kv: (kv[1][0]["type"] != TEACHING, kv[0]))
@@ -191,7 +211,8 @@ def main():
             floors = sorted({s["f"] for s in items})
             biggest = max(items, key=lambda s: poly(s).area)
             span = range(floors[0], floors[-1] + 1)
-            geom = poly(biggest).intersection(outlines[floors[0]])        # inside its building
+            # inside its building on all its floors (a two-storey hall like HS A keeps its whole fan)
+            geom = poly(biggest).intersection(unary_union([outlines[f] for f in span if f in outlines]))
             for f in span:                                                  # and not into a room already placed
                 if placed[f]:
                     geom = geom.difference(unary_union(placed[f]))

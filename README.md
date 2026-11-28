@@ -30,7 +30,8 @@ API docs: http://localhost:8000/docs. The map alone: http://localhost:8000/map3d
   (`web/img/login.jpg`).
 - **3D map = the real campus plan:** buildings V, N, Z, L (library), S and O (Nexus) are built from
   campusplan.aau.at's own floor-plan data (every room with its real number and seats; courtyards left out; corridors,
-  stairs, storage and technical rooms are part of the building but not drawn as rooms). Bookable: the real seminar,
+  stairs, storage, technical rooms and toilets are part of the building but not drawn as rooms; offices are drawn
+  only if they are real, box-shaped offices or meeting rooms; outlines are simplified to keep the model light). Bookable: the real seminar,
   computer and group-work rooms and lecture halls (53 rooms). Exception: **Z.1.04** (in reality an office) is our
   sensor-board room, a 51-seat seminar room here. Refresh the data with
   `uv run --with shapely python tools/campus3d/fetch_plan.py`, rebuild with
