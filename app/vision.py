@@ -31,9 +31,10 @@ log = logging.getLogger(__name__)
 MODEL = db.ROOT / "models" / "yolo11s_640.onnx"
 KEY_HEADER = db.ROOT / "firmware" / "xiao_sense" / "frame_key.h"
 PERSON = 0
-# COCO class -> (name, typical size of its longest side in metres)
-ITEMS = {24: ("backpack", 0.45), 25: ("umbrella", 0.9), 26: ("handbag", 0.35), 28: ("suitcase", 0.65),
-         39: ("bottle", 0.25), 41: ("cup", 0.10), 63: ("laptop", 0.33), 67: ("cell phone", 0.15), 73: ("book", 0.24)}
+# The only things that count as left behind: COCO class -> (name, typical size of its longest side in metres).
+# Not suitcase, umbrella or book: tables, chairs and papers get mistaken for them.
+ITEMS = {24: ("backpack", 0.45), 26: ("handbag", 0.35), 39: ("bottle", 0.25), 41: ("cup", 0.10),
+         63: ("laptop", 0.33), 67: ("cell phone", 0.15)}
 PERSON_SCORE = 0.45
 ITEM_SCORE = 0.50
 ITEM_MAX_M = float(os.environ.get("ITEM_MAX_M", "3.5"))
@@ -94,7 +95,7 @@ def count(output: np.ndarray, frame_width: float) -> tuple[int, list[tuple[str, 
         for i in nms(boxes, scores):
             distance = metres * focal / max(boxes[i, 2], boxes[i, 3], 1)
             if distance <= ITEM_MAX_M:
-                items.append((name, round(float(scores[i]), 2), round(distance, 1)))
+                items.append((name, round(float(scores[i]), 2), round(float(distance), 1)))
     return people, items
 
 

@@ -43,7 +43,8 @@ heavy recognition runs on the laptop, so results reach the website in about **1 
   `models/yolo11s_640.onnx`, onnxruntime on the CPU, ~150 ms per frame) on the newest frame only, so nothing queues
   up. The 320x240 frame is upscaled to 640, so small and far people are still found (12 of 12 and 32 of 32 on
   crowd test pictures, where YOLO11n at 320 found none). It counts **people** (score 0.45+) and things people forget:
-  **backpack, umbrella, handbag, suitcase, bottle, cup, laptop, cell phone, book** (0.50+), but only **within about
+  **backpack, handbag, bottle, cup, laptop, cell phone** (0.50+; suitcase, umbrella and book are left out because a
+  table was taken for a suitcase), but only **within about
   3 m**: the distance is estimated from the box size and the thing's typical size (`ITEM_MAX_M`, default 3.5;
   `CAMERA_FOV`, default 65 degrees). The backend console prints what the camera sees whenever it changes
   (`camera: Z.1.04: 0 people, left items 1 | this frame: 0 people, items backpack 0.81 at ~1.9 m`).
@@ -86,7 +87,7 @@ sketch: after changing it here, paste it into Velxio and save. Copy Velxio's `fr
 **Placement: how to get reliable results**
 - *People:* YOLO finds whole or partial people from any side, as long as they are not tiny in the 320x240 picture.
   Good light helps; a backlit person (window behind) is harder.
-- *Left items:* things YOLO knows (bag, backpack, umbrella, phone, bottle, cup, laptop, book), clearly visible,
+- *Left items:* only backpack, handbag, laptop, phone, bottle or cup, clearly visible,
   within ~3 m of the camera. Any of them in view while nobody is in the room counts as left behind; the backend
   console says what was seen and how far away it seemed.
 
