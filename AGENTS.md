@@ -11,8 +11,8 @@ Hackathon project: speed matters, but don't break `main`.
   simulated.
 - Board: **XIAO ESP32S3 Sense in Velxio** (`firmware/xiao_sense/`; team Velxio project TODAREISTODO, setup,
   placement tips and troubleshooting in `README.md`), readings over MQTT to the backend (`app/mqtt_feed.py`);
-  presence, noise, ghost, people count and left items work: one COCO detector on sharp 320x240 frames gives the
-  count and the items and decides presence (the fast 96x96 model only flags arrivals); older version: tag `board-v1`.
+  the board sends encrypted camera frames + noise; the backend counts people and left items with YOLO11n
+  (`app/vision.py`, ~1 s to the website); key in gitignored `firmware/xiao_sense/frame_key.h`; old: tag `board-v1`.
   The Infineon path was removed.
 
 ## Docs
