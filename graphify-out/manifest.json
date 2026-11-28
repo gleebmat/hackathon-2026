@@ -90,9 +90,9 @@
     "semantic_hash": ""
   },
   "web/js/app.js": {
-    "mtime": 1795861152.0763097,
-    "seen": 1795861231.3266811,
-    "ast_hash": "27876ed1b664d2ee348c1c715f6e6424",
+    "mtime": 1795862816.8588176,
+    "seen": 1795862867.522953,
+    "ast_hash": "370425d61306cf668b1a03fe9449cac4",
     "semantic_hash": ""
   },
   "web/js/plan2d.js": {
@@ -102,9 +102,9 @@
     "semantic_hash": ""
   },
   "web/index.html": {
-    "mtime": 1795861152.0151484,
-    "seen": 1795861231.326716,
-    "ast_hash": "b801e79ecb1d382108ce1283f4aadc0c",
+    "mtime": 1795862816.8489764,
+    "seen": 1795862867.5229902,
+    "ast_hash": "c778d82906cffc4d7bbc7a7687c97527",
     "semantic_hash": ""
   },
   "web/login.html": {
