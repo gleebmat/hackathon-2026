@@ -441,7 +441,7 @@ function renderSheetHead() {
         <span class="muted">${b.shareable ? "open to join · " : "private · "}until ${hm(b.end)}</span></div>`).join("")
     : `<div class="now-item"><span>✨ Nobody has booked it right now</span></div>`;
   const ghost = r.status === "ghost" && r.ghost_release_at
-    ? `<div class="ghost-alert" style="margin-top:8px">👻 Booked, but nobody is here. Frees up at ${hm(r.ghost_release_at)} unless someone shows up.</div>` : "";
+    ? `<div class="ghost-alert" style="margin-top:8px">👻 Booked, but nobody is here. Frees up at ${esc(r.ghost_release_at.slice(11, 19))} unless someone shows up.</div>` : "";
   $("sh-now").innerHTML = `<div class="block-title"><h3>Right now</h3></div><div class="now-list">${now}</div>${sensorCheck(r)}${ghost}`;
 }
 

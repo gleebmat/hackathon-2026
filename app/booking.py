@@ -18,6 +18,7 @@ BOOKING_HORIZON_DAYS = 14
 GHOST_AFTER = (timedelta(seconds=int(os.environ["GHOST_RELEASE_SECONDS"]))
                if "GHOST_RELEASE_SECONDS" in os.environ
                else timedelta(minutes=int(os.environ.get("GHOST_RELEASE_MIN", "10"))))
+GHOST_GRACE = timedelta(seconds=int(os.environ.get("GHOST_GRACE_SECONDS", "60")))
 BOARD_STALE = timedelta(seconds=10)
 SENSOR_STALE = timedelta(minutes=2)
 
@@ -97,7 +98,10 @@ def ghost_deadline(booking: sqlite3.Row, seen: dict) -> datetime | None:
     """When a running booking is released if the room stays empty, or None while people are (or may be) there."""
     if seen["people"] != 0 or seen["empty_since"] is None:
         return None
-    return max(seen["empty_since"], parse(booking["start"])) + GHOST_AFTER
+    since = max(seen["empty_since"], parse(booking["start"]), parse(booking["created_at"]))
+    if seen["people_at"] < since + min(GHOST_GRACE, GHOST_AFTER / 2):
+        return None
+    return since + GHOST_AFTER
 
 
 def loudest(bookings: list[sqlite3.Row]) -> str | None:

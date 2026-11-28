@@ -24,10 +24,10 @@ API docs: http://localhost:8000/docs. The map alone: http://localhost:8000/map3d
 
 ## Demo with the board (XIAO ESP32S3 Sense in Velxio)
 
-1. **Backend** (PowerShell, in this repo): start it with a 6-second recording timer. It subscribes to the board's
+1. **Backend** (PowerShell, in this repo): start it with a two-stage recording timer. It subscribes to the board's
    MQTT readings by itself (public broker `broker.hivemq.com`, topic `aau-hack26/rooms/+/readings`).
    ```powershell
-   $env:GHOST_RELEASE_SECONDS = '6'; uvicorn app.main:app
+   $env:GHOST_GRACE_SECONDS = '5'; $env:GHOST_RELEASE_SECONDS = '15'; uvicorn app.main:app
    ```
 2. **Velxio** (https://velxio.dev/editor, Chrome): new project, board **XIAO ESP32S3 Sense**.
    - Files: paste `firmware/xiao_sense/sketch.ino` into `sketch.ino`; add a file `person_model.h` with the content of
@@ -37,7 +37,7 @@ API docs: http://localhost:8000/docs. The map alone: http://localhost:8000/map3d
      minutes. The serial monitor shows `MODEL OK`, `WIFI OK` and one `MQTT ... -> sent` line per reading (500 ms target, plus simulator delays).
 3. **Show it:** open http://localhost:8000, search `z104`. Z.1.04 shows LIVE, its noise, "Booked for N · Someone is
    here". Book it, then step out of the webcam: the room turns into a ghost booking (violet on the map) and is
-   released after 6 seconds of confirmed absence. Leave an object in view when you go: the panel shows "🎒 Something left behind".
+   marked Ghost after 5 seconds and released after 15 seconds total of confirmed absence. Leave an object in view when you go: the panel shows "🎒 Something left behind".
 
 Tips: keep the camera view empty after Run until serial prints `Empty-room baseline ready`. Every other
 room is simulated. The old Infineon Live Lab path (`bridge/`) still works as a fallback, see `docs/LOG.md`.

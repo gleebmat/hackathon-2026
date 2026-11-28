@@ -240,7 +240,10 @@ def test_ghost_booking_released_after_10_min(app_env, time_now):
     booking_id = book(a, room="V.1.03", start="2026-11-27T10:00", hours=2).json()["id"]
     reading(a, "V.1.03", people=0, noise_db=34)  # 10:05, booking started 10:00
     state = room(a, "V.1.03")
-    assert state["status"] == "ghost" and state["ghost_release_at"] == "2026-11-27T10:15:00"
+    assert state["ghost_release_at"] is None
+    time_now["t"] += timedelta(minutes=1)
+    reading(a, "V.1.03", people=0)
+    assert room(a, "V.1.03")["status"] == "ghost"
     assert a.get("/api/bookings/mine").json()[0]["ghost_release_at"] == "2026-11-27T10:15:00"
     sensor_until(a, time_now, "V.1.03", 0, datetime(2026, 11, 27, 10, 14))
     assert room(a, "V.1.03")["status"] == "ghost"
@@ -266,7 +269,7 @@ def test_room_empty_mid_booking_starts_timer(app_env, time_now):
     book(a, room="V.1.03", start="2026-11-27T10:00", hours=2)
     sensor_until(a, time_now, "V.1.03", 2, datetime(2026, 11, 27, 10, 29))
     sensor_until(a, time_now, "V.1.03", 0, datetime(2026, 11, 27, 10, 30))  # everyone left at 10:30
-    assert room(a, "V.1.03")["ghost_release_at"] == "2026-11-27T10:40:00"
+    assert room(a, "V.1.03")["ghost_release_at"] is None
     sensor_until(a, time_now, "V.1.03", 0, datetime(2026, 11, 27, 10, 35))
     sensor_until(a, time_now, "V.1.03", 1, datetime(2026, 11, 27, 10, 50))  # back in time: timer stops
     assert a.get("/api/bookings/mine").json()[0]["status"] == "active"
@@ -495,7 +498,7 @@ def test_booked_vs_present(app_env):
     assert (r["present"], r["counted"]) == (3, True)                                    # a real head count
     a.post("/api/readings", json={"room_id": "V.1.03", "presence": False})
     r = room(a, "V.1.03")
-    assert r["present"] == 0 and r["status"] == "ghost"
+    assert r["present"] == 0 and r["ghost_release_at"] is None
 
 
 def test_mqtt_reading_is_stored_like_http(app_env):
@@ -534,3 +537,20 @@ def test_last_and_first_overnight_slots(app_env):
     assert book(c, start="2026-11-28T00:00", hours=0.5).status_code == 201
     slots = c.get("/api/rooms/V.1.07a/availability").json()["slots"]
     assert slots[-1]["start"] == "23:30" and slots[-1]["end"] == "24:00"
+
+
+@pytest.mark.parametrize("arrived_first", [False, True])
+def test_recording_grace_and_release(app_env, time_now, monkeypatch, arrived_first):
+    monkeypatch.setattr(booking, "GHOST_GRACE", timedelta(seconds=5))
+    monkeypatch.setattr(booking, "GHOST_AFTER", timedelta(seconds=15))
+    c = user(1)
+    rid = booking.BOARD_ROOM
+    assert book(c, room=rid, start="2026-11-27T10:00").status_code == 201
+    if arrived_first:
+        reading(c, rid, people=1)
+    for seconds, people, status in [(0, 0, "partial"), (4, 0, "partial"), (5, 0, "ghost"),
+                                    (7, 1, "partial"), (8, 0, "partial"), (13, 0, "ghost"),
+                                    (22, 0, "ghost"), (23, 0, "free")]:
+        time_now["t"] = NOW + timedelta(seconds=seconds)
+        reading(c, rid, people=people)
+        assert room(c, rid)["status"] == status
