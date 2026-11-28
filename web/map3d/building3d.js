@@ -24,6 +24,8 @@ const SLAB = 0.35;
  *               {controls: false} if the page has its own buttons (they should call setBuilding / setFloor).
  */
 export function createBuilding(el, input, opts = {}) {
+  const entranceLabel = opts.labels?.entrance ?? "Main entrance";
+  const pendingEntrances = [];
   const buildings = input.buildings ?? [{ id: input.building, ...input,
     blocks: [{ x: 0, z: 0, w: input.outer.w, d: input.outer.d, courtyard: input.courtyard }] }];
 
@@ -136,6 +138,18 @@ export function createBuilding(el, input, opts = {}) {
     return m;
   };
 
+  // --- outside doors and legs (shared geometry: there are many doors) ---
+  const doorParts = [
+    [new THREE.BoxGeometry(0.3, 3.0, 2.8), new THREE.MeshStandardMaterial({ color: 0xf1f4f9, roughness: 0.6 }), 0.12, 1.5],
+    [new THREE.BoxGeometry(0.4, 2.6, 2.1), new THREE.MeshStandardMaterial({ color: 0x34405a, roughness: 0.5 }), 0.2, 1.3],
+  ];
+  const pillarMat = new THREE.MeshStandardMaterial({ color: 0xb8c0cc, roughness: 0.8 });
+  // coffee (green) and vending (red) machines: small boxes with a light front panel
+  const machineBody = new THREE.BoxGeometry(0.8, 1.9, 1.1), machineFront = new THREE.BoxGeometry(0.05, 0.8, 0.75);
+  const machineMat = { coffee: new THREE.MeshStandardMaterial({ color: 0x23a55a, roughness: 0.5 }),
+                       vending: new THREE.MeshStandardMaterial({ color: 0xd63a32, roughness: 0.5 }) };
+  const machineFrontMat = new THREE.MeshStandardMaterial({ color: 0xf4f6fa, roughness: 0.4 });
+
   // --- buildings ---
   const floorGroups = new Map();   // "V:1" -> Group (slab + rooms of that floor)
   const shells = [];               // per building: walls + roof
@@ -160,7 +174,8 @@ export function createBuilding(el, input, opts = {}) {
       scene.add(g);
     }
     for (const b of bd.blocks) {
-      const bTop = (b.floors ?? bd.floors).length * H;     // low annexes can have fewer storeys
+      const fl = b.floors ?? bd.floors;                    // a piece spans its own floors (e.g. a bridge on floor 1)
+      const bBase = Math.min(...fl) * H, bTop = (Math.max(...fl) + 1) * H;
       const roof = slab(b, bTop, true, roofMat, 0.5);
       edges(roof, 0x4b5768, 0.55);
       shell.add(roof);
@@ -168,7 +183,7 @@ export function createBuilding(el, input, opts = {}) {
       pts.forEach(([x0, z0], i) => {                       // one glass wall per footprint edge
         const [x1, z1] = pts[(i + 1) % pts.length], len = Math.hypot(x1 - x0, z1 - z0);
         if (len < 0.05) return;
-        const w = box((x0 + x1) / 2, (z0 + z1) / 2, len, 0.3, 0, bTop, glass, shell);
+        const w = box((x0 + x1) / 2, (z0 + z1) / 2, len, 0.3, bBase, bTop - bBase, glass, shell);
         w.rotation.y = -Math.atan2(z1 - z0, x1 - x0);
       });
       const c = b.courtyard;
@@ -177,11 +192,43 @@ export function createBuilding(el, input, opts = {}) {
         box(cx, cz - c.d / 2, c.w, 0.3, H, top - H, glass, shell); box(cx, cz + c.d / 2, c.w, 0.3, H, top - H, glass, shell);
         box(cx - c.w / 2, cz, 0.3, c.d, H, top - H, glass, shell); box(cx + c.w / 2, cz, 0.3, c.d, H, top - H, glass, shell);
       }
-      for (const [x, z] of pts) { bb.expandByPoint(new THREE.Vector3(x, 0, z)); bb.expandByPoint(new THREE.Vector3(x, bTop, z)); }
+      for (const [x, z] of pts) { bb.expandByPoint(new THREE.Vector3(x, bBase, z)); bb.expandByPoint(new THREE.Vector3(x, bTop, z)); }
     }
     bounds.union(bb);
     for (const c of bd.connectors ?? []) {
       box(c.x, c.z, c.w, c.d, 0, c.floors.length * H, glass, shell, 0.5);
+    }
+    for (const e of bd.entrances ?? []) pendingEntrances.push([bd, e, H]);   // drawn once badge() exists
+    for (const d of bd.doors ?? []) {          // doors to the outside: a dark door leaf in a light frame on the wall
+      const door = new THREE.Group();
+      for (const [geo, mat, x, y] of doorParts) {
+        const m = new THREE.Mesh(geo, mat);
+        m.position.set(x, y, 0);
+        door.add(m);
+      }
+      door.position.set(d.x, d.floor * H, d.z);
+      door.rotation.y = -Math.atan2(d.dir[1], d.dir[0]);   // local +x points out of the door
+      (floorGroups.get(`${bd.id}:${d.floor}`) ?? scene).add(door);
+    }
+    for (const m of bd.machines ?? []) {
+      const g = new THREE.Group();
+      const body = new THREE.Mesh(machineBody, machineMat[m.kind] ?? machineMat.coffee);
+      body.position.y = 0.95 + SLAB;
+      body.castShadow = true;
+      const front = new THREE.Mesh(machineFront, machineFrontMat);
+      front.position.set(0.42, 1.25 + SLAB, 0);
+      g.add(body, front);
+      g.position.set(m.x, m.floor * H, m.z);
+      g.rotation.y = -Math.atan2(m.dir[1], m.dir[0]);   // the front (+x) faces away from the wall
+      (floorGroups.get(`${bd.id}:${m.floor}`) ?? scene).add(g);
+    }
+    for (const p of bd.pillars ?? []) {        // legs under an overhanging upper floor, from the ground up to it
+      const h = p.to_floor * H;
+      const leg = new THREE.Mesh(new THREE.ExtrudeGeometry(polyShape(p.poly), { depth: h, bevelEnabled: false }), pillarMat);
+      leg.rotation.x = -Math.PI / 2;
+      leg.castShadow = true;
+      edges(leg, 0x5b6676, 0.5);
+      shell.add(leg);
     }
     for (const r of bd.rooms) {
       const isAtrium = r.type === "atrium", h = isAtrium ? 0.25 : (r.storeys ?? 1) * H - 0.8;   // tall halls span floors
@@ -189,7 +236,14 @@ export function createBuilding(el, input, opts = {}) {
         transparent: true, opacity: isAtrium ? 0.75 : 0.92 });
       let geo;
       if (r.poly) {   // non-rectangular room (curved wing, fan-shaped hall): extrude its outline, centred on x,z
-        geo = new THREE.ExtrudeGeometry(polyShape(r.poly, r.x, r.z), { depth: h, bevelEnabled: false });
+        const shape = polyShape(r.poly, r.x, r.z);
+        for (const hp of r.holes ?? []) {   // a room around an open space (e.g. a reading hall around an atrium)
+          const p = new THREE.Path();
+          hp.forEach(([x, z], i) => (i ? p.lineTo(x - r.x, -(z - r.z)) : p.moveTo(x - r.x, -(z - r.z))));
+          p.closePath();
+          shape.holes.push(p);
+        }
+        geo = new THREE.ExtrudeGeometry(shape, { depth: h, bevelEnabled: false });
         geo.rotateX(-Math.PI / 2);
         geo.translate(0, -h / 2, 0);
       } else {
@@ -220,7 +274,7 @@ export function createBuilding(el, input, opts = {}) {
   };
   // Fit the box into the canvas: the distance comes from the field of view and the canvas aspect, so the campus
   // is centred and whole at any size (the old fixed formula cut it off in wide, short containers).
-  const VIEW_DIR = new THREE.Vector3(0.22, 0.62, 0.75).normalize();
+  const VIEW_DIR = new THREE.Vector3(0.42, 0.6, 0.68).normalize();   // north shows ~40° right of up
   let lastArgs = null;   // the last box/floor framed, so a resize can frame it again
   const view = (box, floorY = null) => {
     lastArgs = [box.clone(), floorY];
@@ -311,7 +365,9 @@ export function createBuilding(el, input, opts = {}) {
   });
 
   // --- visibility state ---
-  let highlight = null, halo = null, floorFilter = null, buildingFilter = null, showOffices = false;
+  const DEFAULT_FLOOR = opts.floor ?? 1;   // the map opens on floor 1: the main entrance and the board room are there
+  let highlight = null, halo = null, floorFilter = DEFAULT_FLOOR, buildingFilter = null,
+    showOffices = opts.offices ?? true;   // offices show by default; the "Offices" button hides them
   // buildingFilter: null (everything) or a Set of building ids (one building, or a group such as "Lakeside")
   const inView = (id) => buildingFilter === null || buildingFilter.has(id);
   const filterBox = () => {
@@ -341,11 +397,44 @@ export function createBuilding(el, input, opts = {}) {
   };
   applyVisibility();
 
+  // The main entrance: a slim door frame on the wall, a small mat on the ground in front of it and a small tag.
+  // Kept modest (thin, muted); it belongs to the building's ground floor, so it hides with the floor and building
+  // filters.
+  function addEntrance(bd, e, H) {
+    const [dx, dz] = e.dir ?? [1, 0];
+    const group = new THREE.Group();
+    const blue = new THREE.MeshStandardMaterial({ color: 0x2f5be0, roughness: 0.45 });
+    const part = (w, h, d, x, y, z, mat = blue) => {
+      const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
+      m.position.set(x, y, z);
+      m.castShadow = true;
+      group.add(m);
+    };
+    const across = 6, height = 3.4, t = 0.4;                  // door opening width and height, frame thickness (m)
+    part(t, height, t, 0.25, height / 2, -across / 2);           // frame posts and lintel on the wall
+    part(t, height, t, 0.25, height / 2, across / 2);
+    part(t, t, across + t, 0.25, height, 0);
+    part(3.2, 0.22, across + 2, 1.6, height + 0.45, 0);           // canopy over the door
+    part(4, 0.18, across + 1, 2, 0.09, 0,                         // landing in front of the door
+      new THREE.MeshStandardMaterial({ color: 0x2f5be0, transparent: true, opacity: 0.45, depthWrite: false }));
+    const tag = badge(entranceLabel, "#2f5be0");
+    tag.scale.multiplyScalar(3);                             // three times a room badge
+    tag.position.set(4, height + 4.5, 0);
+    group.add(tag);
+    const floor = e.floor ?? 0;
+    group.position.set(e.x, floor * H, e.z);
+    group.rotation.y = -Math.atan2(dz, dx);                  // local +x points out of the door
+    (floorGroups.get(`${bd.id}:${floor}`) ?? scene).add(group);
+  }
+
   // A badge floating over a room. With `chip`, a small drawing of the sensor board (a chip with pins and a camera
   // lens) comes first: it marks the room the real board watches.
   const badge = (text, color, chip = false) => {
     const c = document.createElement("canvas");
-    c.width = chip ? 384 : 256; c.height = 96;
+    const measure = c.getContext("2d");
+    measure.font = "bold 44px system-ui, sans-serif";
+    c.width = chip ? 384 : Math.max(256, Math.ceil(measure.measureText(text).width + 64));   // wide enough for the text
+    c.height = 96;
     const x = c.getContext("2d");
     x.fillStyle = color; x.beginPath(); x.roundRect(4, 4, c.width - 8, 88, 40); x.fill();
     if (chip) {
@@ -359,17 +448,35 @@ export function createBuilding(el, input, opts = {}) {
       x.fillStyle = "#fff"; x.beginPath(); x.arc(72, 48, 5, 0, Math.PI * 2); x.fill();
     }
     x.fillStyle = "#fff"; x.font = "bold 44px system-ui, sans-serif"; x.textAlign = "center"; x.textBaseline = "middle";
-    x.fillText(text, chip ? 236 : 128, 50);
+    x.fillText(text, chip ? 236 : c.width / 2, 50);
     // the board's badge keeps the same size on screen at any zoom, so the sensor room is easy to spot
     const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(c), depthTest: false,
                                                           sizeAttenuation: !chip }));
     if (chip) s.scale.set(0.16, 0.04, 1);
-    else s.scale.set(4.2, 1.6, 1);
+    else s.scale.set(1.6 * c.width / 96, 1.6, 1);   // keeps the canvas proportions
     s.renderOrder = 10;
     return s;
   };
+  for (const [bd, e, H] of pendingEntrances) addEntrance(bd, e, H);
 
+  const north = input.north ?? [0, -1];
+  // floor 1 if the visible building(s) have it, else everything
+  const defaultFloor = () => buildings.some((bd) => inView(bd.id) && bd.floors.includes(DEFAULT_FLOOR)) ? DEFAULT_FLOOR : null;   // true north in the model (x east, z south), from gen_campus.py
   const api = {
+    /** Clockwise angle (radians) from the top of the screen to true north: the compass needle turns by it. */
+    heading() {
+      const fx = controls.target.x - camera.position.x, fz = controls.target.z - camera.position.z;
+      const len = Math.hypot(fx, fz) || 1, ux = fx / len, uz = fz / len;
+      return Math.atan2(-north[0] * uz + north[1] * ux, north[0] * ux + north[1] * uz);
+    },
+    /** Turns the camera around its target so north points up the screen (same distance and height). */
+    faceNorth() {
+      const off = camera.position.clone().sub(controls.target);
+      const flat = Math.hypot(off.x, off.z);
+      const pos = new THREE.Vector3(controls.target.x - north[0] * flat, camera.position.y, controls.target.z - north[1] * flat);
+      anim = { t0: performance.now(), ms: 700, p0: camera.position.clone(), q0: controls.target.clone(), p1: pos,
+               q1: controls.target.clone() };
+    },
     rooms: () => [...rooms.values()].map((r) => r.data),
     setStatus(id, { status, noise_class, live, board } = {}) {
       const r = rooms.get(id);
@@ -416,17 +523,15 @@ export function createBuilding(el, input, opts = {}) {
     buildings: () => buildings.map((bd) => ({ id: bd.id, name: bd.name, floors: bd.floors, group: bd.group ?? null })),
     /** Back to the current building (or the whole campus), all floors, nothing focused. */
     showAll() {
-      clearHighlight(); floorFilter = null;
-      applyVisibility();
-      goTo(view(filterBox()));
+      clearHighlight();
+      api.setFloor(defaultFloor());
     },
     /** Isolate one building (id like "V") or show all (null). Resets floor filter and focus. */
     setBuilding(id) {
       const ids = buildings.filter((bd) => bd.id === id || bd.group === id).map((bd) => bd.id);
       buildingFilter = id && ids.length ? new Set(ids) : null;
-      clearHighlight(); floorFilter = null;
-      applyVisibility();
-      goTo(view(filterBox()));
+      clearHighlight();
+      api.setFloor(defaultFloor());
       return buildingFilter ? id : null;
     },
     /** Show floors 0..n of the visible building(s), or all floors (null). */
@@ -438,7 +543,9 @@ export function createBuilding(el, input, opts = {}) {
       const bd = buildings.find((x) => inView(x.id)) ?? buildings[0];
       goTo(view(box, floorFilter === null ? null : floorFilter * bd.floor_height + 1));
     },
+    floor: () => floorFilter,
     setOfficesVisible(v) { showOffices = !!v; applyVisibility(); },
+    officesVisible: () => showOffices,
     onRoomClick(cb) { clickCb = cb; },
     onRoomHover(cb) { hoverCb = cb; },
   };
@@ -455,7 +562,43 @@ function mountControls(el, api, labels = {}) {
   box.style.cssText = "position:absolute;left:12px;bottom:12px;display:flex;flex-direction:column;gap:6px;" +
     "font:600 12px/1 'Instrument Sans',system-ui,sans-serif;z-index:5;pointer-events:none";
   el.appendChild(box);
-  let building = null, floor = null;
+  // Compass above the building/floor buttons: turns with the view so N always points to true north; letters stay
+  // upright. Click it to turn the map so north is up.
+  const compass = document.createElement("button");
+  compass.type = "button";
+  compass.title = L.compassTitle ?? "Turn the map so north is up";
+  compass.setAttribute("aria-label", compass.title);
+  compass.style.cssText = "position:absolute;left:12px;top:12px;z-index:5;width:76px;height:76px;padding:0;border:0;" +
+    "border-radius:50%;cursor:pointer;background:rgba(249,251,255,.94);" +
+    "box-shadow:0 0 0 1px #e3e3e0,0 2px 6px rgba(20,30,60,.12);pointer-events:auto";
+  const [lN, lE, lS, lW] = L.compass ?? ["N", "E", "S", "W"];
+  compass.innerHTML = `<svg viewBox="-27 -27 54 54" width="76" height="76" aria-hidden="true">
+    <g class="rose">
+      <circle r="22" fill="none" stroke="#d6dbe5" stroke-width="1"/>
+      <path d="M0 -17 L4.5 0 L0 2.5 L-4.5 0 Z" fill="#c8412f"/>
+      <path d="M0 17 L4.5 0 L0 -2.5 L-4.5 0 Z" fill="#9aa3b5"/>
+      ${[[lN, 0, -1, "#c8412f"], [lE, 1, 0, "#6d685d"], [lS, 0, 1, "#6d685d"], [lW, -1, 0, "#6d685d"]].map(([t, x, y, c]) =>
+        `<text class="l" x="${x * 21}" y="${y * 21}" fill="${c}" font-size="9" font-weight="800" text-anchor="middle"
+          dominant-baseline="central" font-family="'Instrument Sans',system-ui,sans-serif">${t}</text>`).join("")}
+    </g></svg>`;
+  compass.onclick = () => api.faceNorth?.();
+  el.appendChild(compass);
+  const rose = compass.querySelector(".rose");
+  const letters = [...compass.querySelectorAll(".l")];
+  let lastDeg = null;
+  const spin = () => {
+    if (api.heading && compass.isConnected) {
+      const deg = Math.round(api.heading() * 180 / Math.PI * 10) / 10;
+      if (deg !== lastDeg) {
+        lastDeg = deg;
+        rose.setAttribute("transform", `rotate(${deg})`);
+        for (const t of letters) t.setAttribute("transform", `rotate(${-deg} ${t.getAttribute("x")} ${t.getAttribute("y")})`);
+      }
+    }
+    requestAnimationFrame(spin);
+  };
+  spin();
+  let building = null, floor = api.floor?.() ?? null;
   const row = () => {
     const r = document.createElement("div");
     r.style.cssText = "display:flex;gap:3px;flex-wrap:wrap;padding:3px;border-radius:4px;" +
@@ -463,7 +606,7 @@ function mountControls(el, api, labels = {}) {
     box.appendChild(r);
     return r;
   };
-  const bRow = row(), fRow = row();
+  const bRow = row(), fRow = row(), oRow = row();
   const button = (parent, text, on, title, click) => {
     const b = document.createElement("button");
     b.textContent = text;
@@ -473,11 +616,14 @@ function mountControls(el, api, labels = {}) {
     b.onclick = click;
     parent.appendChild(b);
   };
+  let offices = api.officesVisible?.() ?? true;
   const render = () => {
-    bRow.replaceChildren(); fRow.replaceChildren();
-    button(bRow, L.all, building === null, L.allBuildings, () => { building = api.setBuilding(null); floor = null; render(); });
+    bRow.replaceChildren(); fRow.replaceChildren(); oRow.replaceChildren();
+    button(oRow, `${offices ? "✓ " : ""}${L.offices ?? "Offices"}`, offices, L.officesTitle ?? "Show or hide the offices",
+      () => { offices = !offices; api.setOfficesVisible(offices); render(); });
+    button(bRow, L.all, building === null, L.allBuildings, () => { building = api.setBuilding(null); floor = api.floor(); render(); });
     for (const b of api.buildings()) {
-      button(bRow, b.id, building === b.id, b.name, () => { building = api.setBuilding(b.id); floor = null; render(); });
+      button(bRow, b.id, building === b.id, b.name, () => { building = api.setBuilding(b.id); floor = api.floor(); render(); });
     }
     const floors = [...new Set(api.buildings().filter((b) => !building || b.id === building).flatMap((b) => b.floors))]
       .sort((a, b) => b - a);
@@ -487,9 +633,9 @@ function mountControls(el, api, labels = {}) {
     }
   };
   // keep the selector in sync when the page calls the API directly
-  for (const [name, after] of [["setBuilding", (id) => { building = id ?? null; floor = null; }],
+  for (const [name, after] of [["setBuilding", (id) => { building = id ?? null; floor = api.floor(); }],
                                ["setFloor", (_, n) => { floor = n === null || n === undefined ? null : Number(n); }],
-                               ["showAll", () => { floor = null; }],
+                               ["showAll", () => { floor = api.floor(); }],
                                ["focusRoom", (key) => { if (!key) return; floor = null; if (building && key.split(".")[0] !== building) building = null; }]]) {
     const orig = api[name];
     api[name] = (...args) => { const res = orig(...args); after(res, args[0]); render(); return res; };
