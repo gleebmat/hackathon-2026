@@ -78,6 +78,11 @@ and left items (yes/no) reach the website. 50 tests pass. Runbook: `README.md`.
 - Favorite rooms (28 Nov): `favorites` table per account, `GET /api/favorites`, `PUT/DELETE /api/favorites/{id}`,
   `favorite` flag on rooms, `likes` count on room detail (see PLAN API). UI: heart with like count in the room panel,
   "Favourite rooms" list at the top of "My bookings" (opens the room, ♥ unlikes), ♥ on the room cards.
+- Room display (28 Nov, backend): `app/display.py` + `/api/display/...` (see PLAN "Room display"): window opens with
+  the board (`"display":true` in the sketch) and closes when it stops; QR booking link, soundscape state, selfie from
+  the camera frame (10 min, memory only), simulated emergency (table `emergencies`), take a break (bookings
+  `break_until`, pauses ghost release). Public site: `tools/tunnel.py` (Cloudflare quick tunnel). Page
+  `web/display.html` and the website parts: frontend friend.
 
 ---
 
@@ -122,6 +127,19 @@ tested in the browser.
   3. Still open from before: the mouse wheel over the map zooms it, so the page can't scroll past it (Ctrl + wheel
      or click-to-zoom would fix it).
 - -> gleb-claude: no backend changes needed; please don't merge until Tom has looked at the map part.
+---
+
+## arshia (Room display page)
+**Status (28 Nov):** `web/display.html` done, on branch `arshia/room-display-page` (on top of `gleb/room-display`).
+78 tests pass; every feature tried against the running backend (sound, break with and without a booking,
+selfie from a webcam stream and the no-camera fallback, SOS, EN/DE, 800x480 and 480x320 windows).
+- Page: one big swipeable card per feature for the 4.3" screen, accessibility rules in PLAN "Room display".
+- Backend, small: selfie can carry the display's webcam photo (`{image}`), QR SVG gets the SVG namespace (the `/qr` endpoint didn't load as an `<img>`),
+  display window 800x520 (the E84 kit's 800x480 panel).
+- Gleb (28 Nov): quiet room removed (page, API, tests); SOS = simulated police call (133), ended on the display;
+  the room's own soundscape no longer counts as room noise.
+  Display features stay on the display: the website endpoints for emergencies are gone.
+
 ---
 
 ## gemini (Data, simulation, demo)

@@ -9,6 +9,8 @@
 // Noise: PDM microphone level (approximate: silence ~30 dB, full scale ~90 dB), every loop, as JSON on
 // aau-hack26/rooms/<room>/readings: {"room_id":"Z.1.04","noise_db":47.0} (+ "presence","person_score" in fallback).
 // In Velxio: Camera button = your webcam, Mic button = your microphone (off = test pattern / 440 Hz tone).
+// Display + speaker: the XIAO has none, so HAS_DISPLAY adds "display":true to every reading and the backend opens a
+// small window on the laptop that acts as the room's touch display and speaker while this board runs (app/display.py).
 // Libraries: Chirale_TensorFlowLite, PubSubClient. Files: sketch.ino + person_model.h (+ frame_key.h).
 #include <WiFi.h>
 #include <PubSubClient.h>
@@ -22,6 +24,7 @@
 #include "tensorflow/lite/micro/micro_mutable_op_resolver.h"
 #include "tensorflow/lite/schema/schema_generated.h"
 #include "person_model.h"
+#define HAS_DISPLAY 1   // 0: no display window for this room
 #if __has_include("frame_key.h")
 #include "frame_key.h"
 #define SEND_FRAMES 1
@@ -228,6 +231,7 @@ void loop() {
   String json = String("{\"room_id\":\"") + ROOM_ID + "\"";
   float db = micOk ? noiseDb() : -1;
   if (db >= 0) json += ",\"noise_db\":" + String(db, 1);
+  if (HAS_DISPLAY) json += ",\"display\":true";
 
   camera_fb_t* fb = camOk ? esp_camera_fb_get() : nullptr;
   if (fb) {

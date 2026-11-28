@@ -164,6 +164,39 @@ can't take it). Times are campus time (Europe/Vienna) without a zone: `"2026-11-
   - Events must be full bookings.
   - A student can't hold two bookings at the same time, and their active bookings on one day total at most 4 h.
 
+### Room display + speaker (gleb-claude backend `app/display.py`, page `web/display.html` by Arshia)
+The XIAO has no display or speaker, so a small window on the laptop pretends to be the Infineon E84 kit's 4.3" touch
+display (800x480). The board sends `"display": true` in its readings (`HAS_DISPLAY` in the sketch); while it does, the
+backend opens a chromeless Edge/Chrome window (800x520) on `/display.html?room=Z.1.04&token=<token>` and closes it ~10 s after the
+board stops (`DISPLAY_WINDOW=0` turns this off, `DISPLAY_BROWSER` = browser path, `DISPLAY_TOKEN` fixes the token;
+the log prints the URL to open it by hand). Sound plays in that window (laptop speakers). Actions send the token from
+the page URL as header `X-Display-Token` (403 without it). QR codes use the public address (`tools/tunnel.py`).
+
+| Method | Path | What it does |
+|---|---|---|
+| GET | `/api/display/{room}` | `{room_id, label, name, status, people, noise_db, board_online, bookings_now, break_until, sound:{kind, volume}, sounds:[...], emergency:{id, room_id, created_at, resolved_at}\|null, booking_url}`; poll it every 1-2 s; no token needed |
+| GET | `/api/display/{room}/qr` | SVG QR code of `booking_url` (1. book a room) |
+| POST | `/api/display/{room}/sound` | `{kind: off\|rain\|ocean\|forest\|cafe\|white\|pink\|brown, volume: 0-100}` (2. soundscapes): the backend only stores it, the page plays it (WebAudio or files) |
+| POST | `/api/display/{room}/selfie` | (3. selfie) optional `{image: base64 JPEG}` = the photo the display took with its webcam; without it, the board camera's newest frame → `{url, qr_svg, expires_at}`; the photo lives in memory for 10 min, never on disk; 409 when there's no image and the board camera isn't live; 400 when the image isn't a JPEG |
+| GET | `/api/selfies/{token}` | the selfie JPEG (what the QR opens); 404 once expired |
+| POST | `/api/display/{room}/emergency` | `{confirm: true}` (4. SOS, after the page's "Are you sure?") → the open emergency; pressing again returns the same one. Simulated police call (133): logged, nobody is really called |
+| DELETE | `/api/display/{room}/emergency` | "End emergency" on the display: closes it |
+| POST / DELETE | `/api/display/{room}/break` | `{minutes: 5-30}` (5. take a break) → `{break_until}` on every running booking in the room; 409 when nobody booked. While it runs the booking is never released as a ghost; afterwards the empty timer starts again. DELETE ends it early |
+
+These features are for the room display only; the website shows none of them (rooms and bookings carry
+`break_until`, used by the ghost release).
+- **Own soundscape:** the board mic also hears the sound the display plays. While a soundscape is on, readings from
+  the display board keep the noise measured before it started, so the room never turns "loud" from its own sound.
+
+**The page (`web/display.html`).** Laid out for 800x480 and scaled to any window. Built for a 4.3" touch screen: one
+big swipeable card per feature (Book, Soundscapes, Selfie, Take a break) instead of a grid of small
+buttons; arrows, dots and the keyboard (arrows, Esc) work too. Touch targets at least 56 px, text at least 17 px,
+white on near-black, status in words and colour (never colour alone), visible focus ring, English/German (same
+`roomv-lang` choice as the website), screen-reader labels, reduced motion respected, back to the first card after
+90 s untouched. SOS is always top right, asks "Call the police?" first, shows "Calling the police (133)…" for a few
+seconds, then "Police called" until someone presses "End emergency". Selfie: this computer's webcam (preview mirrored, photo not), else the board camera's frame.
+Sounds are synthesised in the page (Web Audio), no files.
+
 ### Frontend flow (claude-3 / Martha; every call above is live on `uvicorn app.main:app`)
 1. **Login page:** `POST /api/login` or `POST /api/register`, then the main page. On load, `GET /api/me`; 401 →
    login page. The session is a cookie, so the frontend never stores a token (serve `web/` from the backend).

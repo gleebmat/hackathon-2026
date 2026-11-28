@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 import pytest
 from fastapi.testclient import TestClient
 
-from app import booking, campus_sim, clock, db, main
+from app import booking, campus_sim, clock, db, display, main
 
 NOW = datetime(2026, 11, 27, 10, 5)
 
@@ -25,6 +25,9 @@ def app_env(tmp_path, monkeypatch, time_now):
     monkeypatch.delenv("READINGS_TOKEN", raising=False)
     monkeypatch.setenv("SIMULATE", "0")
     monkeypatch.setenv("CAMPUS_SIM", "0")
+    monkeypatch.setenv("DISPLAY_WINDOW", "0")
+    monkeypatch.delenv("PUBLIC_URL", raising=False)
+    monkeypatch.setattr(display, "TUNNEL_FILE", tmp_path / "no-tunnel.txt")   # QR codes use the test address
     monkeypatch.setattr(db, "CAMPUS_JSON", tmp_path / "missing.json")  # use the built-in V floor 1 rooms
     monkeypatch.setattr(booking, "BOARD_ROOM", "V.1.07a")
     with TestClient(main.app):

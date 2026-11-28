@@ -1,0 +1,858 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Room display</title>
+<!--
+  The board room's touch display (app/display.py opens it as a small window: /display.html?room=Z.1.04&token=...).
+  Laid out for the Infineon E84 kit's 4.3" 800x480 panel and scaled to whatever window it gets.
+  One big swipeable card per feature (fewer, larger touch targets), arrows + dots + keyboard as well as swiping.
+  API: docs/PLAN.md, "Room display". The selfie uses this computer's webcam; without one, the board camera's frame.
+-->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400..700&display=swap">
+<style>
+  :root {
+    --bg: #0b0f14; --surface: #161c24; --surface-2: #212a35; --line: #3a4656;
+    --text: #ffffff; --muted: #b9c4d0; --focus: #ffd54a;
+    --free: #3ddc84; --shared: #ffb020; --full: #ff6b6b; --ghost: #b69cff; --closed: #9aa7b6;
+    --accent: #6ea8ff; --red: #e5383b; --red-ink: #ffffff; --amber: #ffb020;
+    --radius: 22px;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: #000; overflow: hidden; }
+  body { font-family: "Instrument Sans", system-ui, "Segoe UI", sans-serif; color: var(--text); }
+  button { font: inherit; color: inherit; border: 0; background: none; cursor: pointer; padding: 0; }
+  button:focus-visible, [tabindex]:focus-visible { outline: 4px solid var(--focus); outline-offset: 3px; }
+  .hidden { display: none !important; }
+  svg.i { width: 1em; height: 1em; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; flex: none; }
+
+  /* fixed 800x480 screen, scaled to fit the window */
+  #screen {
+    position: absolute; left: 0; top: 0; width: 800px; height: 480px; transform-origin: 0 0;
+    background: var(--bg); overflow: hidden; user-select: none; -webkit-user-select: none; touch-action: pan-x;
+  }
+
+  /* top bar */
+  .bar { height: 76px; display: flex; align-items: center; gap: 12px; padding: 0 14px 0 20px; border-bottom: 2px solid var(--surface-2); }
+  .room { flex: 1; min-width: 0; }
+  .room b { display: block; font-size: 26px; line-height: 1.1; }
+  .status { display: inline-flex; align-items: center; gap: 8px; font-size: 18px; color: var(--muted); margin-top: 2px; white-space: nowrap; }
+  .status .dot { width: 14px; height: 14px; border-radius: 50%; background: var(--closed); flex: none; }
+  .clock { font-size: 22px; font-weight: 600; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .langbtn { min-width: 64px; height: 56px; border-radius: 14px; background: var(--surface-2); font-size: 18px; font-weight: 700; }
+  .sos {
+    height: 56px; min-width: 118px; padding: 0 18px; border-radius: 14px; background: var(--red); color: var(--red-ink);
+    font-size: 22px; font-weight: 800; letter-spacing: .04em; display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+    box-shadow: 0 0 0 3px #ff9a9b55;
+  }
+
+  /* home: carousel */
+  #home { position: absolute; top: 76px; left: 0; right: 0; bottom: 0; }
+  .track {
+    position: absolute; left: 0; right: 0; top: 18px; height: 318px;
+    display: flex; gap: 24px; padding: 0 120px; overflow-x: auto; scroll-snap-type: x mandatory;
+    scrollbar-width: none; scroll-behavior: smooth; overscroll-behavior-x: contain;
+  }
+  .track::-webkit-scrollbar { display: none; }
+  .track.dragging { scroll-snap-type: none; scroll-behavior: auto; cursor: grabbing; }
+  .card {
+    flex: 0 0 560px; height: 318px; scroll-snap-align: center; border-radius: var(--radius);
+    background: var(--surface); border: 2px solid var(--line); padding: 26px 30px; text-align: left;
+    display: flex; flex-direction: column; gap: 10px; position: relative; transition: transform .25s, opacity .25s;
+  }
+  .card:not(.current) { opacity: .55; transform: scale(.94); }
+  .card .icon { width: 76px; height: 76px; border-radius: 20px; display: grid; place-items: center; font-size: 42px; }
+  .card h2 { margin: 6px 0 0; font-size: 38px; line-height: 1.1; }
+  .card p { margin: 0; font-size: 21px; color: var(--muted); line-height: 1.35; }
+  .card .cta {
+    margin-top: auto; align-self: stretch; height: 64px; border-radius: 16px; display: flex; align-items: center; justify-content: center;
+    gap: 10px; font-size: 24px; font-weight: 700; color: #0b0f14;
+  }
+  .nav {
+    position: absolute; top: 141px; width: 72px; height: 72px; border-radius: 50%; background: var(--surface-2);
+    border: 2px solid var(--line); display: grid; place-items: center; font-size: 34px; z-index: 2;
+  }
+  .nav.prev { left: 22px; } .nav.next { right: 22px; }
+  .nav:disabled { opacity: .25; cursor: default; }
+  .dots { position: absolute; left: 0; right: 0; bottom: 14px; display: flex; justify-content: center; gap: 10px; }
+  .dots button { width: 48px; height: 36px; display: grid; place-items: center; }
+  .dots button span { width: 14px; height: 14px; border-radius: 50%; background: var(--line); transition: width .2s; }
+  .dots button[aria-current="true"] span { width: 34px; border-radius: 7px; background: var(--text); }
+  .hint { position: absolute; bottom: 52px; left: 0; right: 0; text-align: center; font-size: 15px; color: var(--muted); }
+
+  /* feature sheets */
+  .sheet { position: absolute; top: 76px; left: 0; right: 0; bottom: 0; background: var(--bg); padding: 14px 22px 18px; display: flex; flex-direction: column; }
+  .sheet-head { display: flex; align-items: center; gap: 18px; margin-bottom: 14px; }
+  .back { height: 60px; padding: 0 22px 0 14px; border-radius: 16px; background: var(--surface-2); font-size: 22px; font-weight: 700; display: inline-flex; align-items: center; gap: 6px; }
+  .back svg { font-size: 30px; }
+  .sheet-head h2 { margin: 0; font-size: 32px; }
+  .sheet-body { flex: 1; min-height: 0; display: flex; gap: 26px; align-items: center; }
+  .big { height: 84px; border-radius: 18px; font-size: 28px; font-weight: 700; display: inline-flex; align-items: center; justify-content: center; gap: 12px; padding: 0 26px; }
+  .primary { background: var(--accent); color: #0b0f14; }
+  .secondary { background: var(--surface-2); border: 2px solid var(--line); }
+  .lead { font-size: 24px; line-height: 1.35; margin: 0; }
+  .muted { color: var(--muted); }
+
+  .qr { background: #fff; border-radius: 18px; padding: 14px; flex: none; display: grid; place-items: center; }
+  .qr img, .qr svg { display: block; width: 100%; height: 100%; }
+
+  /* sounds */
+  .sounds { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; width: 100%; }
+  .snd { height: 104px; border-radius: 18px; background: var(--surface); border: 3px solid var(--line); font-size: 22px; font-weight: 700; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; }
+  .snd svg { font-size: 32px; }
+  .snd[aria-pressed="true"] { border-color: var(--free); background: #123222; }
+  .snd small { font-size: 15px; font-weight: 600; color: var(--free); }
+  .volrow { display: flex; align-items: center; gap: 16px; margin-top: 16px; }
+  .round { width: 72px; height: 72px; border-radius: 50%; background: var(--surface-2); border: 2px solid var(--line); font-size: 36px; font-weight: 700; display: grid; place-items: center; flex: none; }
+  .meter { flex: 1; height: 22px; border-radius: 11px; background: var(--surface-2); overflow: hidden; border: 2px solid var(--line); }
+  .meter i { display: block; height: 100%; background: var(--free); }
+  .volval { width: 92px; font-size: 26px; font-weight: 700; text-align: right; font-variant-numeric: tabular-nums; }
+
+  /* selfie */
+  .cam { width: 420px; height: 315px; border-radius: 18px; background: #000; position: relative; overflow: hidden; flex: none; border: 2px solid var(--line); }
+  .cam video, .cam img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+  .cam video { transform: scaleX(-1); }
+  .cam .count { position: absolute; inset: 0; display: grid; place-items: center; font-size: 150px; font-weight: 800; text-shadow: 0 4px 30px #000; }
+  .cam .flash { position: absolute; inset: 0; background: #fff; opacity: 0; pointer-events: none; transition: opacity .4s; }
+  .cam .flash.go { opacity: 1; transition: none; }
+  .cam .camnote { position: absolute; inset: 0; display: grid; place-items: center; text-align: center; padding: 30px; font-size: 20px; color: var(--muted); }
+  .col { flex: 1; display: flex; flex-direction: column; gap: 14px; justify-content: center; }
+
+  /* break */
+  .stepper { display: flex; align-items: center; gap: 22px; }
+  .minutes { font-size: 76px; font-weight: 800; color: var(--amber); width: 260px; text-align: center; font-variant-numeric: tabular-nums; line-height: 1; }
+  .minutes small { font-size: 30px; font-weight: 700; }
+  .chips { display: flex; gap: 12px; }
+  .chip { height: 60px; min-width: 88px; border-radius: 14px; background: var(--surface-2); border: 2px solid var(--line); font-size: 22px; font-weight: 700; }
+  .chip[aria-pressed="true"] { border-color: var(--amber); color: var(--amber); }
+  .left { font-size: 112px; font-weight: 800; color: var(--amber); font-variant-numeric: tabular-nums; line-height: 1; }
+
+  /* emergency */
+  .modal { position: absolute; inset: 0; background: rgb(0 0 0 / 82%); display: grid; place-items: center; z-index: 10; }
+  .mcard { width: 640px; background: var(--surface); border: 3px solid var(--red); border-radius: 24px; padding: 28px 32px; text-align: center; display: flex; flex-direction: column; align-items: center; gap: 14px; }
+  .mcard .warn { font-size: 64px; color: var(--red); line-height: 1; }
+  .mcard h2 { margin: 0; font-size: 34px; }
+  .mcard .row { display: flex; gap: 18px; width: 100%; margin-top: 6px; }
+  .mcard .row .big { flex: 1; }
+  .danger { background: var(--red); color: var(--red-ink); }
+  .pulse { animation: pulse 1.4s ease-in-out infinite; }
+  @keyframes pulse { 50% { transform: scale(1.12); opacity: .75; } }
+  .banner { position: absolute; left: 0; right: 0; bottom: 0; height: 64px; background: var(--red); color: #fff; display: flex; align-items: center; justify-content: center; gap: 12px; font-size: 22px; font-weight: 700; z-index: 5; }
+
+  .toast { position: absolute; left: 50%; bottom: 22px; transform: translateX(-50%); max-width: 700px; background: #fff; color: #0b0f14; font-size: 21px; font-weight: 600; padding: 14px 22px; border-radius: 16px; z-index: 20; box-shadow: 0 10px 30px #0008; text-align: center; }
+  .offline { position: absolute; left: 0; right: 0; top: 76px; background: var(--amber); color: #0b0f14; font-size: 18px; font-weight: 700; text-align: center; padding: 6px; z-index: 6; }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
+  }
+</style>
+</head>
+<body>
+<div id="screen">
+  <header class="bar">
+    <div class="room"><b id="label">Room</b><span class="status" id="status"><span class="dot"></span><span id="statusText">…</span></span></div>
+    <span class="clock" id="clock" aria-hidden="true">--:--</span>
+    <button class="langbtn" id="lang"></button>
+    <button class="sos" id="sos"></button>
+  </header>
+
+  <div class="offline hidden" id="offline" role="alert"></div>
+
+  <main id="home">
+    <button class="nav prev" id="prev"></button>
+    <div class="track" id="track" role="group" aria-roledescription="carousel"></div>
+    <button class="nav next" id="next"></button>
+    <div class="hint" id="hint"></div>
+    <div class="dots" id="dots" role="tablist"></div>
+  </main>
+
+  <!-- 1. book -->
+  <section class="sheet hidden" id="sheet-book" aria-labelledby="h-book">
+    <div class="sheet-head"><button class="back" data-back></button><h2 id="h-book" data-t="book_title"></h2></div>
+    <div class="sheet-body">
+      <div class="qr" style="width:300px;height:300px"><img id="bookQr" alt=""></div>
+      <div class="col">
+        <p class="lead" data-t="book_lead"></p>
+        <p class="lead muted" id="bookNow"></p>
+        <p class="muted" style="font-size:17px;word-break:break-all;margin:0" id="bookUrl"></p>
+      </div>
+    </div>
+  </section>
+
+  <!-- 2. soundscapes -->
+  <section class="sheet hidden" id="sheet-sound" aria-labelledby="h-sound">
+    <div class="sheet-head"><button class="back" data-back></button><h2 id="h-sound" data-t="sound_title"></h2></div>
+    <div style="flex:1">
+      <div class="sounds" id="sounds"></div>
+      <div class="volrow">
+        <button class="round" id="volDown">−</button>
+        <div class="meter" aria-hidden="true"><i id="volBar"></i></div>
+        <button class="round" id="volUp">+</button>
+        <span class="volval" id="volVal" aria-live="polite"></span>
+      </div>
+    </div>
+  </section>
+
+  <!-- 3. selfie -->
+  <section class="sheet hidden" id="sheet-selfie" aria-labelledby="h-selfie">
+    <div class="sheet-head"><button class="back" data-back></button><h2 id="h-selfie" data-t="selfie_title"></h2></div>
+    <div class="sheet-body">
+      <div class="cam" id="cam">
+        <video id="video" autoplay playsinline muted></video>
+        <img id="shot" class="hidden" alt="">
+        <div class="camnote hidden" id="camNote"></div>
+        <div class="count hidden" id="count" aria-live="assertive"></div>
+        <div class="flash" id="flash"></div>
+      </div>
+      <div class="col" id="selfieCtrl">
+        <p class="lead" data-t="selfie_lead"></p>
+        <button class="big primary" id="shoot"></button>
+      </div>
+      <div class="col hidden" id="selfieDone" style="align-items:center;text-align:center;gap:10px">
+        <div class="qr" style="width:164px;height:164px;padding:10px" id="selfieQr"></div>
+        <p class="lead" style="font-size:18px" id="selfieExp"></p>
+        <div style="display:flex;gap:14px;width:100%">
+          <button class="big secondary" style="flex:1;height:64px;font-size:24px" id="retake"></button>
+          <button class="big primary" style="flex:1;height:64px;font-size:24px" data-back data-t="done"></button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 4. break -->
+  <section class="sheet hidden" id="sheet-break" aria-labelledby="h-break">
+    <div class="sheet-head"><button class="back" data-back></button><h2 id="h-break" data-t="break_title"></h2></div>
+    <div class="sheet-body" id="breakSetup" style="flex-direction:column;align-items:stretch;gap:16px">
+      <p class="lead muted" style="font-size:20px" data-t="break_lead"></p>
+      <div style="display:flex;align-items:center;justify-content:space-between">
+        <div class="stepper">
+          <button class="round" id="bDown">−</button>
+          <div class="minutes" id="bMin" aria-live="polite"></div>
+          <button class="round" id="bUp">+</button>
+        </div>
+        <div class="chips" id="chips"></div>
+      </div>
+      <button class="big" style="background:var(--amber);color:#0b0f14" id="bStart"></button>
+    </div>
+    <div class="sheet-body hidden" id="breakActive" style="flex-direction:column;justify-content:center;gap:12px;text-align:center">
+      <p class="lead muted" data-t="break_held"></p>
+      <div class="left" id="bLeft" role="timer"></div>
+      <p class="lead" id="bUntil"></p>
+      <div style="display:flex;gap:16px;justify-content:center">
+        <button class="big secondary" style="min-width:200px" id="bMore"></button>
+        <button class="big" style="min-width:260px;background:var(--free);color:#0b0f14" id="bBack"></button>
+      </div>
+    </div>
+  </section>
+
+  <!-- emergency -->
+  <div class="modal hidden" id="sosAsk" role="alertdialog" aria-modal="true" aria-labelledby="sosAskTitle">
+    <div class="mcard">
+      <div class="warn" id="sosAskIcon"></div>
+      <h2 id="sosAskTitle" data-t="sos_ask"></h2>
+      <p class="lead muted" style="font-size:21px" data-t="sos_ask_lead"></p>
+      <div class="row">
+        <button class="big secondary" id="sosNo" data-t="cancel"></button>
+        <button class="big danger" id="sosYes" data-t="sos_yes"></button>
+      </div>
+    </div>
+  </div>
+  <div class="modal hidden" id="sosOpen" role="alertdialog" aria-modal="true" aria-labelledby="sosOpenTitle">
+    <div class="mcard">
+      <div class="warn pulse" id="sosOpenIcon"></div>
+      <h2 id="sosOpenTitle" data-t="sos_open"></h2>
+      <p class="lead" id="sosOpenText"></p>
+      <div class="row">
+        <button class="big secondary" id="sosHide" data-t="sos_hide"></button>
+        <button class="big danger" id="sosEnd" data-t="sos_end"></button>
+      </div>
+    </div>
+  </div>
+  <div class="banner hidden" id="sosBanner" role="alert"></div>
+
+  <div class="toast hidden" id="toast" role="status" aria-live="polite"></div>
+</div>
+
+<script>
+(() => {
+  const params = new URLSearchParams(location.search);
+  const ROOM = params.get("room") || "Z.1.04";
+  const TOKEN = params.get("token") || "";
+  const API = `/api/display/${encodeURIComponent(ROOM)}`;
+  const BREAK_MIN = 5, BREAK_MAX = 30, BREAK_STEP = 5;
+  const IDLE_MS = 90000;
+
+  /* ---------- text (English / German, like the website) ---------- */
+  const T = {
+    en: {
+      lang_btn: "DE", lang_aria: "Deutsch", sos: "SOS", sos_aria: "Emergency",
+      prev: "Previous", next: "Next", hint: "Swipe or use the arrows", back: "Back", done: "Done", cancel: "Cancel",
+      st_free: "Free", st_partial: "Shared", st_full: "Booked", st_ghost: "Nobody here: booking may be released",
+      st_closed: "Closed", st_unbookable: "Live status only", st_break: "On break until {t}",
+      people_0: "nobody here", people_1: "1 person here", people_n: "{n} people here",
+      c_book: "Book this room", c_book_p: "Scan a QR code with your phone to book it.", c_book_cta: "Show QR code",
+      c_sound: "Soundscapes", c_sound_p: "Rain, ocean, forest and more, to help you focus.", c_sound_cta: "Choose a sound",
+      c_sound_on: "Playing: {s}",
+      c_selfie: "Group selfie", c_selfie_p: "Take a photo and download it with a QR code.", c_selfie_cta: "Open camera",
+      c_break: "Take a break", c_break_p: "Step out without losing the room.", c_break_cta: "Start a break",
+      c_break_on: "On break: {m} min left",
+      book_title: "Book this room", book_lead: "Point your phone camera at the code. It opens this room on the booking website.",
+      book_free: "Free right now.", book_until: "Booked until {t}.",
+      sound_title: "Soundscapes", playing: "Playing", vol: "Volume", vol_down: "Quieter", vol_up: "Louder",
+      s_off: "Off", s_rain: "Rain", s_ocean: "Ocean", s_forest: "Forest", s_cafe: "Café", s_white: "White noise",
+      s_pink: "Pink noise", s_brown: "Brown noise",
+      selfie_title: "Group selfie", selfie_lead: "Get everyone in the picture. The photo is taken after 3 seconds.",
+      shoot: "Take photo", retake: "Retake", selfie_exp: "Scan to download. The photo is deleted at {t}.",
+      cam_none: "No webcam found. The room camera takes the photo.", cam_starting: "Starting the camera…",
+      selfie_fail: "Couldn't take the photo: {e}",
+      break_title: "Take a break", break_lead: "The room stays yours while everyone steps out. It isn't released as empty.",
+      min: "min", start_break: "Start break", break_held: "The room is held for you", back_by: "Back by {t}",
+      more5: "+5 min", im_back: "I'm back", minus: "Less", plus: "More",
+      sos_ask: "Call the police?", sos_ask_lead: "The police (133) are called to this room. Only in a real emergency.",
+      sos_yes: "Yes, call now", sos_calling: "Calling the police (133)…", sos_calling_text: "Connecting. Stay in the room if it is safe.",
+      sos_open: "Police called", sos_open_text: "Called at {t}. Help is on the way: stay calm and stay in the room if it is safe.",
+      sos_hide: "Hide this message", sos_end: "End emergency", sos_banner: "Police called at {t}. Help is on the way.",
+      offline: "No connection to the server. Retrying…", no_token: "This display isn't paired with the room (token missing).",
+      err_no_booking: "Nobody has booked this room right now, so there's nothing to hold. Book it first.",
+      err_no_camera: "no webcam here and the room camera is off."
+    },
+    de: {
+      lang_btn: "EN", lang_aria: "English", sos: "SOS", sos_aria: "Notfall",
+      prev: "Zurück", next: "Weiter", hint: "Wischen oder Pfeile benutzen", back: "Zurück", done: "Fertig", cancel: "Abbrechen",
+      st_free: "Frei", st_partial: "Geteilt", st_full: "Gebucht", st_ghost: "Niemand da: Buchung wird ggf. freigegeben",
+      st_closed: "Geschlossen", st_unbookable: "Nur Live-Status", st_break: "Pause bis {t}",
+      people_0: "niemand da", people_1: "1 Person da", people_n: "{n} Personen da",
+      c_book: "Raum buchen", c_book_p: "QR-Code mit dem Handy scannen und buchen.", c_book_cta: "QR-Code zeigen",
+      c_sound: "Klangwelten", c_sound_p: "Regen, Meer, Wald und mehr, zum Konzentrieren.", c_sound_cta: "Klang wählen",
+      c_sound_on: "Läuft: {s}",
+      c_selfie: "Gruppen-Selfie", c_selfie_p: "Foto machen und per QR-Code herunterladen.", c_selfie_cta: "Kamera öffnen",
+      c_break: "Pause machen", c_break_p: "Kurz raus, ohne den Raum zu verlieren.", c_break_cta: "Pause starten",
+      c_break_on: "Pause: noch {m} Min.",
+      book_title: "Raum buchen", book_lead: "Handykamera auf den Code richten. Er öffnet diesen Raum auf der Buchungsseite.",
+      book_free: "Gerade frei.", book_until: "Gebucht bis {t}.",
+      sound_title: "Klangwelten", playing: "Läuft", vol: "Lautstärke", vol_down: "Leiser", vol_up: "Lauter",
+      s_off: "Aus", s_rain: "Regen", s_ocean: "Meer", s_forest: "Wald", s_cafe: "Café", s_white: "Weißes Rauschen",
+      s_pink: "Rosa Rauschen", s_brown: "Braunes Rauschen",
+      selfie_title: "Gruppen-Selfie", selfie_lead: "Alle ins Bild! Das Foto wird nach 3 Sekunden gemacht.",
+      shoot: "Foto machen", retake: "Nochmal", selfie_exp: "Zum Herunterladen scannen. Das Foto wird um {t} gelöscht.",
+      cam_none: "Keine Webcam gefunden. Die Raumkamera macht das Foto.", cam_starting: "Kamera startet…",
+      selfie_fail: "Foto nicht möglich: {e}",
+      break_title: "Pause machen", break_lead: "Der Raum bleibt deiner, während alle kurz rausgehen. Er wird nicht als leer freigegeben.",
+      min: "Min.", start_break: "Pause starten", break_held: "Der Raum ist für dich reserviert", back_by: "Zurück bis {t}",
+      more5: "+5 Min.", im_back: "Bin zurück", minus: "Weniger", plus: "Mehr",
+      sos_ask: "Polizei rufen?", sos_ask_lead: "Die Polizei (133) wird in diesen Raum gerufen. Nur im echten Notfall.",
+      sos_yes: "Ja, jetzt rufen", sos_calling: "Polizei wird gerufen (133)…", sos_calling_text: "Verbindung wird hergestellt. Wenn es sicher ist, im Raum bleiben.",
+      sos_open: "Polizei gerufen", sos_open_text: "Gerufen um {t}. Hilfe ist unterwegs: ruhig bleiben und, wenn es sicher ist, im Raum bleiben.",
+      sos_hide: "Meldung ausblenden", sos_end: "Notfall beenden", sos_banner: "Polizei gerufen um {t}. Hilfe ist unterwegs.",
+      offline: "Keine Verbindung zum Server. Neuer Versuch…", no_token: "Dieses Display ist nicht mit dem Raum verbunden (Token fehlt).",
+      err_no_booking: "Der Raum ist gerade nicht gebucht, es gibt nichts zu reservieren. Bitte zuerst buchen.",
+      err_no_camera: "keine Webcam hier und die Raumkamera ist aus."
+    }
+  };
+  let lang = "en";
+  try { lang = localStorage.getItem("roomv-lang") || (navigator.language || "en").slice(0, 2); } catch {}
+  if (!T[lang]) lang = "en";
+  const t = (k, vars = {}) => (T[lang][k] ?? T.en[k] ?? k).replace(/\{(\w+)\}/g, (_, v) => vars[v] ?? "");
+
+  /* ---------- icons ---------- */
+  const P = {
+    qr: '<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M14 14h3v3h-3zM20 14v.01M14 20h.01M17 20h4M20 17v3"/>',
+    music: '<path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/>',
+    camera: '<path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3z"/><circle cx="12" cy="13" r="3.5"/>',
+    coffee: '<path d="M17 8h1a4 4 0 0 1 0 8h-1"/><path d="M3 8h14v9a4 4 0 0 1-4 4H7a4 4 0 0 1-4-4z"/><path d="M6 2v2M10 2v2M14 2v2"/>',
+    alert: '<path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4M12 17h.01"/>',
+    left: '<path d="M15 18l-6-6 6-6"/>', right: '<path d="M9 18l6-6-6-6"/>',
+    phone: '<path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1 1 .4 1.9.7 2.8a2 2 0 0 1-.5 2.1L8 9.9a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.8.7a2 2 0 0 1 1.7 2z"/>',
+    off: '<circle cx="12" cy="12" r="9"/><path d="M5.6 5.6l12.8 12.8"/>',
+    rain: '<path d="M20 15.5A4.5 4.5 0 0 0 17.5 7 6 6 0 0 0 6 9a4 4 0 0 0 0 8"/><path d="M8 19v2M12 17v2M16 19v2"/>',
+    ocean: '<path d="M2 12c2 0 2-2 4-2s2 2 4 2 2-2 4-2 2 2 4 2 2-2 4-2M2 17c2 0 2-2 4-2s2 2 4 2 2-2 4-2 2 2 4 2 2-2 4-2"/>',
+    forest: '<path d="M12 3l6 9h-4l4 6H6l4-6H6z"/><path d="M12 18v3"/>',
+    cafe: '<path d="M17 8h1a4 4 0 0 1 0 8h-1"/><path d="M3 8h14v9a4 4 0 0 1-4 4H7a4 4 0 0 1-4-4z"/>',
+    white: '<path d="M3 12h2l2-6 3 12 3-9 2 6 2-3h4"/>', pink: '<path d="M3 12h2l2-4 3 8 3-6 2 4 2-2h4"/>',
+    brown: '<path d="M3 12c3-4 5 4 9 0s6 4 9 0"/>',
+    check: '<path d="M20 6 9 17l-5-5"/>'
+  };
+  const ic = (n) => `<svg class="i" viewBox="0 0 24 24" aria-hidden="true">${P[n]}</svg>`;
+  const $ = (id) => document.getElementById(id);
+  const hhmm = (d) => `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+  const parseLocal = (iso) => iso ? new Date(iso) : null;   // backend sends campus time without a zone
+
+  /* ---------- scale the 800x480 screen to the window ---------- */
+  const screen = $("screen");
+  function fit() {
+    const W = document.documentElement.clientWidth, H = document.documentElement.clientHeight;
+    const s = Math.min(W / 800, H / 480);
+    screen.style.transform = `translate(${(W - 800 * s) / 2}px, ${(H - 480 * s) / 2}px) scale(${s})`;
+  }
+  new ResizeObserver(fit).observe(document.documentElement); fit();
+
+  /* ---------- API ---------- */
+  async function api(method, path = "", body) {
+    const res = await fetch(API + path, {
+      method, headers: { "Content-Type": "application/json", "X-Display-Token": TOKEN },
+      body: body ? JSON.stringify(body) : undefined
+    });
+    const data = await res.json().catch(() => null);
+    if (!res.ok) throw Object.assign(new Error(data?.error || `Error ${res.status}`), { status: res.status });
+    return data;
+  }
+
+  let toastT;
+  function toast(msg) {
+    const el = $("toast"); el.textContent = msg; el.classList.remove("hidden");
+    clearTimeout(toastT); toastT = setTimeout(() => el.classList.add("hidden"), 5000);
+  }
+  // backend errors a person can run into, in the display's language
+  const ERRORS = { "Nobody has booked this room right now": "err_no_booking", "The camera isn't live right now": "err_no_camera" };
+  const errText = (e) => e.status === 403 ? t("no_token") : ERRORS[e.message] ? t(ERRORS[e.message]) : e.message;
+  function fail(e) { toast(errText(e)); }
+
+  /* ---------- state from the backend ---------- */
+  let S = null;                 // last GET /api/display/{room}
+  let soundLocalAt = 0;         // last time this screen changed the sound (don't let a poll undo it)
+  async function poll() {
+    try {
+      S = await api("GET");
+      $("offline").classList.add("hidden");
+      render();
+    } catch (e) {
+      $("offline").textContent = t("offline"); $("offline").classList.remove("hidden");
+    }
+  }
+
+  const SOUND_KINDS = ["off", "rain", "ocean", "forest", "cafe", "white", "pink", "brown"];
+  let sound = { kind: "off", volume: 50 };
+
+  function render() {
+    if (!S) return;
+    $("label").textContent = S.label || ROOM;
+    // status: colour dot + words (never colour alone)
+    let st = S.status, text = t("st_" + st);
+    const brk = parseLocal(S.break_until);
+    if (brk && brk > new Date()) { st = "break"; text = t("st_break", { t: hhmm(brk) }); }
+    const n = S.people;
+    if (n !== null && n !== undefined && st !== "break") text += " · " + (n === 0 ? t("people_0") : n === 1 ? t("people_1") : t("people_n", { n }));
+    $("statusText").textContent = text;
+    const colour = { free: "--free", partial: "--shared", full: "--full", ghost: "--ghost", break: "--amber" }[st] || "--closed";
+    document.querySelector(".status .dot").style.background = `var(${colour})`;
+
+    if (Date.now() - soundLocalAt > 4000 && S.sound && (S.sound.kind !== sound.kind || S.sound.volume !== sound.volume)) {
+      sound = { ...S.sound }; Synth.apply(sound);
+    }
+    renderCards(); renderBook(); renderSound(); renderBreak(); renderEmergency();
+  }
+
+  /* ---------- clock ---------- */
+  function clock() { $("clock").textContent = hhmm(new Date()); }
+  setInterval(clock, 1000); clock();
+
+  /* ---------- carousel ---------- */
+  const CARDS = [
+    { id: "book", icon: "qr", c: "#6ea8ff" },
+    { id: "sound", icon: "music", c: "#3ddc84" },
+    { id: "selfie", icon: "camera", c: "#5ee0e0" },
+    { id: "break", icon: "coffee", c: "#ffb020" }
+  ];
+  const track = $("track"), dots = $("dots");
+  let current = 0;
+  CARDS.forEach((c, i) => {
+    const el = document.createElement("button");
+    el.className = "card"; el.dataset.id = c.id;
+    el.setAttribute("aria-roledescription", "slide");
+    track.appendChild(el);
+    el.addEventListener("click", () => { if (!dragMoved) { if (i !== current) goTo(i); else openCard(c.id); } });
+    const d = document.createElement("button");
+    d.setAttribute("role", "tab"); d.innerHTML = "<span></span>";
+    d.addEventListener("click", () => goTo(i));
+    dots.appendChild(d);
+  });
+  function renderCards() {
+    CARDS.forEach((c, i) => {
+      const el = track.children[i];
+      let title = t("c_" + c.id), p = t("c_" + c.id + "_p"), cta = t("c_" + c.id + "_cta");
+      if (c.id === "sound" && sound.kind !== "off") p = t("c_sound_on", { s: t("s_" + sound.kind) });
+      const brk = S && parseLocal(S.break_until);
+      if (c.id === "break" && brk && brk > new Date()) p = t("c_break_on", { m: Math.ceil((brk - new Date()) / 60000) });
+      el.setAttribute("aria-label", `${title}. ${p}. ${i + 1} / ${CARDS.length}`);
+      const html = `<div class="icon" style="color:${c.c};background:${c.c}26">${ic(c.icon)}</div>
+        <h2>${title}</h2><p>${p}</p>
+        <span class="cta" style="background:${c.c}">${cta}</span>`;
+      // only touch the DOM on a real change: a re-layout makes Chrome snap the carousel back mid-swipe
+      if (el.dataset.html !== html) { el.dataset.html = html; el.innerHTML = html; }
+      dots.children[i].setAttribute("aria-label", title);
+    });
+  }
+  function cardStep() { return track.children[1].offsetLeft - track.children[0].offsetLeft; }
+  function goTo(i, smooth = true) {
+    current = Math.max(0, Math.min(CARDS.length - 1, i));
+    track.scrollTo({ left: current * cardStep(), behavior: smooth ? "smooth" : "auto" });
+    markCurrent();
+  }
+  function markCurrent() {
+    [...track.children].forEach((el, i) => { el.classList.toggle("current", i === current); el.tabIndex = i === current ? 0 : -1; });
+    [...dots.children].forEach((d, i) => d.setAttribute("aria-current", i === current ? "true" : "false"));
+    $("prev").disabled = current === 0; $("next").disabled = current === CARDS.length - 1;
+  }
+  // after a swipe settles, the card in the middle becomes the current one (never mid-animation)
+  const settle = () => {
+    if (dragX !== null) return;
+    const i = Math.round(track.scrollLeft / cardStep());
+    if (i !== current) { current = i; markCurrent(); }
+  };
+  if ("onscrollend" in window) track.addEventListener("scrollend", settle);
+  else { let scrollT; track.addEventListener("scroll", () => { clearTimeout(scrollT); scrollT = setTimeout(settle, 150); }); }
+  $("prev").addEventListener("click", () => goTo(current - 1));
+  $("next").addEventListener("click", () => goTo(current + 1));
+
+  // mouse drag = swipe (touch and touchpads already scroll natively)
+  let dragX = null, dragStart = 0, dragMoved = false;
+  track.addEventListener("pointerdown", (e) => {
+    if (e.pointerType !== "mouse") return;
+    dragX = e.clientX; dragStart = track.scrollLeft; dragMoved = false;
+  });
+  addEventListener("pointermove", (e) => {
+    if (dragX === null) return;
+    const dx = (e.clientX - dragX) / (screen.getBoundingClientRect().width / 800);
+    if (Math.abs(dx) > 8) { dragMoved = true; track.classList.add("dragging"); }
+    if (dragMoved) track.scrollLeft = dragStart - dx;
+  });
+  addEventListener("pointerup", () => {
+    if (dragX === null) return;
+    dragX = null;
+    if (dragMoved) {
+      track.classList.remove("dragging");
+      const moved = track.scrollLeft - dragStart, step = cardStep();
+      goTo(current + (Math.abs(moved) > step * 0.2 ? Math.sign(moved) : 0));
+      setTimeout(() => { dragMoved = false; }, 0);
+    }
+  });
+
+  /* ---------- sheets ---------- */
+  let openSheet = null;
+  function openCard(id) {
+    closeSheet();
+    openSheet = id;
+    $("home").classList.add("hidden");
+    $("sheet-" + id).classList.remove("hidden");
+    if (id === "selfie") camStart();
+    $("sheet-" + id).querySelector("[data-back]").focus();
+  }
+  function closeSheet() {
+    if (!openSheet) return;
+    if (openSheet === "selfie") { selfieReset(); camStop(); }
+    $("sheet-" + openSheet).classList.add("hidden");
+    $("home").classList.remove("hidden");
+    openSheet = null;
+    track.children[current].focus({ preventScroll: true });
+  }
+  document.querySelectorAll("[data-back]").forEach((b) => b.addEventListener("click", closeSheet));
+
+  /* ---------- 1. book ---------- */
+  $("bookQr").src = `${API}/qr`;
+  function renderBook() {
+    $("bookUrl").textContent = S.booking_url || "";
+    const ends = (S.bookings_now || []).map((b) => parseLocal(b.end)).filter(Boolean).sort((a, b) => b - a);
+    $("bookNow").textContent = ends.length ? t("book_until", { t: hhmm(ends[0]) }) : t("book_free");
+  }
+
+  /* ---------- 2. soundscapes (synthesised in the page: no sound files) ---------- */
+  const Synth = (() => {
+    let ctx, master, nodes = [], timers = [], playing = "off";
+    function ensure() {
+      if (!ctx) { ctx = new (window.AudioContext || window.webkitAudioContext)(); master = ctx.createGain(); master.connect(ctx.destination); }
+      if (ctx.state === "suspended") ctx.resume();
+    }
+    const bufs = {};
+    function noiseBuf(type) {
+      if (bufs[type]) return bufs[type];
+      const len = ctx.sampleRate * 4, buf = ctx.createBuffer(1, len, ctx.sampleRate), d = buf.getChannelData(0);
+      let last = 0, b0 = 0, b1 = 0, b2 = 0, b3 = 0, b4 = 0, b5 = 0, b6 = 0;
+      for (let i = 0; i < len; i++) {
+        const w = Math.random() * 2 - 1;
+        if (type === "white") d[i] = w * 0.5;
+        else if (type === "brown") { last = (last + 0.02 * w) / 1.02; d[i] = last * 3.5; }
+        else {
+          b0 = 0.99886 * b0 + w * 0.0555179; b1 = 0.99332 * b1 + w * 0.0750759; b2 = 0.969 * b2 + w * 0.153852;
+          b3 = 0.8665 * b3 + w * 0.3104856; b4 = 0.55 * b4 + w * 0.5329522; b5 = -0.7616 * b5 - w * 0.016898;
+          d[i] = (b0 + b1 + b2 + b3 + b4 + b5 + b6 + w * 0.5362) * 0.11; b6 = w * 0.115926;
+        }
+      }
+      return (bufs[type] = buf);
+    }
+    function noise(type, ftype, freq, q, gain) {
+      const src = ctx.createBufferSource(); src.buffer = noiseBuf(type); src.loop = true;
+      const f = ctx.createBiquadFilter(); f.type = ftype; f.frequency.value = freq; f.Q.value = q;
+      const g = ctx.createGain(); g.gain.value = gain;
+      src.connect(f).connect(g).connect(master); src.start(); nodes.push(src, f, g);
+      return { f, g };
+    }
+    function lfo(param, rate, depth) {
+      const o = ctx.createOscillator(), g = ctx.createGain(); o.frequency.value = rate; g.gain.value = depth;
+      o.connect(g).connect(param); o.start(); nodes.push(o, g);
+    }
+    function every(min, max, fn) {
+      const tm = { alive: true };
+      const tick = () => { if (!tm.alive) return; fn(); tm.id = setTimeout(tick, min + Math.random() * (max - min)); };
+      tm.id = setTimeout(tick, Math.random() * min); timers.push(tm);
+    }
+    function chirp() {
+      const o = ctx.createOscillator(), g = ctx.createGain(), now = ctx.currentTime, base = 2200 + Math.random() * 1800, n = 2 + Math.floor(Math.random() * 3);
+      o.frequency.setValueAtTime(base, now);
+      for (let i = 0; i < n; i++) { o.frequency.linearRampToValueAtTime(base * (1.3 + Math.random() * 0.4), now + i * 0.12 + 0.05); o.frequency.linearRampToValueAtTime(base, now + i * 0.12 + 0.11); }
+      g.gain.setValueAtTime(0, now); g.gain.linearRampToValueAtTime(0.06, now + 0.02); g.gain.linearRampToValueAtTime(0, now + n * 0.12 + 0.05);
+      o.connect(g).connect(master); o.start(now); o.stop(now + n * 0.12 + 0.1);
+    }
+    function burst(freq, q, peak, dur) {
+      const src = ctx.createBufferSource(); src.buffer = noiseBuf("white");
+      const f = ctx.createBiquadFilter(); f.type = "bandpass"; f.frequency.value = freq; f.Q.value = q;
+      const g = ctx.createGain(), now = ctx.currentTime;
+      g.gain.setValueAtTime(peak, now); g.gain.exponentialRampToValueAtTime(0.0001, now + dur);
+      src.connect(f).connect(g).connect(master); src.start(now, Math.random() * 3); src.stop(now + dur + 0.02);
+    }
+    function clink() {
+      const o = ctx.createOscillator(), g = ctx.createGain(), now = ctx.currentTime;
+      o.frequency.value = 2600 + Math.random() * 1600;
+      g.gain.setValueAtTime(0.025, now); g.gain.exponentialRampToValueAtTime(0.0001, now + 0.4);
+      o.connect(g).connect(master); o.start(now); o.stop(now + 0.45);
+    }
+    const presets = {
+      rain() { noise("pink", "highpass", 400, 0.5, 0.55); noise("white", "bandpass", 3500, 0.9, 0.06); every(25, 140, () => burst(2500 + Math.random() * 3000, 3, 0.05, 0.03)); },
+      ocean() { const n = noise("brown", "lowpass", 600, 0.7, 0.35); lfo(n.g.gain, 0.08, 0.3); lfo(n.f.frequency, 0.08, 350); },
+      forest() { noise("pink", "bandpass", 1400, 0.6, 0.3); noise("brown", "lowpass", 400, 0.7, 0.25); every(700, 2600, chirp); },
+      cafe() { const n = noise("brown", "bandpass", 420, 1.1, 0.5); lfo(n.g.gain, 0.6, 0.12); noise("pink", "bandpass", 900, 2, 0.06); every(1800, 5000, clink); },
+      white() { noise("white", "lowpass", 9000, 0.7, 0.3); },
+      pink() { noise("pink", "lowpass", 9000, 0.7, 0.45); },
+      brown() { noise("brown", "lowpass", 1200, 0.7, 0.55); }
+    };
+    function stop() {
+      nodes.forEach((n) => { try { n.stop && n.stop(); } catch {} try { n.disconnect(); } catch {} });
+      timers.forEach((tm) => { tm.alive = false; clearTimeout(tm.id); }); nodes = []; timers = [];
+    }
+    return {
+      apply({ kind, volume }) {
+        if (kind === "off" || !presets[kind]) { stop(); playing = "off"; return; }
+        ensure();
+        if (kind !== playing) {
+          stop(); playing = kind;
+          master.gain.cancelScheduledValues(ctx.currentTime);
+          master.gain.setValueAtTime(0, ctx.currentTime);
+          master.gain.linearRampToValueAtTime(volume / 100, ctx.currentTime + 0.8);
+          presets[kind]();
+        } else {
+          master.gain.setTargetAtTime(volume / 100, ctx.currentTime, 0.05);
+        }
+      }
+    };
+  })();
+
+  const soundsEl = $("sounds");
+  SOUND_KINDS.forEach((k) => {
+    const b = document.createElement("button");
+    b.className = "snd"; b.dataset.kind = k;
+    b.addEventListener("click", () => setSound({ kind: k === sound.kind ? "off" : k, volume: sound.volume }));
+    soundsEl.appendChild(b);
+  });
+  let soundPostT;
+  function setSound(next) {
+    sound = next; soundLocalAt = Date.now();
+    Synth.apply(sound); renderSound(); renderCards();
+    clearTimeout(soundPostT);
+    soundPostT = setTimeout(() => api("POST", "/sound", sound).catch(fail), 250);
+  }
+  function renderSound() {
+    [...soundsEl.children].forEach((b) => {
+      const k = b.dataset.kind, on = k === sound.kind;
+      b.setAttribute("aria-pressed", on ? "true" : "false");
+      b.innerHTML = `${ic(k)}<span>${t("s_" + k)}</span>${on && k !== "off" ? `<small>${t("playing")}</small>` : ""}`;
+    });
+    $("volBar").style.width = sound.volume + "%";
+    $("volVal").textContent = sound.volume + "%";
+  }
+  const vol = (d) => setSound({ kind: sound.kind, volume: Math.max(0, Math.min(100, sound.volume + d)) });
+  $("volDown").addEventListener("click", () => vol(-10));
+  $("volUp").addEventListener("click", () => vol(10));
+
+  /* ---------- 3. selfie (this computer's webcam; the board camera if there is none) ---------- */
+  const video = $("video");
+  let stream = null, countdownT = 0, useBoardCam = false;
+  async function camStart() {
+    useBoardCam = false;
+    $("camNote").textContent = t("cam_starting"); $("camNote").classList.remove("hidden");
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480 }, audio: false });
+      if (openSheet !== "selfie") { camStop(); return; }
+      video.srcObject = stream; video.classList.remove("hidden"); $("camNote").classList.add("hidden");
+    } catch {
+      useBoardCam = true; video.classList.add("hidden");
+      $("camNote").textContent = t("cam_none");
+    }
+  }
+  function camStop() {
+    if (stream) { stream.getTracks().forEach((tr) => tr.stop()); stream = null; }
+    video.srcObject = null;
+  }
+  function selfieReset() {
+    clearInterval(countdownT); countdownT = 0;
+    $("count").classList.add("hidden"); $("shot").classList.add("hidden");
+    $("selfieCtrl").classList.remove("hidden"); $("selfieDone").classList.add("hidden");
+    if (stream) video.classList.remove("hidden");
+  }
+  $("shoot").addEventListener("click", () => {
+    if (countdownT) return;
+    let n = 3; const c = $("count"); c.textContent = n; c.classList.remove("hidden");
+    countdownT = setInterval(() => {
+      n--; if (n > 0) { c.textContent = n; return; }
+      clearInterval(countdownT); countdownT = 0; c.classList.add("hidden"); takeSelfie();
+    }, 1000);
+  });
+  async function takeSelfie() {
+    const fl = $("flash"); fl.classList.add("go"); requestAnimationFrame(() => requestAnimationFrame(() => fl.classList.remove("go")));
+    let body;
+    if (!useBoardCam && stream) {
+      const cv = document.createElement("canvas"); cv.width = video.videoWidth || 640; cv.height = video.videoHeight || 480;
+      // the live preview is mirrored like a mirror; the photo itself isn't, so text in it reads normally
+      cv.getContext("2d").drawImage(video, 0, 0, cv.width, cv.height);
+      const data = cv.toDataURL("image/jpeg", 0.85);
+      $("shot").src = data; $("shot").classList.remove("hidden"); video.classList.add("hidden");
+      body = { image: data.split(",")[1] };
+    }
+    try {
+      const r = await api("POST", "/selfie", body);
+      $("selfieQr").innerHTML = r.qr_svg;   // SVG made by our own backend (segno)
+      $("selfieExp").textContent = t("selfie_exp", { t: hhmm(parseLocal(r.expires_at)) });
+      $("selfieCtrl").classList.add("hidden"); $("selfieDone").classList.remove("hidden");
+    } catch (e) {
+      toast(t("selfie_fail", { e: errText(e) }));
+      selfieReset();
+    }
+  }
+  $("retake").addEventListener("click", selfieReset);
+
+  /* ---------- 4. take a break ---------- */
+  let breakMinutes = 15;
+  [5, 10, 15, 20, 30].forEach((m) => {
+    const b = document.createElement("button"); b.className = "chip"; b.dataset.m = m;
+    b.addEventListener("click", () => { breakMinutes = m; renderBreak(); });
+    $("chips").appendChild(b);
+  });
+  $("bDown").addEventListener("click", () => { breakMinutes = Math.max(BREAK_MIN, breakMinutes - BREAK_STEP); renderBreak(); });
+  $("bUp").addEventListener("click", () => { breakMinutes = Math.min(BREAK_MAX, breakMinutes + BREAK_STEP); renderBreak(); });
+  async function startBreak(minutes) {
+    try { const r = await api("POST", "/break", { minutes }); if (S) S.break_until = r.break_until; render(); }
+    catch (e) { fail(e); }
+  }
+  $("bStart").addEventListener("click", () => startBreak(breakMinutes));
+  $("bMore").addEventListener("click", () => {
+    const brk = parseLocal(S && S.break_until); if (!brk) return;
+    startBreak(Math.min(BREAK_MAX, Math.ceil((brk - new Date()) / 60000) + 5));
+  });
+  $("bBack").addEventListener("click", async () => {
+    try { await api("DELETE", "/break"); if (S) S.break_until = null; render(); } catch (e) { fail(e); }
+  });
+  function renderBreak() {
+    $("bMin").innerHTML = `${breakMinutes} <small>${t("min")}</small>`;
+    [...$("chips").children].forEach((c) => { c.textContent = `${c.dataset.m}`; c.setAttribute("aria-pressed", +c.dataset.m === breakMinutes ? "true" : "false"); c.setAttribute("aria-label", `${c.dataset.m} ${t("min")}`); });
+    $("bDown").disabled = breakMinutes <= BREAK_MIN; $("bUp").disabled = breakMinutes >= BREAK_MAX;
+    const brk = parseLocal(S && S.break_until), on = brk && brk > new Date();
+    $("breakSetup").classList.toggle("hidden", !!on); $("breakActive").classList.toggle("hidden", !on);
+    if (on) {
+      const left = Math.max(0, Math.round((brk - new Date()) / 1000));
+      $("bLeft").textContent = `${String(Math.floor(left / 60)).padStart(2, "0")}:${String(left % 60).padStart(2, "0")}`;
+      $("bUntil").textContent = t("back_by", { t: hhmm(brk) });
+      $("bMore").disabled = Math.ceil(left / 60) + 5 > BREAK_MAX;
+    }
+  }
+  setInterval(() => { if (openSheet === "break") renderBreak(); }, 1000);
+
+  /* ---------- emergency ---------- */
+  let sosHidden = null;   // id of the emergency whose big message was hidden
+  $("sos").addEventListener("click", () => { $("sosAsk").classList.remove("hidden"); $("sosNo").focus(); });
+  $("sosNo").addEventListener("click", () => { $("sosAsk").classList.add("hidden"); $("sos").focus(); });
+  $("sosYes").addEventListener("click", async () => {
+    $("sosAsk").classList.add("hidden");
+    try {
+      const em = await api("POST", "/emergency", { confirm: true });
+      if (S) S.emergency = em; sosHidden = null; renderEmergency();
+    } catch (e) { fail(e); }
+  });
+  $("sosHide").addEventListener("click", () => { sosHidden = S && S.emergency && S.emergency.id; renderEmergency(); });
+  $("sosEnd").addEventListener("click", async () => {
+    try {
+      await api("DELETE", "/emergency");
+      if (S) S.emergency = null; renderEmergency(); $("sos").focus();
+    } catch (e) { fail(e); }
+  });
+  // the simulated call: "Calling the police (133)…" for a few seconds, then "Police called"
+  const CALL_MS = 4000;
+  setInterval(() => { if (S && S.emergency && !sosCalled) renderEmergency(); }, 500);
+  let sosCalled = false;
+  function renderEmergency() {
+    const em = S && S.emergency;
+    const at = em ? hhmm(parseLocal(em.created_at)) : "";
+    sosCalled = !em || Date.now() - parseLocal(em.created_at) >= CALL_MS;
+    $("sosOpen").classList.toggle("hidden", !em || sosHidden === em.id);
+    $("sosBanner").classList.toggle("hidden", !em || sosHidden !== em.id);
+    if (em) {
+      $("sosOpenTitle").textContent = t(sosCalled ? "sos_open" : "sos_calling");
+      $("sosOpenText").textContent = sosCalled ? t("sos_open_text", { t: at }) : t("sos_calling_text");
+      $("sosHide").disabled = $("sosEnd").disabled = !sosCalled;
+      $("sosBanner").innerHTML = ic("phone") + t("sos_banner", { t: at });
+    }
+  }
+
+  /* ---------- static text + language ---------- */
+  function applyText() {
+    document.documentElement.lang = lang;
+    $("lang").textContent = t("lang_btn"); $("lang").setAttribute("aria-label", t("lang_aria"));
+    $("sos").innerHTML = ic("alert") + t("sos"); $("sos").setAttribute("aria-label", t("sos_aria"));
+    $("prev").innerHTML = ic("left"); $("prev").setAttribute("aria-label", t("prev"));
+    $("next").innerHTML = ic("right"); $("next").setAttribute("aria-label", t("next"));
+    $("hint").textContent = t("hint");
+    track.setAttribute("aria-label", S ? S.label : ROOM);
+    document.querySelectorAll("[data-back]").forEach((b) => { if (!b.dataset.t) b.innerHTML = ic("left") + t("back"); });
+    document.querySelectorAll("[data-t]").forEach((el) => { el.textContent = t(el.dataset.t); });
+    $("shoot").innerHTML = ic("camera") + t("shoot");
+    $("retake").textContent = t("retake");
+    $("bStart").innerHTML = ic("coffee") + t("start_break");
+    $("bMore").textContent = t("more5"); $("bBack").innerHTML = ic("check") + t("im_back");
+    $("bDown").setAttribute("aria-label", t("minus")); $("bUp").setAttribute("aria-label", t("plus"));
+    $("volDown").setAttribute("aria-label", t("vol_down")); $("volUp").setAttribute("aria-label", t("vol_up"));
+    $("sosAskIcon").innerHTML = ic("alert"); $("sosOpenIcon").innerHTML = ic("phone");
+    renderCards(); renderSound(); renderBreak();
+    if (S) render();
+  }
+  $("lang").addEventListener("click", () => {
+    lang = lang === "en" ? "de" : "en";
+    try { localStorage.setItem("roomv-lang", lang); } catch {}
+    applyText();
+  });
+
+  /* ---------- keyboard ---------- */
+  addEventListener("keydown", (e) => {
+    if (!$("sosAsk").classList.contains("hidden")) { if (e.key === "Escape") $("sosNo").click(); return; }
+    if (openSheet) { if (e.key === "Escape") closeSheet(); return; }
+    if (e.key === "ArrowRight") goTo(current + 1);
+    else if (e.key === "ArrowLeft") goTo(current - 1);
+  });
+
+  /* ---------- back to the start after 90 s without a touch ---------- */
+  let lastTouch = Date.now();
+  ["pointerdown", "keydown"].forEach((ev) => addEventListener(ev, () => { lastTouch = Date.now(); }, true));
+  setInterval(() => {
+    if (Date.now() - lastTouch < IDLE_MS || countdownT || !$("sosAsk").classList.contains("hidden")) return;
+    if (openSheet) closeSheet();
+    if (current !== 0) goTo(0);
+    lastTouch = Date.now();
+  }, 5000);
+
+  /* ---------- go ---------- */
+  applyText();
+  goTo(0, false);
+  poll(); setInterval(poll, 1500);
+})();
+</script>
+</body>
+</html>
