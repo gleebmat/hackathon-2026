@@ -179,14 +179,12 @@ the page URL as header `X-Display-Token` (403 without it). QR codes use the publ
 | POST | `/api/display/{room}/sound` | `{kind: off\|rain\|ocean\|forest\|cafe\|white\|pink\|brown, volume: 0-100}` (2. soundscapes): the backend only stores it, the page plays it (WebAudio or files) |
 | POST | `/api/display/{room}/selfie` | (3. selfie) optional `{image: base64 JPEG}` = the photo the display took with its webcam; without it, the board camera's newest frame → `{url, qr_svg, expires_at}`; the photo lives in memory for 10 min, never on disk; 409 when there's no image and the board camera isn't live; 400 when the image isn't a JPEG |
 | GET | `/api/selfies/{token}` | the selfie JPEG (what the QR opens); 404 once expired |
-| POST | `/api/display/{room}/emergency` | `{confirm: true}` (4. SOS, after the page's "Are you sure?") → the open emergency; pressing again returns the same one. Simulated police call (133): logged, nobody is really called. The board LED blinks (below) |
-| DELETE | `/api/display/{room}/emergency` | "End emergency" on the display: closes it, LED off |
+| POST | `/api/display/{room}/emergency` | `{confirm: true}` (4. SOS, after the page's "Are you sure?") → the open emergency; pressing again returns the same one. Simulated police call (133): logged, nobody is really called |
+| DELETE | `/api/display/{room}/emergency` | "End emergency" on the display: closes it |
 | POST / DELETE | `/api/display/{room}/break` | `{minutes: 5-30}` (5. take a break) → `{break_until}` on every running booking in the room; 409 when nobody booked. While it runs the booking is never released as a ghost; afterwards the empty timer starts again. DELETE ends it early |
 
 These features are for the room display only; the website shows none of them (rooms and bookings carry
 `break_until`, used by the ghost release).
-- **Board LED (SOS):** the backend publishes `sos` / `off` (retained) on `aau-hack26/rooms/<room>/led`; the sketch
-  subscribes and blinks the user LED (`LED_BUILTIN`) while an SOS is open.
 - **Own soundscape:** the board mic also hears the sound the display plays. While a soundscape is on, readings from
   the display board keep the noise measured before it started, so the room never turns "loud" from its own sound.
 

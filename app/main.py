@@ -417,8 +417,7 @@ class EmergencyRequest(BaseModel):
 
 @app.post("/api/display/{room_id}/emergency")
 def display_emergency(room_id: str, body: EmergencyRequest, conn: Conn, token: DisplayToken = None):
-    """SOS button (after "Are you sure?"). Simulated police call: recorded and logged, nobody is really called; the
-    board's LED blinks until the SOS is ended on the display."""
+    """SOS button (after "Are you sure?"). Simulated police call: recorded and logged, nobody is really called."""
     display_room(conn, room_id, token)
     row = open_emergency(conn, room_id)
     if row is None:
@@ -426,17 +425,15 @@ def display_emergency(room_id: str, body: EmergencyRequest, conn: Conn, token: D
                            (room_id, clock.now().isoformat(timespec="seconds")))
         row = conn.execute("SELECT * FROM emergencies WHERE id = ?", (cur.lastrowid,)).fetchone()
         display.log.warning("EMERGENCY in %s: police (133) called (simulated)", room_id)
-    mqtt_feed.led(room_id, sos=True)
     return emergency_out(row)
 
 
 @app.delete("/api/display/{room_id}/emergency")
 def display_emergency_end(room_id: str, conn: Conn, token: DisplayToken = None):
-    """"End emergency" on the display: closes the open SOS and stops the LED."""
+    """"End emergency" on the display: closes the open SOS."""
     display_room(conn, room_id, token)
     conn.execute("UPDATE emergencies SET resolved_at = ? WHERE room_id = ? AND resolved_at IS NULL",
                  (clock.now().isoformat(timespec="seconds"), room_id))
-    mqtt_feed.led(room_id, sos=False)
     display.log.warning("EMERGENCY in %s ended on the display", room_id)
     return {"room_id": room_id, "emergency": None}
 

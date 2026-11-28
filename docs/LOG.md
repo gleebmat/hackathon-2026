@@ -137,7 +137,7 @@ selfie from a webcam stream and the no-camera fallback, SOS, EN/DE, 800x480 and 
 - Backend, small: selfie can carry the display's webcam photo (`{image}`), QR SVG gets the SVG namespace (the `/qr` endpoint didn't load as an `<img>`),
   display window 800x520 (the E84 kit's 800x480 panel).
 - Gleb (28 Nov): quiet room removed (page, API, tests); SOS = simulated police call (133), ended on the display;
-  board LED blinks during an SOS (MQTT `.../led`, sketch); the room's own soundscape no longer counts as room noise.
+  the room's own soundscape no longer counts as room noise.
   Display features stay on the display: the website endpoints for emergencies are gone.
 
 ---

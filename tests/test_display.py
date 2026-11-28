@@ -120,19 +120,17 @@ def test_selfie_from_the_display_webcam(app_env):
     assert act("selfie", image=base64.b64encode(b"GIF89a").decode()).status_code == 400
 
 
-def test_emergency_calls_police_and_blinks_the_board_led(app_env, monkeypatch):
-    leds = []
-    monkeypatch.setattr(main.mqtt_feed, "led", lambda room_id, sos: leds.append((room_id, sos)))
+def test_emergency_calls_police(app_env):
     assert act("emergency").status_code == 400                          # "Are you sure?" not confirmed
-    assert act("emergency", confirm=False).status_code == 400 and leds == []
+    assert act("emergency", confirm=False).status_code == 400
     first = act("emergency", confirm=True).json()
-    assert first["room_id"] == ROOM and first["resolved_at"] is None and leds == [(ROOM, True)]
+    assert first["room_id"] == ROOM and first["resolved_at"] is None
     assert act("emergency", confirm=True).json()["id"] == first["id"]  # pressing again: same alarm
     c = TestClient(main.app)
     assert c.get(f"/api/display/{ROOM}").json()["emergency"]["id"] == first["id"]
     assert "emergency" not in room(c, ROOM)                              # display only, not the website
     assert act("emergency", method="delete").json() == {"room_id": ROOM, "emergency": None}
-    assert leds[-1] == (ROOM, False) and c.get(f"/api/display/{ROOM}").json()["emergency"] is None
+    assert c.get(f"/api/display/{ROOM}").json()["emergency"] is None
     assert act("emergency", confirm=True).json()["id"] != first["id"]  # a new SOS is a new alarm
 
 
