@@ -4,23 +4,22 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="google" content="notranslate">
-  <title>Room V · Log in</title>
+  <title>Campus Booking System · Log in</title>
   <script>
     try {
-      document.documentElement.dataset.theme = localStorage.getItem("roomv-theme") || "violet";
       document.documentElement.dataset.mode = localStorage.getItem("roomv-mode") || "auto";
     } catch {}
   </script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Nunito+Sans:opsz,wght@6..12,400..900&display=swap">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400..700&display=swap">
   <link rel="preload" as="image" href="img/login.jpg">
   <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
   <div class="auth">
     <section class="auth-art">
-      <div class="brand"><span class="brand-mark">V</span><span class="brand-name">Room V</span></div>
+      <div class="brand"><span class="brand-tile" aria-hidden="true">cb.</span><span class="brand-name">Campus Booking System</span></div>
       <h1 data-i18n-html="login_h1">Rooms across campus,<br>free when you need them.</h1>
       <a class="credit" href="https://carinthia.com/" target="_blank" rel="noopener" data-i18n="photo_credit">Photo: carinthia.com</a>
     </section>
@@ -28,7 +27,7 @@
     <main class="auth-main">
       <div class="auth-lang lang-switch" id="auth-lang"></div>
       <div class="card auth-card">
-        <h2 id="auth-title" data-i18n="welcome_back">Welcome back 👋</h2>
+        <h2 id="auth-title" data-i18n="welcome_back">Welcome back</h2>
         <p class="muted" data-i18n="login_sub">Log in with your student account.</p>
         <div class="tabs" role="tablist">
           <button type="button" class="active" data-tab="login" role="tab" data-i18n="tab_login">Log in</button>
