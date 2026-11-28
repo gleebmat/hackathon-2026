@@ -17,7 +17,7 @@ from collections import defaultdict
 from pathlib import Path
 
 from shapely.affinity import rotate
-from shapely.geometry import Point, Polygon
+from shapely.geometry import LineString, Point, Polygon
 from shapely.ops import nearest_points, polygonize, unary_union
 from shapely.validation import make_valid
 from shapely import set_precision
@@ -213,10 +213,27 @@ def block_union(b, floor):
     return unary_union([Polygon(x["poly"], x.get("holes", [])) for x in b["blocks"] if floor in x["floors"]])
 
 
-def outside_doors(b, doors, everything):
-    """The plan's doors to the outside (and EXTRA_DOORS), snapped onto this building's wall on their floor, facing out.
-    Only doors at ground level (ENTRANCE_FLOORS; floors 0 and 1 elsewhere: the campus slopes, the main entrance is on
-    floor 1) and only the lowest of doors stacked above each other (the upper ones open onto terraces and balconies)."""
+DOOR_HALF = 1.4          # m: half the drawn door width (2.8 m)
+DOOR_EDGE = 0.2          # m: a door keeps this far from the end of its wall
+DOOR_SPACING = 4.0       # m: doors closer than this (any building) are one entrance
+
+
+def wall_segments(g):
+    """Straight wall pieces of a footprint (outer edges and courtyard edges), long enough to hold a door."""
+    for p in (g.geoms if hasattr(g, "geoms") else [g]):
+        for ring in [p.exterior, *p.interiors]:
+            c = list(ring.coords)
+            for a, b in zip(c, c[1:]):
+                if math.dist(a, b) >= 2 * (DOOR_HALF + DOOR_EDGE):
+                    yield a, b
+
+
+def outside_doors(b, doors, everything, placed):
+    """The plan's doors to the outside (and EXTRA_DOORS), each put on a straight stretch of this building's wall on
+    its floor: not on a corner, square to the wall, facing out, with nothing built in front of its whole width, and
+    not on top of another door (`placed`: doors of all buildings so far). Only doors at ground level
+    (ENTRANCE_FLOORS; floors 0 and 1 elsewhere: the campus slopes, the main entrance is on floor 1) and only the
+    lowest of doors stacked above each other (the upper ones open onto terraces and balconies)."""
     out = []
     extra = [{"b": bid, "f": f, "x": x, "z": z} for bid, f, x, z, _ in EXTRA_DOORS]
     plan_doors = [d for d in doors if d["b"] not in MANUAL_DOORS]
@@ -224,25 +241,32 @@ def outside_doors(b, doors, everything):
         if d["b"] != b["id"] or d["f"] not in b["floors"] or d["f"] not in ENTRANCE_FLOORS.get(b["id"], {0, 1}):
             continue
         here = block_union(b, d["f"])
-        walls = here.boundary
         pt = Point(d["x"], d["z"])
-        if walls.distance(pt) > 1.5:
-            continue
-        at = walls.project(pt)
-        on = walls.interpolate(at)
-        a, c = walls.interpolate(at - 0.5), walls.interpolate(at + 0.5)
-        tx, tz = c.x - a.x, c.y - a.y
-        n = math.hypot(tx, tz) or 1
-        nx, nz = -tz / n, tx / n                      # wall normal, turned to point out of the building
-        if here.contains(Point(on.x + nx * 0.6, on.y + nz * 0.6)):
+        best = None
+        for a, c in wall_segments(here):
+            seg = LineString([a, c])
+            dist = seg.distance(pt)
+            if dist <= 1.5 and (best is None or dist < best[0]):
+                best = (dist, a, c)
+        if best is None:
+            continue                                   # no straight wall long enough near it
+        _, (ax, az), (cx, cz) = best
+        length = math.dist((ax, az), (cx, cz))
+        tx, tz = (cx - ax) / length, (cz - az) / length
+        along = min(max((d["x"] - ax) * tx + (d["z"] - az) * tz, DOOR_HALF + DOOR_EDGE), length - DOOR_HALF - DOOR_EDGE)
+        x, z = ax + tx * along, az + tz * along
+        nx, nz = -tz, tx                               # square to the wall, pointing out of the building
+        if here.contains(Point(x + nx * 0.6, z + nz * 0.6)):
             nx, nz = -nx, -nz
-        if everything[d["f"]].contains(Point(on.x + nx * 0.6, on.y + nz * 0.6)):
-            continue                                   # another building right there: not an outside door
-        if any(e["floor"] == d["f"] and math.dist((e["x"], e["z"]), (on.x, on.y)) < 5 for e in b.get("entrances", [])):
+        front = [Point(x + tx * k + nx * 0.6, z + tz * k + nz * 0.6) for k in (-DOOR_HALF, 0, DOOR_HALF)]
+        if any(everything[d["f"]].contains(q) for q in front):
+            continue                                   # something built in front of it: not an outside door
+        if any(e["floor"] == d["f"] and math.dist((e["x"], e["z"]), (x, z)) < 5 for e in b.get("entrances", [])):
             continue                                   # the main entrance has its own marker
-        if any(math.dist((o["x"], o["z"]), (on.x, on.y)) < 2.5 for o in out):
+        if any(math.dist((o["x"], o["z"]), (x, z)) < DOOR_SPACING for o in out + placed):
             continue
-        out.append({"x": round(on.x, 2), "z": round(on.y, 2), "floor": d["f"], "dir": [round(nx, 3), round(nz, 3)]})
+        out.append({"x": round(x, 2), "z": round(z, 2), "floor": d["f"], "dir": [round(nx, 3), round(nz, 3)]})
+    placed.extend(out)
     return out
 
 
@@ -441,8 +465,9 @@ def main():
         buildings.append(b)
     split_links(buildings)
     everything = {f: unary_union([block_union(b, f) for b in buildings]) for f in range(4)}
+    placed = []
     for b in buildings:
-        b["doors"] = outside_doors(b, plan.get("doors", []), everything)
+        b["doors"] = outside_doors(b, plan.get("doors", []), everything, placed)
     place_machines(buildings)
     campus = {"campus": "AAU Klagenfurt", "units": "metres; x along the campus grid (~east), z across (~south); "
               "origin = centre of building V", "north": plan["north"], "buildings": buildings}

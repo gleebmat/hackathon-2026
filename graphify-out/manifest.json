@@ -120,9 +120,9 @@
     "semantic_hash": ""
   },
   "tools/campus3d/gen_campus.py": {
-    "mtime": 1795884156.527621,
-    "seen": 1795884254.332255,
-    "ast_hash": "a6878c954d73dfe67f695938472f969b",
+    "mtime": 1795884502.545959,
+    "seen": 1795884601.1388965,
+    "ast_hash": "f8db7b904d79744dfcb75b9c259dd30c",
     "semantic_hash": ""
   },
   "web/map3d/building3d.js": {
@@ -132,9 +132,9 @@
     "semantic_hash": ""
   },
   "web/map3d/campus.json": {
-    "mtime": 1795884193.3580735,
-    "seen": 1795884254.3322864,
-    "ast_hash": "3c85cc8ca8ab494b79aba9c15ec6d450",
+    "mtime": 1795884519.7086587,
+    "seen": 1795884601.1389973,
+    "ast_hash": "fc493c52e41ff672928b5bcc56ea4672",
     "semantic_hash": ""
   },
   "web/map3d/index.html": {
