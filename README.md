@@ -76,7 +76,9 @@ sketch: after changing it here, paste it into Velxio and save. Copy Velxio's `fr
 2. In Velxio, under the board, switch on **Camera** (your webcam) and **Mic** (your microphone; when it's off you
    get a 440 Hz test tone), allow both in Chrome, then **Run**. The serial monitor shows `CAM OK (320x240)`,
    `FRAMES ON`, `MIC OK`, `WIFI OK`, then one `frame N bytes -> sent` line per frame.
-3. Open http://localhost:8000 and search `z104`. Z.1.04 shows **LIVE**, the noise and "1 person here now". Book it
+3. Open http://localhost:8000: Z.1.04 carries a board badge on the 3D map (red "LIVE" while the board sends, grey
+   "OFFLINE" otherwise). Open the room (search `z104`): a live card shows the people count with person icons, the
+   noise in dB on a meter and the last minute of noise as a line. Z.1.04 shows **LIVE**, the noise and "1 person here now". Book it
    and step out of the webcam: after 5 s the booking is marked ghost (violet on the map) and after 15 s it's
    released. Two people in view show as 2 about a second later. Leave a bag, phone or bottle within ~3 m and
    step out: a few seconds later the panel shows "🎒 Something left behind".
