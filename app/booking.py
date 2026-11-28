@@ -19,7 +19,7 @@ GHOST_AFTER = (timedelta(seconds=int(os.environ["GHOST_RELEASE_SECONDS"]))
                if "GHOST_RELEASE_SECONDS" in os.environ
                else timedelta(minutes=int(os.environ.get("GHOST_RELEASE_MIN", "10"))))
 GHOST_GRACE = timedelta(seconds=int(os.environ.get("GHOST_GRACE_SECONDS", "60")))
-BOARD_STALE = timedelta(seconds=10)
+BOARD_STALE = timedelta(seconds=3)   # the board sends every ~0.6 s: 3 s without a reading = offline
 SENSOR_STALE = timedelta(minutes=2)
 
 PURPOSE_CLASS = {
