@@ -94,7 +94,7 @@ the browser.
 - Name and logo: "Campus Booking System", a black monogram tile `cb.` (no mascot).
 - Palette (chosen by Martha, THEME block at the top of `css/style.css`): `--bg #f3f5f8`, `--surface #f9fbff`,
   `--surface-2 #f1f1ef`, `--border #e3e3e0`, `--text #2a2420`, `--muted #6d685d`, `--brand`/`--accent #2f5be0`;
-  status `--free #23865a`, `--shared #c98512`, `--full #b42318`, `--ghost #c4b3e6`, `--closed #94a3b8`;
+  status `--free #23865a`, `--shared #c98512`, `--full #b42318`, `--ghost #8b5cf6`, `--closed #94a3b8`;
   `--star #c98512`. No gradients; radii 7–14 px.
 - Fonts: Bricolage Grotesque (headings, room ids), Instrument Sans (text), IBM Plex Mono (times).
 - Our own line icons (SVG sprite in `index.html`) instead of every emoji.

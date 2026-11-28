@@ -19,7 +19,7 @@
   --free: #23865a;
   --shared: #c98512;
   --full: #b42318;
-  --ghost: #c4b3e6;
+  --ghost: #8b5cf6;
   --closed: #94a3b8;
   --live: #b42318;
   --star: #c98512;
@@ -257,7 +257,7 @@ mark { background: color-mix(in srgb, var(--brand-2) 35%, transparent); color: i
   position: relative; overflow: hidden; border-radius: var(--radius-lg);
   background: radial-gradient(ellipse at 50% 35%, var(--map-1), var(--map-2));
 }
-.building { position: relative; height: clamp(320px, 58vh, 620px); display: grid; place-items: center; }
+.building { position: relative; height: clamp(380px, 68vh, 720px); display: grid; place-items: center; }
 .building.is-3d { display: block; }
 .building.is-3d canvas { display: block; }
 .building-note {
@@ -672,7 +672,7 @@ details.history .booking { opacity: .7; margin-top: 8px; }
   .sheet-title h2 { font-size: 24px; }
   .auth { grid-template-columns: 1fr; }
   .auth-art { padding: 28px 24px; min-height: 240px; }
-  .building { height: 360px; }
+  .building { height: 420px; }
   .plan { padding: 44px 6px 10px; }
 }
 @media (max-width: 760px) {

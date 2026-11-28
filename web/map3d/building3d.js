@@ -11,7 +11,7 @@ import { TextGeometry } from "three/addons/geometries/TextGeometry.js";
 const FONT_URL = "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/fonts/helvetiker_bold.typeface.json";
 
 const TYPE_COLOR = { seminar: 0xc7d3e6, office: 0xe3e7ee, wc: 0xd6dde8, hall: 0xdbe2ec, atrium: 0xd2e0dc, foyer: 0xf1f3f7 };
-const STATUS_COLOR = { free: 0xffffff, partial: 0xe2a43c, full: 0xc8412f, ghost: 0xc4b3e6, closed: 0x94a3b8,
+const STATUS_COLOR = { free: 0xffffff, partial: 0xe2a43c, full: 0xc8412f, ghost: 0x8b5cf6, closed: 0x94a3b8,
   unbookable: 0x8a97ab };   // unbookable (55+ seats): dark and see-through, with a lock badge   // ghost = the site's violet (--ghost)
 const HOVER_COLOR = new THREE.Color(0x2f5be0);   // the room under the mouse blends towards this blue
 const HIDDEN_BY_DEFAULT = new Set(["office", "wc", "foyer"]);  // "offices" toggle
