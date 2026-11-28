@@ -551,3 +551,14 @@ def test_recording_grace_and_release(app_env, time_now, monkeypatch, arrived_fir
         time_now["t"] = NOW + timedelta(seconds=seconds)
         reading(c, rid, people=people)
         assert room(c, rid)["status"] == status
+
+
+def test_no_private_booking_while_people_are_inside(app_env):
+    a = user(1)
+    reading(a, "V.1.03", people=2)                       # two people in the room, nobody booked it
+    r = book(a, room="V.1.03", start="2026-11-27T10:00", hours=1, mode="full", seats=3)
+    assert r.status_code == 409 and "can't be booked privately" in r.json()["error"]
+    r = book(a, room="V.1.03", start="2026-11-27T10:00", hours=1, mode="partial", seats=3)
+    assert r.status_code == 201                          # sharing with them is fine
+    reading(a, "V.1.04", people=2)
+    assert book(a, room="V.1.04", start="2026-11-27T14:00", hours=1, mode="full", seats=2).status_code == 201

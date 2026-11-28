@@ -213,6 +213,10 @@ def room_problem(conn: sqlite3.Connection, room: sqlite3.Row, start: datetime, e
     if {PURPOSE_CLASS[purpose], *(PURPOSE_CLASS[b["purpose"]] for b in others)} >= {"quiet", "loud"}:
         return "Quiet and loud bookings can't share a room"
     state = room_state(conn, room, now) if start <= now < end else None
+    if state and mode == "full" and state["people"] > 0:
+        # people are in the room right now without a booking (seen by the sensor, or walk-ins): the room can't be
+        # taken privately from under them, but sharing it is fine
+        return "People are in the room right now, so it can't be booked privately; book it as shared"
     t = start
     while t < end:
         used = sum(b["seats"] for b in others if b["start"] < fmt(t + SLOT) and b["end"] > fmt(t))
