@@ -9,9 +9,9 @@ Hackathon project: speed matters, but don't break `main`.
 - Done and integrated on `main`: final UI (map, always-visible calendar, booking panel under the map, my bookings,
   ratings) + 3D map + backend + board (see below). Rooms come from `web/map3d/campus.json`; the board room is **Z.1.04**, every other room is
   simulated.
-- Board: **XIAO ESP32S3 Sense in Velxio** (`firmware/xiao_sense/`), readings over MQTT to the backend
-  (`app/mqtt_feed.py`); presence, noise, ghost and left items (yes/no) work. Open: a real people count.
-  The Infineon Live Lab path (`bridge/`) is no longer used.
+- Board: **XIAO ESP32S3 Sense in Velxio** (`firmware/xiao_sense/`; team Velxio project TODAREISTODO, setup,
+  placement tips and troubleshooting in `README.md`), readings over MQTT to the backend (`app/mqtt_feed.py`);
+  presence, noise, ghost and left items work. Open: a real people count. The Infineon path was removed.
 
 ## Docs
 - Only `docs/PLAN.md`, `docs/LOG.md` and `README.md`. No other Markdown files; log in your own section of `docs/LOG.md`.

@@ -42,10 +42,9 @@ All numbers are made up. This is a prototype.
 | Agent | Owns (only edit these, plus your section of `docs/LOG.md`) | Delivers |
 |---|---|---|
 | **gleb-claude** (Gleb's Claude Code): Backend | `app/` (except `app/lost_items.py`), `tests/`, `requirements.txt`, `.env.example` | FastAPI + SQLite: login, sign-up, rooms (from the map), search, availability, bookings, the booking rules, ghost release, board readings for Z.1.04 and the simulation of every other room (**done**, see API below). Integrates UI + map + board. |
-| **tom-claude** (Tom's Claude Code): Board | `firmware/`, `bridge/` | XIAO ESP32S3 Sense firmware (`firmware/xiao_sense/`, first version by gleb-claude, tested in Velxio): presence, noise, left items over MQTT. See "Board: XIAO ESP32S3 Sense on Velxio". `bridge/` is the old Infineon path, kept as a fallback. |
+| **tom-claude** (Tom's Claude Code): Board | `firmware/` | XIAO ESP32S3 Sense firmware (`firmware/xiao_sense/`, first version by gleb-claude, tested in Velxio): presence, noise, left items over MQTT. See "Board: XIAO ESP32S3 Sense on Velxio". (The Infineon path `bridge/` was removed on 28 Nov.) |
 | **tom-claude**: 3D map (claude-2's role) | `web/map3d/`, `tools/campus3d/` | **Done:** a Three.js campus map of buildings V, N, Z, L and S with search, glow highlight, building and floor isolation, 3D room numbers and status colours. See "3D campus map" below. Standalone until the team decides how to combine it with the UI. |
 | **claude-3**: Website UI | `web/index.html`, `web/login.html`, `web/js/app.js`, `web/js/api.js`, `web/js/picker.js`, `web/js/plan2d.js`, `web/css/style.css` | **Done** and wired to the 3D map. The login page, the search bar (calls `focusRoom`), the room panel (live noise, people, today's bookings, a LIVE badge on the room with `board: true`), the booking form (hours, full or partial, seats, purpose, and suggestions on a 409), and "my bookings"., and the **Lost & found** page: item cards, a "That's mine" button, and a "maybe yours" banner. |
-| **tom-claude**, continued | `detector/`, `app/lost_items.py` (a FastAPI `APIRouter` that gleb-claude includes in `app/main.py`) | The lost-item service: snapshot vs reference diff, YOLOv8n labels, crops, and the endpoints below. Board: flash person detection and forward the person count through the bridge. |
 | **gemini** (Arshia, Gemini Pro): Models, demo | `models/` (new), `README.md` | **Two models, added later:** (1) counting people in the board room, (2) finding lost items. They plug into `POST /api/readings` (`people` as a number) and the "Lost items" endpoints below. Also the demo script and the pitch. Room data and simulation are no longer gemini's: rooms come from the map, and the backend simulates the other rooms. |
 
 ## Architecture
@@ -79,20 +78,29 @@ not work on arduino-esp32 3.x) and `PubSubClient`. The recording sketch targets 
 **Tested in Velxio with a webcam (28 Nov):**
 | Feature | How | Result |
 |---|---|---|
-| Presence | Arshia's 96x96 RGB int8 model on the board, majority of the last 3 frames | in view 0.70-0.98, empty 0.02-0.16; ~1.3 s per frame; 101 KB arena |
+| Presence | Arshia's 96x96 RGB int8 model on the board, majority of the last 3 frames, threshold 0.60 | in view 0.70-0.98, empty mostly 0.1-0.5; ~0.95 s per frame; 101 KB arena |
 | Noise | PDM mic RMS mapped to ~30-90 dB | 30-62 dB with the real mic (72 dB = Velxio's test tone when Mic is off) |
-| Ghost booking | presence -> backend ghost timer | released after the 1-min demo timer |
-| Left items | 24x24 cell diff vs the empty-room snapshot, exposure shift removed, fragments merged, median of 5 | reliably 0 while someone is there and >0 after an object is left; the exact count drifts (1-3), so the UI shows yes/no |
-| People count | not available: the model only says yes/no (`counted: false`) | later: a detector that counts (e.g. ESP-DL pedestrian detection) |
+| Ghost booking | presence -> backend ghost timer | marked after 5 s, released after 15 s with the demo timers |
+| Left items | see below | 0 when nothing was left; >0 for an object placed inside the view; the UI shows yes/no |
+| People count | not available: the model only says yes/no (`counted: false`) | candidate: Seeed Swift-YOLO person detector (counts, ~11 s/frame in Velxio) |
 
-**Next steps (board owner):** real people count; left-item count accuracy (or keep yes/no); test on a physical
-XIAO ESP32S3 Sense with your own WiFi SSID.
+**Left items (on the board).** The board keeps a snapshot of the empty room: whenever nobody has been seen since the
+last snapshot and the view is empty (person score < 0.45) and still for 3 checks, it refreshes it, so the snapshot
+is always the room just before people came. After people leave it compares each frame with the snapshot on a 24x24
+grid of 4x4-pixel cells: the camera offset (up to 3 px) is found and compensated, a cell counts as changed when its
+contrast to its neighbours moved by more than 14 or its brightness (minus the global exposure shift) by more than
+45, and it must stay changed for 3 checks in a row. Changed cells are grown by one cell and merged into blobs;
+blobs of 3+ cells count as items unless they touch the left, right or top edge (a person walking out or half in
+view). More than 30% changed means the view or the light changed: new snapshot. After 5 clean checks the room counts
+as clean again. Placement tips for demos: `README.md`.
+
+**Next steps (board owner):** a real people count; test on a physical XIAO ESP32S3 Sense with your own WiFi SSID.
 
 **Demo notes**
-- In Velxio: click **Camera** and **Mic** under the board (allow them in Chrome), then Run.
-- Start the backend with `GHOST_RELEASE_MIN=1`, so a ghost booking is released within the pitch.
-- Before leaving an object for the left-item demo, keep the camera view empty for ~20 s so the board takes a clean
-  empty-room snapshot.
+- In Velxio: click **Camera** and **Mic** under the board (allow them in Chrome), then Run. Use the team project
+  TODAREISTODO (`README.md`).
+- Start the backend with `GHOST_GRACE_SECONDS=5` and `GHOST_RELEASE_SECONDS=15` for a fast ghost release.
+- Keep the view empty after Run until serial prints `Empty-room baseline ready`.
 - Pitch wording: presence, noise and left items are computed on the board; only small JSON readings leave it.
   Don't claim a people count yet.
 
@@ -171,27 +179,11 @@ can't take it). Times are campus time (Europe/Vienna) without a zone: `"2026-11-
 7. **Room picker / calendar (`picker.js`, done):** one `GET /api/calendar?date=` per day gives every room's
    slots; the cards show free hours (any time) or the exact status for the picked range, plus `rating`.
 
-### Lost items (tom-claude, in `detector/` and `app/lost_items.py`)
-**Pipeline**
-1. The board sends presence for the board room (Z.1.04) through the bridge, just like noise; a count comes from Arshia's model later.
-2. When a booking ends, or `people == 0` for 30 s after people were present, the backend takes **one snapshot**
-   from the room camera. In the demo this is our webcam, the same feed that goes into the board.
-3. `detector/` diffs the snapshot against `reference/<room>.jpg` (the empty room). Changed regions are labelled
-   with YOLOv8n (COCO: backpack, handbag, suitcase, laptop, cell phone, bottle, umbrella, book, …). Regions it
-   can't label become "unidentified item".
-4. Only the item crop is stored. The full snapshot is deleted immediately, and crops are deleted after 7 days.
-   No snapshot is ever taken while persons are present.
-
-**Endpoints**
-| Method | Path | Body / result |
-|---|---|---|
-| GET | `/api/lost-items` | `[{id, room_id, label, area, found_at, image_url, status: "found"|"claimed", maybe_yours: bool}]` |
-| POST | `/api/lost-items/{id}/claim` | marks the item claimed by the current user and returns where to pick it up |
-| POST | `/api/rooms/{id}/snapshot` | demo trigger: take a snapshot now (still refused while people > 0) |
-
-`maybe_yours` is true when the current user had a booking in that room which ended within 2 h before `found_at`.
-YOLO (`ultralytics`, which pulls in PyTorch) lives only in `detector/requirements.txt`, so the main app stays
-light.
+### Lost items
+Done on the board (see "Left items (on the board)" above): the board sends `left_items` (a count; the UI shows
+"🎒 Something left behind" when it's above 0). There is no laptop-side detector, no stored photos and no lost &
+found endpoints: nothing leaves the board except the number. Arshia's laptop reference (`models/webcam.py` with
+EfficientDet-Lite2, which also names the object) is too big for the board (7.6 MB, ~10 MB working memory).
 
 ### 3D campus map (tom-claude; built and working, standalone for now)
 The map is in **`web/map3d/`**: `index.html` (the demo page), `building3d.js` (the module) and `campus.json` (the data).
@@ -223,8 +215,6 @@ b.buildings(); b.rooms();
   claude-3 can start right away against the contracts above.
 - **By 20:00:** real booking rules, the 3D model with search, and the UI flows each work on their own.
 - **By 21:00:** integration on `main`: log in → search → book → noise conflict → suggestion.
-- **Next board slot:** re-flash the mic firmware (noise), then test person detection with the webcam (prebuilt
-  `.hex` from the DEEPCRAFT Model Zoo, e.g. YoloX), then do an end-to-end run and record the demo video.
 - **By Saturday noon:** the lost-item pipeline works with the webcam: person leaves → bag detected → notice.
 - **Sunday morning:** demo script rehearsed and the README finished.
 

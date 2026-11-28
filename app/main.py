@@ -14,20 +14,14 @@ from pydantic import BaseModel, Field, ValidationError
 
 from app import auth, booking, clock, db, mqtt_feed
 from app.booking import ApiError
-from bridge.ntfy_feed import LiveNoiseFeed
 
 WEB_DIR = db.ROOT / "web"
 SESSION_DAYS = 7
-feed: LiveNoiseFeed | None = None
 
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
-    global feed
     db.init()
-    if os.environ.get("NOISE_FEED", "0") != "0":
-        feed = LiveNoiseFeed(room_id=booking.BOARD_ROOM)  # fallback path: bridge.py without a backend URL
-        feed.start()
     mqtt_client = mqtt_feed.start(mqtt_reading) if os.environ.get("MQTT_FEED", "1") != "0" else None
     yield
     if mqtt_client:
@@ -70,11 +64,6 @@ def get_conn():
 
 
 Conn = Annotated[sqlite3.Connection, Depends(get_conn, scope="function")]
-
-
-def live_data() -> dict:
-    latest = feed.latest() if feed else None
-    return {latest["room_id"]: latest} if latest else {}
 
 
 def session_user(conn: sqlite3.Connection, request: Request) -> dict | None:
@@ -155,16 +144,16 @@ def me(user: User):
 
 @app.get("/api/rooms")
 def rooms(conn: Conn, q: str | None = Query(None, max_length=50)):
-    live, now = live_data(), clock.now()
+    now = clock.now()
     found = booking.search(conn, q) if q and q.strip() else booking.listed_rooms(conn)
-    return [booking.room_state(conn, r, now, live) for r in found]
+    return [booking.room_state(conn, r, now) for r in found]
 
 
 @app.get("/api/search")
 def search(conn: Conn, q: str = Query("", max_length=50), limit: int = Query(8, ge=1, le=50)):
-    live, now = live_data(), clock.now()
+    now = clock.now()
     return [{key: state[key] for key in ("id", "label", "name", "floor", "status", "seats_free")}
-            for state in (booking.room_state(conn, r, now, live) for r in booking.search(conn, q)[:limit])]
+            for state in (booking.room_state(conn, r, now) for r in booking.search(conn, q)[:limit])]
 
 
 @app.get("/api/rooms/{room_id}")
@@ -174,7 +163,7 @@ def room_detail(room_id: str, request: Request, conn: Conn):
     user = session_user(conn, request)
     today = conn.execute("SELECT * FROM bookings WHERE room_id = ? AND status = 'active' AND substr(start, 1, 10) = ? "
                          "ORDER BY start", (room_id, now.date().isoformat())).fetchall()
-    return {**booking.room_state(conn, room, now, live_data()),
+    return {**booking.room_state(conn, room, now),
             "bookings_today": [booking.booking_out(conn, b, now, user and user["id"]) for b in today],
             "my_rating": booking.my_rating(conn, user["id"], room_id) if user else None,
             "can_rate": bool(user) and booking.can_rate(conn, user["id"], room_id, now)}
@@ -186,13 +175,13 @@ def room_availability(room_id: str, conn: Conn, day: date | None = Query(None, a
     room = booking.get_room(conn, room_id)
     day = day or now.date()
     return {"room_id": room_id, "date": day.isoformat(), "open": f"{booking.OPEN:%H:%M}",
-            "close": "24:00", "slots": booking.availability(conn, room, day, now, live_data())}
+            "close": "24:00", "slots": booking.availability(conn, room, day, now)}
 
 
 @app.get("/api/calendar")
 def calendar(conn: Conn, day: date | None = Query(None, alias="date")):
     now = clock.now()
-    return booking.calendar(conn, day or now.date(), now, live_data())
+    return booking.calendar(conn, day or now.date(), now)
 
 
 class RatingRequest(BaseModel):
@@ -222,15 +211,15 @@ class BookingRequest(BaseModel):
 
 @app.post("/api/bookings", status_code=201)
 def create_booking(body: BookingRequest, user: User, conn: Conn):
-    now, live = clock.now(), live_data()
+    now = clock.now()
     req = {**body.model_dump(), "start": clock.to_local(body.start)}
     try:
-        return booking.create_booking(conn, user["id"], req, now, live)
+        return booking.create_booking(conn, user["id"], req, now)
     except ApiError as exc:
         if exc.status != 409:
             raise
         alternatives = booking.suggest(conn, req["start"], body.hours, body.mode, body.seats, body.purpose,
-                                       now, live, exclude=body.room_id)
+                                       now, exclude=body.room_id)
         return JSONResponse({"error": exc.message, "suggestions": [r["id"] for r in alternatives[:3]]},
                             status_code=409)
 
@@ -261,14 +250,13 @@ def suggest(conn: Conn, mode: Mode, hours: float = Query(ge=0.5, le=booking.MAX_
     now = clock.now()
     start = clock.to_local(start) if start else booking.slot_start(now)
     booking.validate_times(start, hours, now)
-    return booking.suggest(conn, start, hours, mode, seats, purpose, now, live_data())
+    return booking.suggest(conn, start, hours, mode, seats, purpose, now)
 
 
 # --- sensors ---
 
 class Reading(BaseModel):
-    """From bridge/bridge.py (the board) or a simulator. Raw board fields (noise_avg_db, person_ratio, ...) are
-    accepted and ignored: the bridge already sends the calibrated noise_db."""
+    """From the board (over MQTT, app/mqtt_feed.py) or a simulator. Extra fields (person_score, ...) are ignored."""
     room_id: str = Field(max_length=20)
     noise_db: float | None = Field(None, ge=0, le=150, allow_inf_nan=False)
     people: int | None = Field(None, ge=0, le=1000)
