@@ -225,11 +225,13 @@ int countLeftItems() {
   for (int i = 0; i < GRID * GRID; i++) {
     if (!grown[i]) continue;
     int top = 0, size = 0;                 // size = really changed cells inside the blob
+    bool atSide = false;                   // touches the left, right or top edge
     stack_[top++] = i;
     grown[i] = 0;
     while (top) {
       int p = stack_[--top], px = p % GRID, py = p / GRID;
       size += mask[p];
+      atSide |= mask[p] && (px == 0 || px == GRID - 1 || py == 0);
       for (int dy = -1; dy <= 1; dy++)
         for (int dx = -1; dx <= 1; dx++) {
           int nx = px + dx, ny = py + dy;
@@ -238,7 +240,9 @@ int countLeftItems() {
           stack_[top++] = ny * GRID + nx;
         }
     }
-    if (size >= MIN_ITEM_CELLS) items++;
+    // A change at the side or top edge is a person walking out or half in view (the person model misses those),
+    // not an object put down; the bottom edge is the desk, so it still counts there.
+    if (size >= MIN_ITEM_CELLS && !atSide) items++;
   }
   if (items) Serial.printf("left-item check: %d item(s), %d cells changed, camera shift %d,%d px\n", items, changed, sx, sy);
   return items;
