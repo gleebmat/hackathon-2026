@@ -345,7 +345,11 @@ export function createBuilding(el, input, opts = {}) {
   };
   new ResizeObserver(resize).observe(el);
   resize();
+  let lastFrame = 0;
   renderer.setAnimationLoop((now) => {
+    const dt = Math.min(0.1, (now - (lastFrame || now)) / 1000);
+    lastFrame = now;
+    if (route) moveRouteDot(dt);
     if (anim) {
       const k = Math.min(1, (now - anim.t0) / anim.ms), e = k < 0.5 ? 2 * k * k : 1 - (-2 * k + 2) ** 2 / 2;
       camera.position.lerpVectors(anim.p0, anim.p1, e);
@@ -371,6 +375,73 @@ export function createBuilding(el, input, opts = {}) {
     controls.update();
     renderer.render(scene, camera);
   });
+
+  // --- walking route ("Take me there"): a bright line along corridors, over bridges and up the stairs, drawn over
+  // everything so floors don't hide it; a white dot walks it again and again ---
+  const ROUTE_LIFT = 1.1, ROUTE_SPEED = 16;                 // m above the floor; dot speed (m/s)
+  const routeMat = new THREE.MeshBasicMaterial({ color: 0x2f5be0, depthTest: false, transparent: true, opacity: 0.92 });
+  const routeDotMat = new THREE.MeshBasicMaterial({ color: 0xffffff, depthTest: false });
+  const startMat = new THREE.MeshBasicMaterial({ color: 0x1f9d55, depthTest: false });
+  let route = null;   // {group, pts: Vector3[], at: cumulative lengths, dot, t}
+  const onTop = (m) => { m.renderOrder = 20; return m; };
+  function clearRoute() {
+    if (!route) return;
+    scene.remove(route.group);
+    route.group.traverse((o) => { if (o.geometry) o.geometry.dispose(); if (o.material?.map) { o.material.map.dispose(); o.material.dispose(); } });
+    route = null;
+  }
+  function showRoute(r, { startLabel = "Start" } = {}) {
+    clearRoute();
+    const group = new THREE.Group();
+    const pts = r.points.map(([x, z, , y]) => new THREE.Vector3(x, y + ROUTE_LIFT, z));
+    const up = new THREE.Vector3(0, 1, 0);
+    const at = [0];
+    for (let i = 1; i < pts.length; i++) {
+      const a = pts[i - 1], b = pts[i], len = a.distanceTo(b);
+      at.push(at[i - 1] + len);
+      if (len < 0.01) continue;
+      const seg = onTop(new THREE.Mesh(new THREE.CylinderGeometry(0.45, 0.45, len, 10, 1, true), routeMat));
+      seg.position.copy(a).add(b).multiplyScalar(0.5);
+      seg.quaternion.setFromUnitVectors(up, b.clone().sub(a).normalize());
+      group.add(seg);
+    }
+    for (const p of pts) {                                  // round joints at the corners
+      const j = onTop(new THREE.Mesh(new THREE.SphereGeometry(0.45, 10, 8), routeMat));
+      j.position.copy(p);
+      group.add(j);
+    }
+    const start = onTop(new THREE.Mesh(new THREE.CylinderGeometry(1.4, 1.4, 0.3, 24), startMat));
+    start.position.copy(pts[0]);
+    group.add(start);
+    const tag = badge(startLabel, "#1f9d55");
+    tag.material.depthTest = false;
+    tag.renderOrder = 21;
+    tag.scale.multiplyScalar(2.2);
+    tag.position.copy(pts[0]).add(new THREE.Vector3(0, 5, 0));
+    group.add(tag);
+    const dot = onTop(new THREE.Mesh(new THREE.SphereGeometry(0.9, 16, 12), routeDotMat));
+    dot.renderOrder = 22;
+    group.add(dot);
+    scene.add(group);
+    route = { group, pts, at, dot, t: 0 };
+    moveRouteDot(0);
+    // show the floors the route uses, from the whole campus, framed on the route
+    buildingFilter = null;
+    floorFilter = Math.max(...r.points.map((p) => p[2]));
+    applyVisibility();
+    const box = new THREE.Box3().setFromPoints(pts);
+    box.expandByVector(new THREE.Vector3(12, 4, 12));
+    goTo(view(box));
+  }
+  function moveRouteDot(dt) {
+    const total = route.at[route.at.length - 1];
+    route.t = (route.t + dt * ROUTE_SPEED) % (total + ROUTE_SPEED);   // a short pause at the end, then again
+    const d = Math.min(route.t, total);
+    let i = 1;
+    while (i < route.at.length - 1 && route.at[i] < d) i++;
+    const a = route.pts[i - 1], b = route.pts[i], seg = route.at[i] - route.at[i - 1];
+    route.dot.position.lerpVectors(a, b, seg ? (d - route.at[i - 1]) / seg : 1);
+  }
 
   // --- visibility state ---
   const DEFAULT_FLOOR = opts.floor ?? 1;   // the map opens on floor 1: the main entrance and the board room are there
@@ -552,6 +623,9 @@ export function createBuilding(el, input, opts = {}) {
       goTo(view(box, floorFilter === null ? null : floorFilter * bd.floor_height + 1));
     },
     floor: () => floorFilter,
+    /** Draws a walking route from campus.json "routes" (start tag text in opts.startLabel); clearRoute() removes it. */
+    showRoute(r, opts) { showRoute(r, opts); },
+    clearRoute() { clearRoute(); },
     setOfficesVisible(v) { showOffices = !!v; applyVisibility(); },
     officesVisible: () => showOffices,
     onRoomClick(cb) { clickCb = cb; },
