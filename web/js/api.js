@@ -44,6 +44,7 @@ export const availability = (id, date) =>
   request("GET", `/api/rooms/${encodeURIComponent(id)}/availability?${q({ date })}`);
 
 export const calendar = (date) => request("GET", `/api/calendar?${q({ date })}`);
+export const ask = (text) => request("GET", `/api/assistant?${q({ q: text })}`).then((a) => ({ ...a, rooms: a.rooms.map(named) }));
 export const rate = (id, stars) => request("POST", `/api/rooms/${encodeURIComponent(id)}/rating`, { stars });
 
 export const myBookings = () => request("GET", "/api/bookings/mine");

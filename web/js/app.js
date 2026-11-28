@@ -61,7 +61,7 @@ function handleAuth(err) {
 
 // ---------- Toasts and confetti ----------
 
-function toast(message, { error = false, action } = {}) {
+function toast(message, { error = false, action, ms } = {}) {
   const el = document.createElement("div");
   el.className = `toast${error ? " error" : ""}`;
   el.innerHTML = `<span>${esc(message)}</span>`;
@@ -74,7 +74,7 @@ function toast(message, { error = false, action } = {}) {
   }
   $("toasts").append(el);
   const dismiss = () => { el.classList.add("out"); setTimeout(() => el.remove(), 260); };
-  setTimeout(dismiss, error ? 6000 : 4500);
+  setTimeout(dismiss, ms || (error ? 6000 : 4500));
 }
 
 function confetti(fromEl) {
@@ -889,6 +889,104 @@ function wireHelp() {
   });
 }
 
+// ---------- Room assistant ----------
+
+function wireAssistant() {
+  const input = $("ask-input");
+  $("ask-examples").innerHTML = ["ask_ex1", "ask_ex2", "ask_ex3"]
+    .map((k) => `<button class="ask-example" type="button">${esc(t(k))}</button>`).join("");
+  $("ask-examples").addEventListener("click", (e) => {
+    const b = e.target.closest(".ask-example");
+    if (!b) return;
+    input.value = b.textContent;
+    ask(input.value);
+  });
+  $("ask-form").addEventListener("submit", (e) => {
+    e.preventDefault();
+    if (input.value.trim()) ask(input.value.trim());
+  });
+  $("ask-answer").addEventListener("click", (e) => {
+    const b = e.target.closest("button[data-ask-room]");
+    if (!b) return;
+    const u = state.asked;
+    openRoom(b.dataset.askRoom, { date: u.date, time: u.time, hours: u.hours, mode: u.mode, seats: u.seats, purpose: u.purpose });
+  });
+}
+
+let askSeq = 0;   // only the newest question's answer is shown
+
+async function ask(text) {
+  const box = $("ask-answer");
+  const seq = ++askSeq;
+  box.hidden = false;
+  box.innerHTML = `<p class="muted">${t("ask_thinking")}</p>`;
+  let res;
+  try {
+    res = await api.ask(text);
+  } catch (err) {
+    if (seq !== askSeq) return;
+    if (!handleAuth(err)) box.innerHTML = `<p class="ask-problem">${esc(err.message)}</p>`;
+    return;
+  }
+  if (seq !== askSeq) return;
+  const u = res.understood;
+  state.asked = u;
+  const end = new Date(`${u.date}T${u.time}`);
+  end.setMinutes(end.getMinutes() + u.hours * 60);
+  const p = PURPOSE[u.purpose];
+  const chips = [
+    `📅 ${esc(dayLabel(u.date))} · ${u.time}–${pad(end.getHours())}:${pad(end.getMinutes())}`,
+    `👥 ${esc(people(u.seats))}`,
+    `${p?.emoji ?? ""} ${esc(p?.label ?? u.purpose)}`,
+    esc(t(u.mode === "full" ? "private_tag" : "share_tag")),
+    u.building ? `🏢 ${esc(t("ask_building", { b: u.building }))}` : "",
+  ].filter(Boolean).map((c) => `<span class="ask-chip">${c}</span>`).join("");
+  const problem = res.problem ? `<p class="ask-problem">${esc(t(`ask_${res.problem === "none_free" ? "none" : res.problem}`))}</p>` : "";
+  const rooms = res.rooms.map((r) => `
+    <div class="ask-room">
+      <div><b>${esc(r.label || r.id)}</b> <span class="muted small">${esc(r.label ? `${r.id} · ${r.name}` : r.name)}</span></div>
+      <div class="ask-reasons">
+        <span class="noise-${esc(r.noise_class)}">🔊 ${esc(t(`noise_${r.noise_class}`))} · ${r.noise_db.toFixed(0)} dB</span>
+        <span>🪑 ${esc(t("ask_seats_free", { n: r.seats_free }))}</span>
+        ${r.rating ? `<span>⭐ ${r.rating}</span>` : ""}
+        ${r.board && r.live ? `<span class="live-badge">${esc(t("ask_live"))}</span>` : ""}
+      </div>
+      <button class="btn btn-primary btn-sm" type="button" data-ask-room="${esc(r.id)}">${t("ask_book")}</button>
+    </div>`).join("");
+  box.innerHTML = `<div class="ask-understood"><span class="muted small">${t("ask_understood")}:</span>${chips}</div>${problem}
+    ${rooms ? `<div class="muted small ask-best">${t("ask_best")}</div><div class="ask-rooms">${rooms}</div>` : ""}`;
+}
+
+// ---------- Smart alerts: what the sensors mean for your own bookings ----------
+
+const alerted = new Set();   // each alert once per page load
+
+function alertOnce(key, message, roomId) {
+  if (alerted.has(key)) return;
+  alerted.add(key);
+  toast(message, { ms: 10000, action: { label: t("alert_open"), run: () => openRoom(roomId) } });
+}
+
+function checkAlerts() {
+  const now = nowKey();
+  const d = new Date(Date.now() - 15 * 60000);
+  const recently = `${dateKey(d)}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  for (const b of state.mine) {
+    if (b.status !== "active") continue;
+    const room = state.rooms.find((r) => r.id === b.room_id);
+    if (!room) continue;
+    const name = room.label || room.id;
+    if (b.start <= now && b.end > now) {
+      if (PURPOSE[b.purpose]?.noise === "quiet" && room.board && room.live && room.noise_class !== "quiet") {
+        alertOnce(`loud-${b.id}`, t("alert_loud", { room: name, db: room.noise_db.toFixed(0) }), room.id);
+      }
+      if (b.ghost_release_at) alertOnce(`ghost-${b.id}`, t("alert_ghost", { room: name, t: hm(b.ghost_release_at) }), room.id);
+    } else if (b.end <= now && b.end > recently && room.left_items > 0) {
+      alertOnce(`left-${b.id}`, t("alert_left", { room: name }), room.id);
+    }
+  }
+}
+
 async function main() {
   document.title = t("title_app");
   applyStatic();
@@ -909,6 +1007,7 @@ async function main() {
   wireSearch();
   wireSheet();
   wirePage();
+  wireAssistant();
   state.picker = createPicker($("picker"), {
     onOpen: (id, opts) => openRoom(id, opts),
     onError: (err) => { if (!handleAuth(err)) toast(err.message, { error: true }); },
@@ -943,6 +1042,7 @@ async function main() {
     polling = true;
     try {
       await Promise.all([refreshRooms(), refreshMine()]);
+      checkAlerts();
       if (state.sheet && !state.sheet.busy) await loadSheetData();
       if (++tick % SLOT_REFRESH_TICKS === 0) state.picker.refresh();
     } finally {
