@@ -197,8 +197,9 @@ def room_state(conn: sqlite3.Connection, room: sqlite3.Row, now: datetime) -> di
     else:
         noise_db = sim_noise
     booked = sum(b["seats"] for b in current)
-    people = seen["people"] if seen["people"] is not None else sim_people
     board = room["id"] == BOARD_ROOM
+    # the board room is never made up: while its board is offline only the bookings count (no simulated walk-ins)
+    people = seen["people"] if seen["people"] is not None else booked if board else sim_people
     is_live = board and seen["heard_at"] is not None and now - seen["heard_at"] <= LIVE_STALE
     exclusive = any(b["mode"] == "full" for b in current)
     bookable = not room["closed"] and room["capacity"] < BOOKABLE_BELOW
