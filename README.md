@@ -52,7 +52,7 @@ heavy recognition runs on the laptop, so results reach the website in about **1 
   (about 3-4 s after the last person leaves). While the
   camera detector counts a room, the board's own presence is ignored and only its noise reading is used.
 - **Noise:** the PDM microphone (RMS mapped to about 30-90 dB), sent as JSON to `aau-hack26/rooms/Z.1.04/readings`:
-  `{"room_id":"Z.1.04","noise_db":37.2}`. The backend (`app/mqtt_feed.py`) subscribes to both topics. Readings
+  `{"room_id":"Z.1.04","noise_db":37.2}`. The backend (`app/mqtt_feed.py`) subscribes to both topics.
   The LIVE badge goes off 3 s after the last reading (board stopped) and comes back with the next one.
 - Earlier on-board versions (face detector, COCO detector on the board, ~1 min per result in Velxio) are in the git
   history and the tag `board-v1`.
