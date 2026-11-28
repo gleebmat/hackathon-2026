@@ -19,6 +19,9 @@ Presence, noise, ghost release and left items tested end to end with a webcam. T
 - 28 Nov: people count with Swift-YOLO Nano (tag `board-v1`), then replaced by Seeed's face detector (fast) and a
   COCO object detector for left items (no photo comparison). Model comparison in `README.md`.
 
+- 28 Nov: website in English and German, footer (AAU links, team contacts), share links, .ics export, shortcuts,
+  new login photo.
+
 **Next:** physical-board test.
 
 ---

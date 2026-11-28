@@ -4,20 +4,22 @@
 import * as api from "./api.js";
 import { createPicker } from "./picker.js";
 import { createPlan, layoutBuilding } from "./plan2d.js";
+import { t, locale, people, applyStatic, langSwitch, lang, setLang } from "./i18n.js";
+import { renderFooter } from "./footer.js";
 
 const POLL_MS = 1000;            // map + room list: board changes show up within a second
 const SLOT_REFRESH_TICKS = 30;  // the picker reloads every room's slots every 30 s
 const DAY_LIMIT = 4;
 const HORIZON_DAYS = 14;
-const STATUS = { free: "Free", partial: "Shared", full: "Full", ghost: "Ghost booking", closed: "Closed" };
+const STATUS = { free: t("st_free"), partial: t("st_partial"), full: t("st_full"), ghost: t("st_ghost"), closed: t("st_closed") };
 const PURPOSES = [
-  { id: "quiet_study", label: "Quiet study", emoji: "📚", noise: "quiet" },
-  { id: "group_study", label: "Group study", emoji: "🧠", noise: "moderate" },
-  { id: "meeting", label: "Meeting", emoji: "💼", noise: "moderate" },
-  { id: "gaming", label: "Gaming", emoji: "🎮", noise: "loud" },
-  { id: "board_games", label: "Board games", emoji: "🎲", noise: "loud" },
-  { id: "event", label: "Event", emoji: "🎉", noise: "loud" },
-  { id: "custom", label: "Other", emoji: "✏️", noise: "moderate" },
+  { id: "quiet_study", label: t("p_quiet_study"), emoji: "📚", noise: "quiet" },
+  { id: "group_study", label: t("p_group_study"), emoji: "🧠", noise: "moderate" },
+  { id: "meeting", label: t("p_meeting"), emoji: "💼", noise: "moderate" },
+  { id: "gaming", label: t("p_gaming"), emoji: "🎮", noise: "loud" },
+  { id: "board_games", label: t("p_board_games"), emoji: "🎲", noise: "loud" },
+  { id: "event", label: t("p_event"), emoji: "🎉", noise: "loud" },
+  { id: "custom", label: t("p_custom"), emoji: "✏️", noise: "moderate" },
 ];
 const PURPOSE = Object.fromEntries(PURPOSES.map((p) => [p.id, p]));
 
@@ -39,9 +41,9 @@ function dayLabel(key, long = false) {
   const today = new Date();
   const d = new Date(`${key}T12:00`);
   const diff = Math.round((d - new Date(`${dateKey(today)}T12:00`)) / 86400000);
-  const text = d.toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" });
-  if (diff === 0) return long ? `Today, ${text}` : "Today";
-  if (diff === 1) return long ? `Tomorrow, ${text}` : "Tomorrow";
+  const text = d.toLocaleDateString(locale, { weekday: "short", day: "numeric", month: "short" });
+  if (diff === 0) return long ? t("today_long", { d: text }) : t("today");
+  if (diff === 1) return long ? t("tomorrow_long", { d: text }) : t("tomorrow");
   return text;
 }
 
@@ -51,7 +53,7 @@ function minutesUntil(iso) {
 
 function handleAuth(err) {
   if (err.status === 401) {
-    location.replace("login.html");
+    location.replace(`login.html${location.search}`);   // keeps ?room=… for after the login
     return true;
   }
   return false;
@@ -114,7 +116,9 @@ async function createView() {
       import("../map3d/building3d.js"),
       fetch("map3d/campus.json").then((r) => { if (!r.ok) throw new Error("no campus.json"); return r.json(); }),
     ]);
-    state.view = createBuilding(el, campus);
+    state.view = createBuilding(el, campus, { labels: {
+      all: t("map_all"), allBuildings: t("map_all_buildings"), allFloors: t("map_all_floors"),
+      everyFloor: t("map_every_floor"), floor: t("map_floor"), floorTitle: t("map_floor_title") } });
     el.classList.add("is-3d");
   } catch {
     state.view = createPlan(el, (await api.building()) || layoutBuilding(state.rooms));
@@ -139,7 +143,7 @@ function showMapTip(id, e) {
   if (!r || !e) { tip.classList.remove("on"); return; }
   tip.innerHTML = `<b>${esc(r.label || r.id)}</b>${esc(r.label ? `${r.id} · ${r.name}` : r.name)}` +
     `<i style="background:var(${STATUS_VAR[r.status] ?? "--muted"})"></i>${STATUS[r.status] ?? esc(r.status)}` +
-    (r.status === "closed" ? "" : ` · ${r.seats_free}/${r.capacity} seats`);
+    (r.status === "closed" ? "" : ` · ${t("seats_of", { free: r.seats_free, cap: r.capacity })}`);
   const box = card.getBoundingClientRect();
   const x = Math.min(e.clientX - box.left + 14, box.width - tip.offsetWidth - 8);
   tip.style.left = `${Math.max(8, x)}px`;
@@ -177,17 +181,18 @@ async function refreshMine() {
 
 function bookingCard(b, { actions = true } = {}) {
   const isNow = b.start <= nowKey() && nowKey() < b.end;
-  const mode = b.mode === "full" ? "🔒 Private" : "👥 Open to share";
-  const statusTag = b.status === "cancelled" ? `<span class="tag">Cancelled</span>`
-    : b.status === "released" ? `<span class="tag">Released (nobody came)</span>`
-    : isNow ? `<span class="tag now">Now</span>` : "";
+  const mode = t(b.mode === "full" ? "private_tag" : "share_tag");
+  const statusTag = b.status === "cancelled" ? `<span class="tag">${t("cancelled")}</span>`
+    : b.status === "released" ? `<span class="tag">${t("released")}</span>`
+    : isNow ? `<span class="tag now">${t("now")}</span>` : "";
   const ghost = b.ghost_release_at
-    ? `<div class="ghost-alert">👻 Nobody detected. Released at ${hm(b.ghost_release_at)} (in ${minutesUntil(b.ghost_release_at)} min) unless someone shows up.</div>`
+    ? `<div class="ghost-alert">${t("ghost_mine", { t: hm(b.ghost_release_at), m: minutesUntil(b.ghost_release_at) })}</div>`
     : "";
   const left = DAY_LIMIT - usedHours(b.start.slice(0, 10));
   const buttons = actions && b.status === "active" && b.end > nowKey() ? `<div class="booking-actions">
-      <button class="btn btn-sm" type="button" data-action="add" data-id="${b.id}" ${left < 0.5 ? "disabled title=\"4 h used on this day\"" : ""}>+ Add time</button>
-      <button class="btn btn-sm btn-danger" type="button" data-action="cancel" data-id="${b.id}">Cancel</button></div>` : "";
+      <button class="btn btn-sm" type="button" data-action="add" data-id="${b.id}" ${left < 0.5 ? `disabled title="${t("day_used_up")}"` : ""}>${t("add_time")}</button>
+      <button class="btn btn-sm" type="button" data-action="ics" data-id="${b.id}">${t("add_calendar")}</button>
+      <button class="btn btn-sm btn-danger" type="button" data-action="cancel" data-id="${b.id}">${t("cancel")}</button></div>` : "";
   return `<article class="booking ${isNow && b.status === "active" ? "now" : ""}">
     <div class="booking-top">
       <div><div class="booking-time">${hm(b.start)}–${hm(b.end)}</div>
@@ -197,7 +202,7 @@ function bookingCard(b, { actions = true } = {}) {
     <div class="booking-tags">
       <span class="tag">${PURPOSE[b.purpose]?.emoji ?? ""} ${esc(purposeText(b))}</span>
       <span class="tag">${mode}</span>
-      <span class="tag">${b.seats} ${b.seats === 1 ? "person" : "people"}</span>
+      <span class="tag">${people(b.seats)}</span>
       <span class="tag">${hoursText(b.hours)}</span>
     </div>
     ${ghost}${buttons}${rateRow(b)}
@@ -209,8 +214,8 @@ function rateRow(b) {
   if (b.status !== "active" || b.start > nowKey()) return "";
   const mine = state.myRatings[b.room_id] ?? b.my_rating ?? 0;
   const stars = [1, 2, 3, 4, 5].map((n) => `<button type="button" class="star ${n <= mine ? "on" : ""}" data-action="rate"
-    data-room="${esc(b.room_id)}" data-stars="${n}" aria-label="${n} star${n > 1 ? "s" : ""}">★</button>`).join("");
-  return `<div class="rate-row"><span class="muted small">${mine ? "Your rating" : "Rate this room"}</span><span class="stars-input">${stars}</span></div>`;
+    data-room="${esc(b.room_id)}" data-stars="${n}" aria-label="${n > 1 ? t("n_stars", { n }) : t("n_stars_1")}">★</button>`).join("");
+  return `<div class="rate-row"><span class="muted small">${t(mine ? "your_rating" : "rate_room")}</span><span class="stars-input">${stars}</span></div>`;
 }
 
 async function rateRoom(btn) {
@@ -218,7 +223,7 @@ async function rateRoom(btn) {
   try {
     await api.rate(room, stars);
     state.myRatings[room] = stars;
-    toast(`Thanks! You rated ${room} ${stars}★`);
+    toast(t("rated", { room, n: stars }));
     renderMine();
     await refreshRooms();
     state.picker.refresh();
@@ -235,15 +240,15 @@ function renderMine() {
   const groups = days.map((day) => {
     const used = usedHours(day);
     return `<section class="day-group">
-      <div class="day-head"><b>${esc(dayLabel(day, true))}</b><span class="hours">${used} of ${DAY_LIMIT} h used</span></div>
+      <div class="day-head"><b>${esc(dayLabel(day, true))}</b><span class="hours">${t("hours_used", { used, limit: DAY_LIMIT })}</span></div>
       <div class="bar"><i style="width:${(used / DAY_LIMIT) * 100}%"></i></div>
       ${next.filter((b) => b.start.startsWith(day)).map((b) => bookingCard(b)).join("")}
     </section>`;
   }).join("");
   body.innerHTML = `
-    ${groups || `<div class="drawer-empty"><div class="big">🗓️</div><p><b>No upcoming bookings</b></p><p>Find a room and grab a slot.</p></div>`}
-    <button class="btn btn-primary" type="button" data-action="find">Book a room</button>
-    ${history.length ? `<details class="history"><summary>Past and cancelled (${history.length})</summary>
+    ${groups || `<div class="drawer-empty"><div class="big">🗓️</div><p><b>${t("no_upcoming")}</b></p><p>${t("no_upcoming_sub")}</p></div>`}
+    <button class="btn btn-primary" type="button" data-action="find">${t("book_a_room")}</button>
+    ${history.length ? `<details class="history"><summary>${t("history", { n: history.length })}</summary>
       ${history.map((b) => bookingCard(b, { actions: false })).join("")}</details>` : ""}`;
 }
 
@@ -256,14 +261,14 @@ function openDrawer() {
 async function cancelBooking(btn) {
   if (!btn.classList.contains("confirm")) {
     btn.classList.add("confirm");
-    btn.textContent = "Sure? Tap again";
-    setTimeout(() => { if (btn.isConnected) { btn.classList.remove("confirm"); btn.textContent = "Cancel"; } }, 3500);
+    btn.textContent = t("sure");
+    setTimeout(() => { if (btn.isConnected) { btn.classList.remove("confirm"); btn.textContent = t("cancel"); } }, 3500);
     return;
   }
   btn.disabled = true;
   try {
     await api.cancel(Number(btn.dataset.id));
-    toast("Booking cancelled");
+    toast(t("booking_cancelled"));
     await Promise.all([refreshMine(), refreshRooms()]);
     state.picker.refresh();
     if (state.sheet) loadSheetData();
@@ -294,15 +299,15 @@ async function openRoom(id, opts) {
     <div class="sheet-body">
       <div class="sheet-col">
         <div class="block" id="sh-now"></div>
-        <div class="block"><div class="block-title"><h3>Pick a day</h3></div><div class="dates" id="sh-dates"></div></div>
+        <div class="block"><div class="block-title"><h3>${t("pick_day")}</h3></div><div class="dates" id="sh-dates"></div></div>
         <div class="block">
-          <div class="block-title"><h3>Pick a time</h3><span class="muted small">Tap a start, then an end</span></div>
+          <div class="block-title"><h3>${t("pick_time")}</h3><span class="muted small">${t("tap_start_end")}</span></div>
           <div class="slots" id="sh-slots"><div class="skeleton" style="grid-column:1/-1;min-height:200px"></div></div>
           <div class="slot-legend">
-            <span><i style="background:var(--free)"></i>Free</span>
-            <span><i style="background:var(--shared)"></i>Shared, seats left</span>
-            <span><i style="background:var(--full)"></i>Full</span>
-            <span><i style="background:var(--brand)"></i>Your booking</span>
+            <span><i style="background:var(--free)"></i>${t("legend_free")}</span>
+            <span><i style="background:var(--shared)"></i>${t("leg_shared_left")}</span>
+            <span><i style="background:var(--full)"></i>${t("legend_full")}</span>
+            <span><i style="background:var(--brand)"></i>${t("leg_yours")}</span>
           </div>
         </div>
       </div>
@@ -403,9 +408,9 @@ function rules() {
 function purposeBlocked(p) {
   const sh = state.sheet;
   const { canFull, noises } = rules();
-  if (p.id === "event" && (!canFull || sh.mode === "partial")) return "Events need the whole room";
-  if (sh.mode === "partial" && p.noise === "quiet" && noises.has("loud")) return "Someone booked a loud activity then";
-  if (sh.mode === "partial" && p.noise === "loud" && noises.has("quiet")) return "Someone booked quiet study then";
+  if (p.id === "event" && (!canFull || sh.mode === "partial")) return t("events_whole");
+  if (sh.mode === "partial" && p.noise === "quiet" && noises.has("loud")) return t("loud_then");
+  if (sh.mode === "partial" && p.noise === "loud" && noises.has("quiet")) return t("quiet_then");
   return null;
 }
 
@@ -422,53 +427,54 @@ function fixSelection() {
 function renderSheetHead() {
   const r = state.sheet.room;
   const live = r.live ? `<span class="live-badge">LIVE</span>` : "";
-  // The board reliably sees *that* something stayed behind, not exactly how many things (tested in Velxio), so
-  // the badge says yes/no instead of showing a count that may be wrong.
   const left = r.left_items > 0
-    ? `<span class="left-badge" title="Spotted by the room's camera after everyone left">🎒 Something left behind</span>` : "";
+    ? `<span class="left-badge" title="${esc(t("left_behind_title"))}">${t("left_behind")}</span>` : "";
   $("sh-head").innerHTML = `
     <div>
       <div class="sheet-title"><h2 id="room-title">${esc(r.label || r.id)}</h2><span class="muted">${esc(r.label ? `${r.id} · ${r.name}` : r.name)}</span></div>
       <div class="sheet-meta">
         <span class="pill ${esc(r.status)}">${STATUS[r.status] ?? esc(r.status)}</span>${live}${left}
         <span class="meta"><svg class="icon"><use href="#i-users"/></svg>${esc(occupancyText(r))}</span>
-        <span class="meta"><svg class="icon"><use href="#i-sound"/></svg>${r.noise_db.toFixed(0)} dB · ${esc(r.noise_class)}</span>
+        <span class="meta"><svg class="icon"><use href="#i-sound"/></svg>${r.noise_db.toFixed(0)} dB · ${esc(t(`noise_${r.noise_class}`))}</span>
       </div>
     </div>
-    <button class="icon-btn" type="button" data-action="close" aria-label="Close"><svg class="icon"><use href="#i-close"/></svg></button>`;
+    <div class="sheet-tools">
+      <button class="btn btn-sm" type="button" data-action="share">${t("copy_link")}</button>
+      <button class="icon-btn" type="button" data-action="close" aria-label="${t("close")}"><svg class="icon"><use href="#i-close"/></svg></button>
+    </div>`;
   const now = r.bookings_now.length
-    ? r.bookings_now.map((b) => `<div class="now-item"><span>${b.shareable ? "👥" : "🔒"} ${b.seats} ${b.seats === 1 ? "person" : "people"} · ${esc(PURPOSE[b.purpose]?.label ?? b.purpose)}</span>
-        <span class="muted">${b.shareable ? "open to join · " : "private · "}until ${hm(b.end)}</span></div>`).join("")
-    : `<div class="now-item"><span>✨ Nobody has booked it right now</span></div>`;
+    ? r.bookings_now.map((b) => `<div class="now-item"><span>${b.shareable ? "👥" : "🔒"} ${people(b.seats)} · ${esc(PURPOSE[b.purpose]?.label ?? b.purpose)}</span>
+        <span class="muted">${t(b.shareable ? "open_join" : "private_dot")}${t("until", { t: hm(b.end) })}</span></div>`).join("")
+    : `<div class="now-item"><span>${t("nobody_booked")}</span></div>`;
   const ghost = r.status === "ghost" && r.ghost_release_at
-    ? `<div class="ghost-alert" style="margin-top:8px">👻 Booked, but nobody is here. Frees up at ${esc(r.ghost_release_at.slice(11, 19))} unless someone shows up.</div>` : "";
-  $("sh-now").innerHTML = `<div class="block-title"><h3>Right now</h3></div><div class="now-list">${now}</div>${sensorCheck(r)}${ghost}`;
+    ? `<div class="ghost-alert" style="margin-top:8px">${t("ghost_room", { t: esc(r.ghost_release_at.slice(11, 19)) })}</div>` : "";
+  $("sh-now").innerHTML = `<div class="block-title"><h3>${t("right_now")}</h3></div><div class="now-list">${now}</div>${sensorCheck(r)}${ghost}`;
 }
 
 // Booked seats next to what the room's sensor actually sees. `counted` false = the board only knows yes/no.
 function seenText(r) {
-  if (r.counted) return `${r.present} ${r.present === 1 ? "person" : "people"} here now`;
-  return r.present > 0 ? "Someone is here" : "Nobody here";
+  if (r.counted) return t(r.present === 1 ? "here_one" : "here_many", { n: r.present });
+  return t(r.present > 0 ? "someone_here" : "nobody_here");
 }
 
 function occupancyText(r) {
-  if (r.board && !r.sensor) return r.live ? "Camera reading unavailable" : "Board offline";
-  if (!r.sensor) return `${r.people} here · ${r.capacity} max`;
-  return r.booked ? `Booked for ${r.booked} · ${seenText(r)}` : `${seenText(r)} · ${r.capacity} max`;
+  if (r.board && !r.sensor) return t(r.live ? "camera_unavailable" : "board_offline");
+  if (!r.sensor) return t("here_max", { n: r.people, cap: r.capacity });
+  return r.booked ? t("booked_for_seen", { b: r.booked, seen: seenText(r) }) : t("seen_max", { seen: seenText(r), cap: r.capacity });
 }
 
 function sensorCheck(r) {
   if (!r.sensor || !r.booked) return "";
   const match = r.counted ? r.present >= r.booked : r.present > 0;
   return `<div class="sensor-check ${r.present === 0 ? "empty" : match ? "ok" : "fewer"}">
-    <span>📋 Booked for <b>${r.booked}</b></span><span>👀 Sensor: <b>${esc(seenText(r))}</b></span></div>`;
+    <span>${t("booked_for_b", { b: r.booked })}</span><span>${t("sensor_b", { s: esc(seenText(r)) })}</span></div>`;
 }
 
 function renderDates() {
   const today = new Date();
   const days = Array.from({ length: HORIZON_DAYS + 1 }, (_, i) => {
     const d = new Date(today.getFullYear(), today.getMonth(), today.getDate() + i);
-    return { key: dateKey(d), top: i === 0 ? "Today" : d.toLocaleDateString("en-GB", { weekday: "short" }), day: d.getDate() };
+    return { key: dateKey(d), top: i === 0 ? t("today") : d.toLocaleDateString(locale, { weekday: "short" }), day: d.getDate() };
   });
   $("sh-dates").innerHTML = days.map((d) => `<button type="button" class="date ${d.key === state.sheet.date ? "active" : ""}" data-date="${d.key}">
     <small>${d.top}</small><b>${d.day}</b></button>`).join("");
@@ -479,17 +485,17 @@ function renderSlots(popIndex) {
   const end = sh.start === null ? -1 : sh.start + sh.hours * 2;
   const past = sh.slots.filter((s) => s.status === "past").length;
   const note = past === sh.slots.length
-    ? `<p class="muted small" style="grid-column:1/-1">This day is over. Pick another one.</p>`
-    : past ? `<p class="muted small" style="grid-column:1/-1;margin:0 0 4px">Earlier slots today are over.</p>` : "";
+    ? `<p class="muted small" style="grid-column:1/-1">${t("day_over")}</p>`
+    : past ? `<p class="muted small" style="grid-column:1/-1;margin:0 0 4px">${t("earlier_over")}</p>` : "";
   $("sh-slots").innerHTML = note + sh.slots.map((s, i) => {
     if (s.status === "past") return "";
     const busy = busySlot(i);
     const inRange = i >= sh.start && i < end;
     let cls = s.status;
-    let note = s.status === "free" ? "free" : s.status === "partial" ? `${s.seats_free} left` : s.status;
+    let note = s.status === "partial" ? t("s_left", { n: s.seats_free }) : t(`s_${s.status}`);
     if (busy) {
       cls = "mine";
-      note = busy.room_id === sh.roomId ? "yours" : "booked";
+      note = t(busy.room_id === sh.roomId ? "s_yours" : "s_booked");
     }
     return `<button type="button" class="slot ${cls} ${inRange ? "in-range" : ""} ${i === sh.start ? "start" : ""} ${i === popIndex ? "just-picked" : ""}"
       data-slot="${i}" ${selectable(i) ? "" : "disabled"} title="${s.start}–${s.end}">${s.start}<small>${esc(note)}</small></button>`;
@@ -503,7 +509,7 @@ function renderForm() {
   const left = dayLeft();
   const when = r.length
     ? `<div class="when set"><b>${r[0].start} – ${r[r.length - 1].end}</b><span class="muted small">${esc(dayLabel(sh.date, true))} · ${hoursText(sh.hours)}</span></div>`
-    : `<div class="when"><b>Pick a time</b><span class="muted small">${left >= 0.5 ? "Tap a free time slot to start" : "You've used your 4 h on this day. Try another day."}</span></div>`;
+    : `<div class="when"><b>${t("pick_time")}</b><span class="muted small">${t(left >= 0.5 ? "tap_free_slot" : "used_4h")}</span></div>`;
   const durations = [0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4].map((h) => `<button type="button" class="chip ${sh.start !== null && h === sh.hours ? "active" : ""}"
     data-hours="${h}" ${sh.start === null || h > maxHours(sh.start) ? "disabled" : ""}>${h === 0.5 ? "30m" : `${h}h`}</button>`).join("");
   const thisHours = r.length ? sh.hours : 0;
@@ -512,40 +518,39 @@ function renderForm() {
     return `<button type="button" class="purpose ${sh.purpose === p.id ? "active" : ""}" data-purpose="${p.id}"
       ${blocked ? `disabled title="${esc(blocked)}"` : ""}><span class="emoji">${p.emoji}</span>${p.label}</button>`;
   }).join("");
-  const seatHint = sh.mode === "full" ? `Up to ${maxSeats}, the room's limit`
-    : `Up to ${maxSeats} · seats still free at that time`;
+  const seatHint = t(sh.mode === "full" ? "seats_full" : "seats_share", { n: maxSeats });
   const alert = sh.error
-    ? `<div class="alert" role="alert">${esc(sh.error)}${sh.suggestions.length ? `<div class="suggest"><span class="small" style="width:100%">Try one of these instead:</span>
+    ? `<div class="alert" role="alert">${esc(sh.error)}${sh.suggestions.length ? `<div class="suggest"><span class="small" style="width:100%">${t("try_instead")}</span>
         ${sh.suggestions.map((id) => `<button type="button" class="btn btn-sm" data-suggest="${esc(id)}">${esc(id)} <span class="muted">${esc(roomName(id))}</span></button>`).join("")}</div>` : ""}</div>`
     : "";
 
   $("sh-form").innerHTML = `
-    <div class="block"><span class="field-label">When</span>${when}</div>
-    <div class="block"><span class="field-label">How long</span><div class="durations">${durations}</div></div>
+    <div class="block"><span class="field-label">${t("when")}</span>${when}</div>
+    <div class="block"><span class="field-label">${t("how_long")}</span><div class="durations">${durations}</div></div>
     <div class="block day-limit">
-      <div class="row"><span class="muted">Your hours on ${esc(dayLabel(sh.date, true))}</span><b>${usedHours(sh.date) + thisHours} / ${DAY_LIMIT} h</b></div>
+      <div class="row"><span class="muted">${esc(t("your_hours_on", { day: dayLabel(sh.date, true) }))}</span><b>${usedHours(sh.date) + thisHours} / ${DAY_LIMIT} h</b></div>
       <div class="bar"><i style="width:${((usedHours(sh.date) + thisHours) / DAY_LIMIT) * 100}%"></i></div>
     </div>
-    <div class="block"><span class="field-label">Who can join?</span>
+    <div class="block"><span class="field-label">${t("who_join")}</span>
       <div class="modes">
         <button type="button" class="mode ${sh.mode === "full" ? "active" : ""}" data-mode="full" ${r.length && !canFull ? "disabled" : ""}>
-          <span class="emoji">🔒</span><b>Private room</b><span>Only you and your group.</span></button>
+          <span class="emoji">🔒</span><b>${t("private_room")}</b><span>${t("private_room_sub")}</span></button>
         <button type="button" class="mode ${sh.mode === "partial" ? "active" : ""}" data-mode="partial">
-          <span class="emoji">👥</span><b>Open to share</b><span>Others can join until it's full.</span></button>
+          <span class="emoji">👥</span><b>${t("open_share")}</b><span>${t("open_share_sub")}</span></button>
       </div>
-      ${r.length && !canFull ? `<p class="hint">Someone already booked part of this time, so you can only share it.</p>` : ""}
+      ${r.length && !canFull ? `<p class="hint">${t("only_share")}</p>` : ""}
     </div>
     <div class="block people-row">
-      <div><span class="field-label" style="margin:0">How many people?</span><span class="hint" style="margin:0">${esc(seatHint)}</span></div>
-      <div class="stepper"><button type="button" data-seats="-1" ${sh.seats <= 1 ? "disabled" : ""} aria-label="Fewer">−</button>
-        <output>${sh.seats}</output><button type="button" data-seats="1" ${sh.seats >= maxSeats ? "disabled" : ""} aria-label="More">+</button></div>
+      <div><span class="field-label" style="margin:0">${t("how_many")}</span><span class="hint" style="margin:0">${esc(seatHint)}</span></div>
+      <div class="stepper"><button type="button" data-seats="-1" ${sh.seats <= 1 ? "disabled" : ""} aria-label="${t("fewer")}">−</button>
+        <output>${sh.seats}</output><button type="button" data-seats="1" ${sh.seats >= maxSeats ? "disabled" : ""} aria-label="${t("more")}">+</button></div>
     </div>
-    <div class="block"><span class="field-label">What for?</span><div class="purposes">${purposes}</div>
-      ${sh.purpose === "custom" ? `<input class="text-input" id="custom" style="margin-top:8px" maxlength="80" placeholder="Describe it, e.g. Thesis writing" value="${esc(sh.custom)}">` : ""}
+    <div class="block"><span class="field-label">${t("what_for")}</span><div class="purposes">${purposes}</div>
+      ${sh.purpose === "custom" ? `<input class="text-input" id="custom" style="margin-top:8px" maxlength="80" placeholder="${esc(t("custom_ph"))}" value="${esc(sh.custom)}">` : ""}
     </div>
     ${alert ? `<div class="block">${alert}</div>` : ""}
     <div class="block"><button type="button" class="btn btn-primary btn-lg" data-action="book" ${canBook() ? "" : "disabled"}>
-      ${sh.busy ? "Booking…" : r.length ? `Book ${r[0].start}–${r[r.length - 1].end}` : "Book"}</button></div>`;
+      ${sh.busy ? t("booking_busy") : r.length ? t("book_range", { a: r[0].start, b: r[r.length - 1].end }) : t("book")}</button></div>`;
 }
 
 function canBook() {
@@ -563,7 +568,7 @@ function onSlot(i) {
   const sh = state.sheet;
   sh.error = null;
   if (dayLeft() < 0.5) {
-    sh.error = `You've already booked ${DAY_LIMIT} h on ${dayLabel(sh.date)}. Pick another day.`;
+    sh.error = t("limit_reached", { limit: DAY_LIMIT, day: dayLabel(sh.date) });
     return update();
   }
   const end = sh.start === null ? -1 : sh.start + maxHours(sh.start) * 2;
@@ -590,7 +595,7 @@ async function submitBooking(btn) {
       purpose: sh.purpose, custom_purpose: sh.purpose === "custom" ? sh.custom.trim() : null,
     });
     confetti(btn);
-    toast(`Booked ${b.room_id}, ${dayLabel(sh.date)} ${hm(b.start)}–${hm(b.end)} 🎉`, { action: { label: "My bookings", run: openDrawer } });
+    toast(t("booked_toast", { room: b.room_id, day: dayLabel(sh.date), a: hm(b.start), b: hm(b.end) }), { action: { label: t("my_bookings"), run: openDrawer } });
     closeSheet();
     refreshMine();
     refreshRooms();
@@ -616,6 +621,7 @@ function wireSheet() {
     const t = e.target.closest("button");
     if (!t || t.disabled) return;
     if (t.dataset.action === "close") return closeSheet();
+    if (t.dataset.action === "share") return copyRoomLink(sh.roomId);
     if (t.dataset.date) {
       sh.date = t.dataset.date;
       sh.start = null;
@@ -669,8 +675,8 @@ function renderSuggestions(q) {
   list.innerHTML = search.results.length
     ? search.results.map((r, i) => `<li role="option" id="sug-${i}" data-room="${esc(r.id)}" aria-selected="${i === search.active}">
         <span class="sug-id">${highlight(r.id, q)}</span><span class="sug-name">${highlight(r.name, q)}</span>
-        <span class="pill ${esc(r.status)}">${r.status === "closed" ? "Closed" : `${r.seats_free} free`}</span></li>`).join("")
-    : `<li class="sug-empty">No room matches “${esc(q)}”</li>`;
+        <span class="pill ${esc(r.status)}">${r.status === "closed" ? t("st_closed") : t("n_free", { n: r.seats_free })}</span></li>`).join("")
+    : `<li class="sug-empty">${t("no_match", { q: esc(q) })}</li>`;
   list.classList.remove("hidden");
   $("search-input").setAttribute("aria-expanded", "true");
   $("search-input").setAttribute("aria-activedescendant", search.active >= 0 ? `sug-${search.active}` : "");
@@ -716,7 +722,7 @@ function wireSearch() {
     else if (e.key === "Enter") {
       e.preventDefault();
       if (open && search.results[search.active]) pick(search.results[search.active].id);
-      else if (input.value.trim()) api.search(input.value.trim(), 1).then((r) => (r[0] ? pick(r[0].id) : toast("No room found", { error: true })));
+      else if (input.value.trim()) api.search(input.value.trim(), 1).then((r) => (r[0] ? pick(r[0].id) : toast(t("no_room"), { error: true })));
     } else if (e.key === "Escape") { closeSuggestions(); input.blur(); }
   });
   input.addEventListener("focus", () => { if (input.value.trim() && search.results.length) renderSuggestions(input.value.trim()); });
@@ -788,6 +794,7 @@ function wirePage() {
     if (t.dataset.action === "cancel") return cancelBooking(t);
     if (t.dataset.action === "rate") return rateRoom(t);
     if (t.dataset.action === "find") { closeDrawer(); setTimeout(() => $("search-input").focus(), 220); return; }
+    if (t.dataset.action === "ics") return downloadIcs(state.mine.find((x) => x.id === Number(t.dataset.id)));
     if (t.dataset.action === "add") {
       const b = state.mine.find((x) => x.id === Number(t.dataset.id));
       closeDrawer();
@@ -796,7 +803,53 @@ function wirePage() {
   });
 }
 
+// ---------- Share link, calendar file, shortcuts ----------
+
+async function copyRoomLink(id) {
+  const url = `${location.origin}${location.pathname}?room=${encodeURIComponent(id)}`;
+  try {
+    await navigator.clipboard.writeText(url);
+    toast(t("link_copied"));
+  } catch {
+    prompt(t("copy_link"), url);   // clipboard blocked (http, old browser): let the user copy it
+  }
+}
+
+// One booking as an .ics file (local time), so it can be added to any calendar app.
+function downloadIcs(b) {
+  if (!b) return;
+  const stamp = (iso) => iso.replace(/[-:]/g, "").slice(0, 15) + (iso.length <= 16 ? "00" : "");
+  const room = `${b.room_id} ${roomName(b.room_id)}`.trim();
+  const ics = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//Room V//AAU//EN", "BEGIN:VEVENT",
+    `UID:roomv-${b.id}@aau`, `DTSTAMP:${new Date().toISOString().replace(/[-:]/g, "").slice(0, 15)}Z`,
+    `DTSTART:${stamp(b.start)}`, `DTEND:${stamp(b.end)}`, `SUMMARY:${purposeText(b)} · ${room}`,
+    `LOCATION:${room}, Universität Klagenfurt`, "END:VEVENT", "END:VCALENDAR"].join("\r\n");
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([ics], { type: "text/calendar" }));
+  a.download = `room-v-${b.room_id}-${b.start.slice(0, 10)}.ics`;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+
+function wireHelp() {
+  const help = $("help-dialog");
+  help.addEventListener("click", (e) => { if (e.target === help || e.target.closest("[data-close]")) help.close(); });
+  $("footer").addEventListener("click", (e) => { if (e.target.closest('[data-action="shortcuts"]')) help.showModal(); });
+  document.addEventListener("keydown", (e) => {
+    const typing = ["INPUT", "TEXTAREA"].includes(document.activeElement?.tagName);
+    if (typing || e.ctrlKey || e.metaKey || e.altKey) return;
+    if (e.key === "?") { e.preventDefault(); help.open ? help.close() : help.showModal(); }
+    else if ((e.key === "l" || e.key === "L") && !document.querySelector("dialog[open]")) setLang(lang === "de" ? "en" : "de");
+  });
+}
+
 async function main() {
+  document.title = t("title_app");
+  applyStatic();
+  langSwitch($("top-lang"));
+  langSwitch($("menu-lang"));
+  renderFooter($("footer"));
+  wireHelp();
   try {
     state.user = await api.me();
   } catch (err) {
@@ -816,6 +869,9 @@ async function main() {
   });
   await Promise.all([refreshRooms(), refreshMine()]);
   await createView();
+  // Shared link: ?room=Z.1.04 opens that room right away.
+  const wanted = new URLSearchParams(location.search).get("room");
+  if (wanted && state.rooms.some((r) => r.id === wanted)) openRoom(wanted);
   // Refresh just the visible sensor panel between full campus polls.
   let sensorPending = false;
   setInterval(async () => {

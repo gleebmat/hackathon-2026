@@ -396,12 +396,14 @@ export function createBuilding(el, input, opts = {}) {
     onRoomClick(cb) { clickCb = cb; },
     onRoomHover(cb) { hoverCb = cb; },
   };
-  if (opts.controls !== false) mountControls(el, api);
+  if (opts.controls !== false) mountControls(el, api, opts.labels);
   return api;
 }
 
 // Built-in building / floor selector, so any page that embeds the map can switch floors without its own UI.
-function mountControls(el, api) {
+function mountControls(el, api, labels = {}) {
+  const L = { all: "All", allBuildings: "All buildings", allFloors: "All floors", everyFloor: "Show every floor",
+    floor: "Floor {n}", floorTitle: "Floor {n} (floors above are hidden)", ...labels };
   if (getComputedStyle(el).position === "static") el.style.position = "relative";
   const box = document.createElement("div");
   box.style.cssText = "position:absolute;left:12px;bottom:12px;display:flex;flex-direction:column;gap:6px;" +
@@ -427,15 +429,15 @@ function mountControls(el, api) {
   };
   const render = () => {
     bRow.replaceChildren(); fRow.replaceChildren();
-    button(bRow, "All", building === null, "All buildings", () => { building = api.setBuilding(null); floor = null; render(); });
+    button(bRow, L.all, building === null, L.allBuildings, () => { building = api.setBuilding(null); floor = null; render(); });
     for (const b of api.buildings()) {
       button(bRow, b.id, building === b.id, b.name, () => { building = api.setBuilding(b.id); floor = null; render(); });
     }
     const floors = [...new Set(api.buildings().filter((b) => !building || b.id === building).flatMap((b) => b.floors))]
       .sort((a, b) => b - a);
-    button(fRow, "All floors", floor === null, "Show every floor", () => { floor = null; api.setFloor(null); render(); });
+    button(fRow, L.allFloors, floor === null, L.everyFloor, () => { floor = null; api.setFloor(null); render(); });
     for (const f of floors) {
-      button(fRow, `Floor ${f}`, floor === f, `Floor ${f} (floors above are hidden)`, () => { floor = f; api.setFloor(f); render(); });
+      button(fRow, L.floor.replace("{n}", f), floor === f, L.floorTitle.replace("{n}", f), () => { floor = f; api.setFloor(f); render(); });
     }
   };
   // keep the selector in sync when the page calls the API directly

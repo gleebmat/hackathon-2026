@@ -3,6 +3,7 @@
 // with one, it shows the exact status for that range. Data: /api/rooms (live state) and
 // /api/rooms/{id}/availability (30-min slots), per docs/PLAN.md.
 import * as api from "./api.js";
+import { t, locale, people } from "./i18n.js";
 
 const OPEN_HOUR = 0;
 const SLOTS = 48;
@@ -23,11 +24,9 @@ function currentSlot() {
 }
 
 function dayName(key) {
-  if (key === todayKey()) return "today";
-  return new Date(`${key}T12:00`).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" });
+  if (key === todayKey()) return t("today_lower");
+  return new Date(`${key}T12:00`).toLocaleDateString(locale, { weekday: "short", day: "numeric", month: "short" });
 }
-
-const capital = (s) => s[0].toUpperCase() + s.slice(1);
 
 export function createPicker(root, { onOpen, onError }) {
   const $ = (sel) => root.querySelector(sel);
@@ -52,21 +51,21 @@ export function createPicker(root, { onOpen, onError }) {
 
   function expected(slots) {
     const worst = slots.map((s) => s.noise).filter(Boolean).sort((a, b) => NOISE.indexOf(b) - NOISE.indexOf(a))[0];
-    return { cls: worst || "quiet", text: `${capital(worst || "quiet")} expected` };
+    return { cls: worst || "quiet", text: t(`exp_${worst || "quiet"}`) };
   }
 
   function cardState(room) {
     const slots = state.slots[room.id];
-    if (room.status === "closed" || !slots) return { kind: "closed", main: "Closed", sub: `Closed ${dayName(state.date)}`, noise: null };
+    if (room.status === "closed" || !slots) return { kind: "closed", main: t("st_closed"), sub: t("closed_on", { day: dayName(state.date) }), noise: null };
     const isToday = state.date === todayKey();
-    const live = { cls: room.noise_class, text: `${Math.round(room.noise_db)} dB now`, live: room.live };
+    const live = { cls: room.noise_class, text: t("db_now", { n: Math.round(room.noise_db) }), live: room.live };
 
     if (state.start === null) {
       const open = slots.filter((s) => s.status === "free" || s.status === "partial");
       const hours = open.length / 2;
       const noise = isToday ? live : expected(open);
-      if (!hours) return { kind: "full", main: "Booked out", sub: `No free time left ${dayName(state.date)}`, noise, hours };
-      return { kind: "free", main: isToday ? "Free time today" : "Free time", sub: `${hours} h still bookable`, noise, hours };
+      if (!hours) return { kind: "full", main: t("booked_out"), sub: t("no_time_left", { day: dayName(state.date) }), noise, hours };
+      return { kind: "free", main: t(isToday ? "free_today" : "free_time"), sub: t("h_bookable", { h: hours }), noise, hours };
     }
 
     const range = slots.slice(state.start, state.start + state.hours * 2);
@@ -74,14 +73,14 @@ export function createPicker(root, { onOpen, onError }) {
     const includesNow = isToday && state.start <= now && now < state.start + state.hours * 2;
     const noise = includesNow ? live : expected(range);
     if (range.length < state.hours * 2 || range.some((s) => !["free", "partial"].includes(s.status))) {
-      return { kind: "full", main: "Not available", sub: rangeText(), noise };
+      return { kind: "full", main: t("not_available"), sub: rangeText(), noise };
     }
     const left = Math.min(...range.map((s) => s.seats_free));
-    const people = room.capacity - left;
-    if (people > 0) {
-      return { kind: "partial", main: `Shared · ${people} ${people === 1 ? "person" : "people"}`, sub: `${left} seats left`, noise, people };
+    const taken = room.capacity - left;
+    if (taken > 0) {
+      return { kind: "partial", main: t("shared_n", { who: people(taken) }), sub: t("seats_left", { n: left }), noise, people: taken };
     }
-    return { kind: "free", main: "Free", sub: `All ${room.capacity} seats`, noise };
+    return { kind: "free", main: t("st_free"), sub: t("all_seats", { n: room.capacity }), noise };
   }
 
   function sortedCards() {
@@ -97,12 +96,12 @@ export function createPicker(root, { onOpen, onError }) {
 
   function cardHtml({ room, st }) {
     const rating = room.rating != null
-      ? `<div class="line"><span>Rating</span><span class="stars"><s style="--p:${(room.rating / 5) * 100}%">★★★★★</s>${room.rating.toFixed(1)}${room.votes ? ` <small>(${room.votes})</small>` : ""}</span></div>`
+      ? `<div class="line"><span>${t("rating")}</span><span class="stars"><s style="--p:${(room.rating / 5) * 100}%">★★★★★</s>${room.rating.toFixed(1)}${room.votes ? ` <small>(${room.votes})</small>` : ""}</span></div>`
       : "";
     const noise = st.noise
-      ? `<div class="line"><span>Noise</span><span class="noise ${esc(st.noise.cls)}"><span class="bars"><b></b><b></b><b></b></span>${esc(st.noise.text)}${st.noise.live ? ` <em class="live">LIVE</em>` : ""}</span></div>`
+      ? `<div class="line"><span>${t("noise")}</span><span class="noise ${esc(st.noise.cls)}"><span class="bars"><b></b><b></b><b></b></span>${esc(st.noise.text)}${st.noise.live ? ` <em class="live">LIVE</em>` : ""}</span></div>`
       : "";
-    const action = st.kind === "closed" ? "" : `<span class="book">${st.kind === "full" ? "See other times" : "Book"}</span>`;
+    const action = st.kind === "closed" ? "" : `<span class="book">${st.kind === "full" ? t("other_times") : t("book")}</span>`;
     return `<button type="button" class="pick ${st.kind === "full" || st.kind === "closed" ? "dim" : ""}" data-room="${esc(room.id)}">
       <div class="pick-top"><div class="pick-id">${esc(room.id)}</div><div class="pick-name">${esc(room.name)}</div></div>
       <div class="pick-status"><div class="st-main ${st.kind}"><i></i>${esc(st.main)}</div><div class="st-sub">${esc(st.sub)}</div></div>
@@ -162,9 +161,10 @@ export function createPicker(root, { onOpen, onError }) {
 
   function renderHeading() {
     const day = dayName(state.date);
+    const today = state.date === todayKey();
     $(".picker-title").textContent = state.start === null
-      ? (state.date === todayKey() ? "Rooms today" : `Rooms on ${day}`)
-      : `Rooms ${state.date === todayKey() ? "today" : `on ${day}`}, ${rangeText()}`;
+      ? (today ? t("rooms_today") : t("rooms_on", { day }))
+      : t(today ? "rooms_today_range" : "rooms_on_range", { day, range: rangeText() });
   }
 
   // ---------- Calendar (always visible, between the map and the cards) ----------
@@ -192,12 +192,12 @@ export function createPicker(root, { onOpen, onError }) {
     today.setHours(0, 0, 0, 0);
     const last = new Date(today);
     last.setDate(last.getDate() + HORIZON_DAYS);
-    $(".m-title").textContent = m.toLocaleDateString("en-GB", { month: "long", year: "numeric" });
+    $(".m-title").textContent = m.toLocaleDateString(locale, { month: "long", year: "numeric" });
     $(".m-prev").disabled = m <= new Date(today.getFullYear(), today.getMonth(), 1);
     $(".m-next").disabled = new Date(m.getFullYear(), m.getMonth() + 1, 1) > last;
     const lead = (new Date(m.getFullYear(), m.getMonth(), 1).getDay() + 6) % 7;
     const days = new Date(m.getFullYear(), m.getMonth() + 1, 0).getDate();
-    let html = ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"].map((x) => `<span class="dow">${x}</span>`).join("") + "<span></span>".repeat(lead);
+    let html = t("weekdays").split(",").map((x) => `<span class="dow">${x}</span>`).join("") + "<span></span>".repeat(lead);
     for (let i = 1; i <= days; i++) {
       const dt = new Date(m.getFullYear(), m.getMonth(), i);
       const key = dateKey(dt);
@@ -211,7 +211,7 @@ export function createPicker(root, { onOpen, onError }) {
     const shown = any ? defaultStart(state.date) : state.start;
     $(".anytime").classList.toggle("on", any);
     $(".cal-time").classList.toggle("is-any", any);
-    $(".t-out").textContent = dayOver ? "closed" : slotTime(Math.min(shown, SLOTS - 1));
+    $(".t-out").textContent = dayOver ? t("t_closed") : slotTime(Math.min(shown, SLOTS - 1));
     $(".t-dn").disabled = dayOver || (!any && state.start <= minStart(state.date));
     $(".t-up").disabled = dayOver || (!any && state.start >= SLOTS - 1);
     $(".durs").innerHTML = DURATIONS.map((h) => `<button type="button" class="${!any && h === state.hours ? "on" : ""}" data-h="${h}"
