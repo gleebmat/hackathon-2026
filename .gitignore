@@ -44,3 +44,6 @@ graphify-out/.graphify_*
 *.db
 *.db-wal
 *.db-shm
+
+# Camera frame key (tools/make_frame_key.py)
+firmware/xiao_sense/frame_key.h

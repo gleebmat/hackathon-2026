@@ -4,6 +4,7 @@ Booking times are campus-time strings 'YYYY-MM-DDTHH:MM' (fixed width, so they c
 Sensor times are compared as datetimes.
 """
 
+import math
 import os
 import random
 import sqlite3
@@ -19,7 +20,8 @@ GHOST_AFTER = (timedelta(seconds=int(os.environ["GHOST_RELEASE_SECONDS"]))
                if "GHOST_RELEASE_SECONDS" in os.environ
                else timedelta(minutes=int(os.environ.get("GHOST_RELEASE_MIN", "10"))))
 GHOST_GRACE = timedelta(seconds=int(os.environ.get("GHOST_GRACE_SECONDS", "60")))
-BOARD_STALE = timedelta(seconds=10)
+BOARD_STALE = timedelta(seconds=10)   # board readings older than this are not used (ghost timers survive short gaps)
+LIVE_STALE = timedelta(seconds=3)     # the board sends every ~0.6 s: 3 s without a reading = shown as offline
 SENSOR_STALE = timedelta(minutes=2)
 
 PURPOSE_CLASS = {
@@ -82,7 +84,8 @@ def sensor(conn: sqlite3.Connection, room_id: str, now: datetime) -> dict:
     """Fresh sensor values for a room: noise_db, people and empty_since are None when unknown or stale."""
     row = conn.execute("SELECT * FROM readings WHERE room_id = ?", (room_id,)).fetchone()
     cutoff = now - (BOARD_STALE if room_id == BOARD_ROOM else SENSOR_STALE)
-    out = {"noise_db": None, "people": None, "empty_since": None, "left_items": None, "counted": None, "people_at": None}
+    out = {"noise_db": None, "people": None, "empty_since": None, "left_items": None, "counted": None, "people_at": None,
+           "heard_at": max((parse(row[k]) for k in ("noise_at", "people_at") if row and row[k]), default=None)}
     if row and row["noise_at"] and parse(row["noise_at"]) >= cutoff:
         out["noise_db"] = row["noise_db"]
     if row and row["people_at"] and parse(row["people_at"]) >= cutoff:
@@ -132,23 +135,25 @@ def simulating() -> bool:
 
 
 def simulated(room: sqlite3.Row, current: list[sqlite3.Row], now: datetime) -> tuple[float, int]:
-    """Noise and people for a room without a sensor. Random but the same for every viewer: noise changes every
-    minute, walk-ins every 10 minutes. Booked rooms hold their booked people (or one fewer); about one free room
-    in twelve has one or two walk-ins."""
+    """Noise and people for a room without a sensor. Random but the same for every viewer: noise drifts smoothly
+    (a slow wave plus a small jump every 5 s), people in booked rooms change every minute, walk-ins every 5 minutes.
+    Booked rooms hold their booked people (or one fewer); about one free room in eight has one to three walk-ins."""
     booked = sum(b["seats"] for b in current)
     cls = loudest(current)
     if not simulating():
         return SIMULATED_DB[cls], booked
     rnd = random.Random(f"{room['id']}|{now:%Y-%m-%dT%H:%M}")
-    walk_ins = random.Random(f"{room['id']}|{now:%Y-%m-%dT%H}|{now.minute // 10}")
+    walk_ins = random.Random(f"{room['id']}|{now:%Y-%m-%dT%H}|{now.minute // 5}")
     if room["closed"]:
         people = 0
     elif current:
         people = max(1, booked - rnd.randint(0, 1))
     else:
-        people = walk_ins.choice([1, 2]) if walk_ins.random() < 1 / 12 else 0
+        people = walk_ins.choice([1, 1, 2, 3]) if walk_ins.random() < 1 / 8 else 0
     base = SIMULATED_DB[cls] if cls else SIMULATED_DB[None] + 3 * people
-    noise = base + rnd.uniform(-3, 3)
+    t = now.timestamp()
+    wave = 2.5 * math.sin(t / 40 + random.Random(room["id"]).uniform(0, 2 * math.pi))
+    noise = base + wave + random.Random(f"{room['id']}|{int(t // 5)}").uniform(-1.5, 1.5)
     if cls in (None, "quiet"):
         noise = min(noise, 39.0)  # stays "quiet", so quiet study is never refused by chance
     return round(noise, 1), people
@@ -166,7 +171,7 @@ def room_state(conn: sqlite3.Connection, room: sqlite3.Row, now: datetime) -> di
     booked = sum(b["seats"] for b in current)
     people = seen["people"] if seen["people"] is not None else sim_people
     board = room["id"] == BOARD_ROOM
-    is_live = board and (seen["noise_db"] is not None or seen["people"] is not None)
+    is_live = board and seen["heard_at"] is not None and now - seen["heard_at"] <= LIVE_STALE
     exclusive = any(b["mode"] == "full" for b in current)
     seats_free = 0 if exclusive or room["closed"] else max(0, room["capacity"] - max(booked, people))
     deadlines = [d for d in (ghost_deadline(b, seen) for b in current) if d]
@@ -216,8 +221,8 @@ def room_problem(conn: sqlite3.Connection, room: sqlite3.Row, start: datetime, e
     t = start
     while t < end:
         used = sum(b["seats"] for b in others if b["start"] < fmt(t + SLOT) and b["end"] > fmt(t))
-        if state and t <= now < t + SLOT:
-            used = max(used, state["people"])
+        if state and mode == "partial" and t <= now < t + SLOT:
+            used = max(used, state["people"])   # walk-ins take seats; a whole-room booking just moves them out
         if used + seats > room["capacity"]:
             return f"Only {max(0, room['capacity'] - used)} seats free at {t:%H:%M}"
         t += SLOT

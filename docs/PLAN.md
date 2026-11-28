@@ -78,11 +78,7 @@ not work on arduino-esp32 3.x) and `PubSubClient`. The sketch publishes one read
 **Tested in Velxio with a webcam (28 Nov):**
 | Feature | How | Result |
 |---|---|---|
-| Presence | Arshia's 96x96 RGB int8 model on the board, present at once at 0.70+, else 2 of the last 3 frames at 0.60+ | in view 0.70-0.98, empty mostly 0.1-0.5; ~0.95 s per frame; 101 KB arena |
-| Noise | PDM mic RMS mapped to ~30-90 dB | 30-62 dB with the real mic (72 dB = Velxio's test tone when Mic is off) |
-| Ghost booking | presence -> backend ghost timer | marked after 5 s, released after 15 s with the demo timers |
-| Left items | Swift-YOLO COCO 320 detector (189 M MACs, 80 classes) on core 0 after people leave; counts bags, umbrellas, phones, bottles, cups, laptops, books | left = items now minus items before people came; ~70 s per check in Velxio (0.2 s on a real board). Switch: `FIND_ITEMS` |
-| People count | Swift-YOLO face detector 96x96 (22 M MACs) on core 0 while someone is present; `people` = max(faces, 1) | a few seconds per count in Velxio; needs faces towards the camera. Switch: `COUNT_PEOPLE` |
+| Presence + people count + left items | the board sends encrypted 320x240 JPEG frames (~0.6 s apart in Velxio) over MQTT; the backend runs YOLO11s at 640 (`app/vision.py`, ~150 ms) and smooths over 3 frames | steady count, ~1 s to the website; left items = forgettable things in view while nobody is there |
 
 **Left items (on the board).** No photo comparison any more (that version is the git tag `board-v1`). The COCO
 detector counts forgettable objects while the room is empty; the count before people came is the baseline, and after
@@ -142,7 +138,10 @@ can't take it). Times are campus time (Europe/Vienna) without a zone: `"2026-11-
 - Room `status` is `free`, `partial` (people there, seats left), `full`, `ghost` (booked, sensor sees 0 people) or
   `closed`. Rooms also carry `building` (`"Z"`), `board: true` on the board room, `live: true` while the board
   is sending, and `sensor: true` when a people count arrived in the last 2 min. Without a sensor, `noise_db` and
-  `people` are simulated (`SIMULATE=0` turns that off: then `people` is the booked seats).
+  `people` are simulated (`SIMULATE=0` turns that off: then `people` is the booked seats): noise drifts every few
+  seconds, walk-ins come and go every 5 minutes, and `app/campus_sim.py` books rooms as "Other students" every 2
+  minutes (about 45% of rooms in use during the day, 25% in the evening, 8% at night; never the board room;
+  `CAMPUS_SIM=0` turns only that off).
 - **Noise classes:** quiet below 40 dB, moderate from 40 to 60 dB, loud above 60 dB.
 - **Purpose → class:** quiet study is quiet; group study, meeting and custom are moderate; gaming, board games and
   event are loud.
