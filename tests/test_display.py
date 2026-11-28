@@ -1,3 +1,4 @@
+import base64
 from datetime import datetime, timedelta
 
 import pytest
@@ -12,7 +13,7 @@ TOKEN = {"X-Display-Token": display.TOKEN}
 
 @pytest.fixture(autouse=True)
 def clean_display():
-    for state in (display.sounds, display.selfies, display.frames, display.board_seen):
+    for state in (display.sounds, display.selfies, display.frames, display.board_seen, display.quiet_rooms):
         state.clear()
 
 
@@ -30,12 +31,13 @@ def test_display_state_and_booking_qr(app_env, monkeypatch):
     assert c.get(f"/api/display/{ROOM}").json()["booking_url"] == f"https://demo.trycloudflare.com/?room={ROOM}"
     qr = c.get(f"/api/display/{ROOM}/qr")
     assert qr.headers["content-type"].startswith("image/svg+xml") and qr.text.startswith("<svg")
+    assert 'xmlns="http://www.w3.org/2000/svg"' in qr.text                 # loads as an <img> too
     assert c.get("/api/display/X.9.99").status_code == 404
 
 
 def test_actions_need_the_display_token(app_env):
     for path, body in [("sound", {"kind": "rain"}), ("break", {"minutes": 10}), ("selfie", {}),
-                       ("emergency", {"confirm": True})]:
+                       ("emergency", {"confirm": True}), ("quiet", {"on": True})]:
         assert act(path, token={}, **body).status_code == 403
         assert act(path, token={"X-Display-Token": "guess"}, **body).status_code == 403
     assert act("break", method="delete", token={}).status_code == 403
@@ -90,6 +92,24 @@ def test_selfie_from_the_board_camera(app_env, time_now):
     time_now["t"] += timedelta(minutes=10)
     assert c.get(path).status_code == 404                               # gone after 10 minutes
     assert c.get("/api/selfies/nope").status_code == 404
+
+
+def test_selfie_from_the_display_webcam(app_env):
+    photo = b"\xff\xd8webcam"
+    r = act("selfie", image=base64.b64encode(photo).decode()).json()   # works without a live board camera
+    got = TestClient(main.app).get(r["url"].removeprefix("http://testserver"))
+    assert got.content == photo
+    assert act("selfie", image="not base64!").status_code == 400
+    assert act("selfie", image=base64.b64encode(b"GIF89a").decode()).status_code == 400
+
+
+def test_quiet_room(app_env):
+    c = TestClient(main.app)
+    assert c.get(f"/api/display/{ROOM}").json()["quiet"] is False and room(c, ROOM)["quiet"] is False
+    assert act("quiet", on=True).json() == {"room_id": ROOM, "on": True}
+    assert c.get(f"/api/display/{ROOM}").json()["quiet"] is True and room(c, ROOM)["quiet"] is True
+    act("quiet", on=False)
+    assert room(c, ROOM)["quiet"] is False
 
 
 def test_emergency(app_env):

@@ -1,5 +1,7 @@
 """Campus room booking API. Run: uvicorn app.main:app --reload"""
 
+import base64
+import binascii
 import os
 import secrets
 import sqlite3
@@ -326,7 +328,7 @@ def display_state(room_id: str, request: Request, conn: Conn):
     return {"room_id": room_id, "label": state["label"], "name": state["name"], "status": state["status"],
             "people": state["people"], "noise_db": state["noise_db"], "board_online": display.online(room_id),
             "bookings_now": state["bookings_now"], "break_until": state["break_until"],
-            "sound": display.sound(room_id), "sounds": list(display.SOUNDS),
+            "sound": display.sound(room_id), "sounds": list(display.SOUNDS), "quiet": display.quiet(room_id),
             "emergency": emergency_out(emergency) if emergency else None,
             "booking_url": booking_link(request, room_id)}
 
@@ -348,6 +350,17 @@ class SoundRequest(BaseModel):
 def display_sound(room_id: str, body: SoundRequest, conn: Conn, token: DisplayToken = None):
     display_room(conn, room_id, token)
     return display.set_sound(room_id, body.kind, body.volume)
+
+
+class QuietRequest(BaseModel):
+    on: bool
+
+
+@app.post("/api/display/{room_id}/quiet")
+def display_quiet(room_id: str, body: QuietRequest, conn: Conn, token: DisplayToken = None):
+    """Quiet room (do not disturb): the website shows the room as silent study only."""
+    display_room(conn, room_id, token)
+    return {"room_id": room_id, "on": display.set_quiet(room_id, body.on)}
 
 
 class BreakRequest(BaseModel):
@@ -376,11 +389,25 @@ def display_break_end(room_id: str, conn: Conn, token: DisplayToken = None):
     return {"room_id": room_id, "break_until": None}
 
 
+class SelfieRequest(BaseModel):
+    image: str | None = Field(None, max_length=3_000_000)   # base64 JPEG from the display's webcam
+
+
 @app.post("/api/display/{room_id}/selfie")
-def display_selfie(room_id: str, request: Request, conn: Conn, token: DisplayToken = None):
-    """The board camera's newest frame as a selfie: a QR code to download it, gone after 10 minutes."""
+def display_selfie(room_id: str, request: Request, conn: Conn, body: SelfieRequest | None = None,
+                   token: DisplayToken = None):
+    """A selfie with a QR code to download it, gone after 10 minutes: the photo the display took with its webcam,
+    or else the board camera's newest frame."""
     display_room(conn, room_id, token)
-    taken = display.take_selfie(room_id, clock.now())
+    photo = None
+    if body and body.image:
+        try:
+            photo = base64.b64decode(body.image, validate=True)
+        except binascii.Error:
+            raise ApiError(400, "The photo isn't valid base64")
+        if not photo.startswith(b"\xff\xd8"):
+            raise ApiError(400, "The photo must be a JPEG")
+    taken = display.take_selfie(room_id, clock.now(), photo)
     if taken is None:
         raise ApiError(409, "The camera isn't live right now")
     url = f"{display.public_url(str(request.base_url))}/api/selfies/{taken[0]}"

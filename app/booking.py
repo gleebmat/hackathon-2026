@@ -236,6 +236,7 @@ def room_state(conn: sqlite3.Connection, room: sqlite3.Row, now: datetime) -> di
             "ghost_release_at": min(deadlines).isoformat() if deadlines else None,
             # room display (app/display.py): a running break, the playing soundscape and an open emergency
             "break_until": max(breaks) if breaks else None, "sound": display.sound(room["id"])["kind"],
+            "quiet": display.quiet(room["id"]),
             "emergency": emergency,
             "bookings_now": [{"id": b["id"], "mode": b["mode"], "purpose": b["purpose"], "seats": b["seats"],
                               "end": b["end"], "shareable": b["mode"] == "partial"} for b in current]}

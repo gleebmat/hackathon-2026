@@ -5,8 +5,8 @@ online the backend opens a chromeless Edge/Chrome window (~480x320, like the Inf
 closes it again when the board goes offline. The page (frontend) calls /api/display/<room>/... with the token from its
 URL: book-a-room QR, soundscapes, selfie QR, emergency and take-a-break.
 
-State kept here, in memory: the playing soundscape per room, selfies (10 minutes, never written to disk), and when
-each display board was last heard. Breaks and emergencies are in the database (app/db.py).
+State kept here, in memory: the playing soundscape and quiet-room switch per room, selfies (10 minutes, never written to
+disk), and when each display board was last heard. Breaks and emergencies are in the database (app/db.py).
 """
 
 import logging
@@ -30,11 +30,12 @@ SOUNDS = ("off", "rain", "ocean", "forest", "cafe", "white", "pink", "brown")
 SELFIE_TTL = timedelta(minutes=10)
 CAMERA_FRESH = 3.0          # seconds: a selfie needs a camera frame at most this old
 OFFLINE_AFTER = 10.0        # seconds without a reading before the display window closes
-WINDOW_SIZE = (480, 360)    # 480x320 screen plus the title bar
+WINDOW_SIZE = (800, 520)    # the E84 kit's 4.3" 800x480 screen plus the title bar (the page scales to any size)
 
 TOKEN = os.environ.get("DISPLAY_TOKEN") or secrets.token_urlsafe(16)
 
 sounds: dict[str, dict] = {}                         # room -> {"kind", "volume"}
+quiet_rooms: set[str] = set()                        # rooms switched to "quiet room" (do not disturb) on the display
 selfies: dict[str, tuple[bytes, datetime]] = {}      # token -> (jpeg, expires)
 frames: dict[str, tuple[bytes, float]] = {}          # room -> (latest decrypted camera jpeg, time.monotonic())
 board_seen: dict[str, float] = {}                    # room -> time.monotonic() of the last reading with "display"
@@ -50,8 +51,10 @@ def public_url(request_base: str) -> str:
 
 
 def qr_svg(data: str) -> str:
-    """SVG with a viewBox and no fixed size: the page sizes it with CSS."""
-    return segno.make(data, error="m").svg_inline(border=2, dark="#111", light="#fff", omitsize=True)
+    """SVG with a viewBox and no fixed size: the page sizes it with CSS. With the SVG namespace, so it also works on
+    its own (an <img> of /api/display/{room}/qr), not only pasted into a page."""
+    svg = segno.make(data, error="m").svg_inline(border=2, dark="#111", light="#fff", omitsize=True)
+    return svg.replace("<svg ", '<svg xmlns="http://www.w3.org/2000/svg" ', 1)
 
 
 def sound(room_id: str) -> dict:
@@ -63,6 +66,15 @@ def set_sound(room_id: str, kind: str, volume: int) -> dict:
     return sounds[room_id]
 
 
+def quiet(room_id: str) -> bool:
+    return room_id in quiet_rooms
+
+
+def set_quiet(room_id: str, on: bool) -> bool:
+    (quiet_rooms.add if on else quiet_rooms.discard)(room_id)
+    return on
+
+
 # --- camera frames and selfies ---
 
 def camera_frame(room_id: str, jpeg: bytes) -> None:
@@ -71,16 +83,19 @@ def camera_frame(room_id: str, jpeg: bytes) -> None:
         frames[room_id] = (jpeg, time.monotonic())
 
 
-def take_selfie(room_id: str, now: datetime) -> tuple[str, datetime] | None:
-    """Keep the newest camera frame as a selfie; None when the camera isn't live."""
+def take_selfie(room_id: str, now: datetime, photo: bytes | None = None) -> tuple[str, datetime] | None:
+    """Keep a selfie: the photo the display took with its own webcam, else the board camera's newest frame.
+    None when there's no photo and the board camera isn't live."""
     with lock:
-        frame = frames.get(room_id)
-        if frame is None or time.monotonic() - frame[1] > CAMERA_FRESH:
-            return None
+        if photo is None:
+            frame = frames.get(room_id)
+            if frame is None or time.monotonic() - frame[1] > CAMERA_FRESH:
+                return None
+            photo = frame[0]
         for token in [t for t, (_, until) in selfies.items() if until <= now]:
             del selfies[token]
         token = secrets.token_urlsafe(16)
-        selfies[token] = (frame[0], now + SELFIE_TTL)
+        selfies[token] = (photo, now + SELFIE_TTL)
         return token, now + SELFIE_TTL
 
 
