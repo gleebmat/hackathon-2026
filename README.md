@@ -42,7 +42,7 @@ API docs: http://localhost:8000/docs. The map alone: http://localhost:8000/map3d
 heavy recognition runs on the laptop, so results reach the website in about **1 s**:
 - **Camera:** the board grabs a raw 320x240 frame (RGB565), encodes it as JPEG (~6 KB) and sends it, encrypted with
   AES-128 (counter mode), over MQTT to `aau-hack26/rooms/Z.1.04/frame`, about every 0.6 s in Velxio. Encrypted
-  because the broker is public. The key is `firmware/xiao_sense/frame_key.h` (gitignored), made once with
+  because the broker is public. The key is `firmware/xiao_sense/frame_key.h`, made once with
   `python tools/make_frame_key.py`; the same file must be in the Velxio project, and the backend reads it too (or
   `FRAME_KEY`). Without the key file the board falls back to Arshia's 96x96 person model on the board (yes/no only).
 - **Detection on the laptop:** `app/vision.py` runs **YOLO11s** (Ultralytics, COCO classes, exported to
@@ -67,8 +67,12 @@ heavy recognition runs on the laptop, so results reach the website in about **1 
 **Velxio setup (team account).** Log in at https://velxio.dev with the team's (Gleb's) account and open the project
 **TODAREISTODO** (https://velxio.dev/gleebmat/todareistodo). It has `sketch.ino`, `person_model.h`, `frame_key.h`
 and the libraries `Chirale_TensorFlowLite` and `PubSubClient` (Library Manager). GitHub is the master copy for the
-sketch: after changing it here, paste it into Velxio and save. Copy Velxio's `frame_key.h` to
-`firmware/xiao_sense/frame_key.h` on your laptop so your backend can read the frames.
+sketch: after changing it here, paste it into Velxio and save.
+
+**The demo key is in the repo on purpose** (`firmware/xiao_sense/frame_key.h`, the same as in the Velxio project),
+so the jury and anyone who clones the repo can run board + backend right away; it may be shared. Anyone with it can
+decrypt the camera frames on the public broker, so for real use make a new key (`python tools/make_frame_key.py`),
+put it in the Velxio project and keep it out of git.
 1. Start the backend with short demo timers:
    ```powershell
    $env:GHOST_GRACE_SECONDS = '5'; $env:GHOST_RELEASE_SECONDS = '15'; uvicorn app.main:app
@@ -85,7 +89,7 @@ sketch: after changing it here, paste it into Velxio and save. Copy Velxio's `fr
 
 **Troubleshooting**
 - *Count stays empty but frames are sent:* the backend has no key or a different one (it logs "Camera frames off" or
-  "Frame from ... could not be read"); copy Velxio's `frame_key.h` to `firmware/xiao_sense/` and restart it.
+  "Frame from ... could not be read"); make sure `firmware/xiao_sense/frame_key.h` is the same as the one in the Velxio project and restart it.
 - *Velxio's camera in JPEG mode returns cut-off frames* (only the top third), and the AES unit's bulk mode can't read
   PSRAM there; that's why the sketch captures RGB565, encodes JPEG itself and runs AES block by block.
 - *Two boards:* only run the project in one browser tab. Every running tab publishes to the same topic.
