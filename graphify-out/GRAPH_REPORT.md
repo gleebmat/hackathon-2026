@@ -1,17 +1,17 @@
 # Graph Report - hackathon-2026  (2026-11-28)
 
 ## Corpus Check
-- 41 files · ~99,449 words
+- 41 files · ~99,930 words
 - Verdict: corpus is large enough that graph structure adds value.
 - Unclassified: 10 file(s) not represented in the graph (top: .tflite 4, (none) 2, .example 1)
 
 ## Summary
-- 686 nodes · 1802 edges · 36 communities (24 shown, 12 thin omitted)
-- Extraction: 98% EXTRACTED · 2% INFERRED · 0% AMBIGUOUS · INFERRED: 29 edges (avg confidence: 0.88)
+- 690 nodes · 1815 edges · 36 communities (24 shown, 12 thin omitted)
+- Extraction: 98% EXTRACTED · 2% INFERRED · 0% AMBIGUOUS · INFERRED: 30 edges (avg confidence: 0.88)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `e6084d0c`
+- Built from commit: `96273ee0`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -47,27 +47,27 @@
 - NoCacheStatic
 
 ## God Nodes (most connected - your core abstractions)
-1. `t()` - 50 edges
+1. `t()` - 51 edges
 2. `user()` - 44 edges
 3. `book()` - 37 edges
 4. `room()` - 30 edges
 5. `now()` - 28 edges
-6. `ApiError` - 25 edges
-7. `main()` - 25 edges
+6. `main()` - 26 edges
+7. `ApiError` - 25 edges
 8. `createPicker()` - 21 edges
 9. `esc()` - 20 edges
-10. `room_state()` - 19 edges
+10. `request()` - 19 edges
 
 ## Surprising Connections (you probably didn't know these)
 - `3D campus map (tom-claude; built and working, standalone for now)` --references--> `pillars()`  [INFERRED]
   docs/PLAN.md → tools/campus3d/gen_campus.py
-- `API (gleb-claude; implemented in `app/`, tested in `tests/test_api.py`)` --references--> `my_rating()`  [INFERRED]
-  docs/PLAN.md → app/booking.py
-- `API (gleb-claude; implemented in `app/`, tested in `tests/test_api.py`)` --references--> `likes()`  [INFERRED]
+- `API (gleb-claude; implemented in `app/`, tested in `tests/test_api.py`)` --references--> `can_rate()`  [INFERRED]
   docs/PLAN.md → app/booking.py
 - `API (gleb-claude; implemented in `app/`, tested in `tests/test_api.py`)` --references--> `free_hours()`  [INFERRED]
   docs/PLAN.md → app/booking.py
-- `API (gleb-claude; implemented in `app/`, tested in `tests/test_api.py`)` --references--> `can_rate()`  [INFERRED]
+- `API (gleb-claude; implemented in `app/`, tested in `tests/test_api.py`)` --references--> `likes()`  [INFERRED]
+  docs/PLAN.md → app/booking.py
+- `API (gleb-claude; implemented in `app/`, tested in `tests/test_api.py`)` --references--> `my_rating()`  [INFERRED]
   docs/PLAN.md → app/booking.py
 
 ## Import Cycles
@@ -85,7 +85,7 @@ Nodes (8): Code, Docs, Git workflow (several people push to this repo at once), 
 
 ### Community 3 - "app.js"
 Cohesion: 0.06
-Nodes (111): agoText(), ask(), boardCard(), bookingCard(), busySlot(), canBook(), cancelBooking(), checkAlerts() (+103 more)
+Nodes (115): agoText(), ask(), boardCard(), bookingCard(), busySlot(), canBook(), cancelBooking(), checkAlerts() (+107 more)
 
 ### Community 5 - "vision.py"
 Cohesion: 0.16
@@ -178,9 +178,9 @@ Nodes (3): camera_frame(), decrypt(), test_frame_decrypts_like_the_board_encrypt
 _Questions this graph is uniquely positioned to answer:_
 
 - **Why does `Contracts (code against these; whoever changes one updates this file in the same PR)` connect `PLAN: Smart Campus Room Booking (Infineon challenge), building V` to `gen_campus.py`?**
-  _High betweenness centrality (0.024) - this node is a cross-community bridge._
+  _High betweenness centrality (0.023) - this node is a cross-community bridge._
 - **Should `app.js` be split into smaller, more focused modules?**
-  _Cohesion score 0.0592396109637489 - nodes in this community are weakly interconnected._
+  _Cohesion score 0.05716253443526171 - nodes in this community are weakly interconnected._
 - **Why does `API (gleb-claude; implemented in `app/`, tested in `tests/test_api.py`)` connect `gen_campus.py` to `PLAN: Smart Campus Room Booking (Infineon challenge), building V`?**
   _High betweenness centrality (0.019) - this node is a cross-community bridge._
 - **Should `mock-data.js` be split into smaller, more focused modules?**
