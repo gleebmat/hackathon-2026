@@ -86,6 +86,9 @@ and left items (yes/no) reach the website. 50 tests pass. Runbook: `README.md`.
   `break_until`, pauses ghost release). Public site: `tools/tunnel.py` (Cloudflare quick tunnel). Page
   `web/display.html` and the website parts: frontend friend.
 
+- Gleb (28 Nov): v1.1 = main + #43 (map full screen, top bar, mobile) + #46 (display sounds only while booked) + #47 (page
+  addresses, many devices); only graphify files conflicted; 79 tests pass, site and display checked live.
+
 ---
 
 ## claude-2 (3D model)
