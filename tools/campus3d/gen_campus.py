@@ -50,9 +50,10 @@ MAX_FILLED_HOLE = 80.0     # m2: shafts and small light wells inside a building 
 PILLARS = {"O"}            # buildings whose upper floors overhang the ground floor: legs under the overhang corners
 PILLAR_SIZE = 1.2          # m
 # Coffee and vending machines on floor 1, roughly where they are (x, z in metres); each is moved to the nearest free
-# spot in the building (not in a room, a doorway or another machine).
+# spot in the building (not in a room, a doorway or another machine), its back against the nearest wall.
 MACHINES = [("coffee", -23.6, -2.6), ("coffee", -23.6, -1.2), ("coffee", 122.9, 31.6), ("coffee", 250.5, 9.3),
-            ("coffee", 117.6, 71.2), ("vending", 120.2, 71.2), ("vending", 122.9, 71.2), ("coffee", 117.4, 144.7)]
+            ("coffee", 117.6, 71.2), ("vending", 120.2, 71.2), ("vending", 122.9, 71.2),
+            ("coffee", 120.9, 140.2, "outer")]   # "outer": against the building's wall, not a room's
 MACHINE_FLOOR = 1
 MACHINE_GAP = 0.42         # m from the wall to the machine's centre: its back touches the wall
 # Corrections: parts of a floor left out of the model (building, floor, outline). Z floor 1: the strip of storage,
@@ -200,7 +201,7 @@ def outside_doors(b, doors, everything):
 def place_machines(buildings):
     """Puts each machine at the free spot nearest to where it roughly is, its back to the nearest wall."""
     placed = []
-    for kind, x, z in MACHINES:
+    for kind, x, z, *where in MACHINES:
         want = Point(x, z)
         b = min(buildings, key=lambda b: block_union(b, MACHINE_FLOOR).distance(want))
         here = block_union(b, MACHINE_FLOOR)
@@ -215,7 +216,7 @@ def place_machines(buildings):
             free = free.difference(unary_union(keep_clear))
         spot = want if free.contains(want) else nearest_points(free, want)[0]
         # back against the nearest wall, facing the corridor (if that spot is free too)
-        edge = walkable.boundary
+        edge = here.boundary if where == ["outer"] else walkable.boundary
         at = edge.project(spot)
         wall = edge.interpolate(at)
         p0, p1 = edge.interpolate(at - 0.4), edge.interpolate(at + 0.4)

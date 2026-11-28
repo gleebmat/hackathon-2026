@@ -1,17 +1,17 @@
 # Graph Report - hackathon-2026  (2026-11-28)
 
 ## Corpus Check
-- 37 files · ~85,311 words
+- 37 files · ~85,334 words
 - Verdict: corpus is large enough that graph structure adds value.
 - Unclassified: 10 file(s) not represented in the graph (top: .tflite 4, (none) 2, .example 1)
 
 ## Summary
-- 571 nodes · 1445 edges · 21 communities (14 shown, 7 thin omitted)
+- 571 nodes · 1444 edges · 27 communities (16 shown, 11 thin omitted)
 - Extraction: 98% EXTRACTED · 2% INFERRED · 0% AMBIGUOUS · INFERRED: 34 edges (avg confidence: 0.9)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `bb988e6c`
+- Built from commit: `df2f79f4`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -23,13 +23,18 @@
 - gen_campus.py
 - building3d.js
 - PLAN: Smart Campus Room Booking (Infineon challenge), building V
+- db.py
 - test_api.py
+- register
 - main.py
 - api.js
 - plan2d.js
+- auth.py
 - createPicker
 - booking.py
-- webcam.py
+- mqtt_feed.py
+- session_user
+- NoCacheStatic
 
 ## God Nodes (most connected - your core abstractions)
 1. `t()` - 46 edges
@@ -58,7 +63,7 @@
 ## Import Cycles
 - None detected.
 
-## Communities (21 total, 7 thin omitted)
+## Communities (27 total, 11 thin omitted)
 
 ### Community 1 - "hackathon-2026"
 Cohesion: 0.29
@@ -73,8 +78,8 @@ Cohesion: 0.07
 Nodes (92): agoText(), ask(), boardCard(), bookingCard(), busySlot(), canBook(), cancelBooking(), checkAlerts() (+84 more)
 
 ### Community 5 - "vision.py"
-Cohesion: 0.07
-Nodes (13): start(), count(), decrypt(), frame_key(), letterbox(), nms(), Room, start() (+5 more)
+Cohesion: 0.06
+Nodes (23): count(), decrypt(), frame_key(), letterbox(), nms(), Room, start(), Vision (+15 more)
 
 ### Community 6 - "gen_campus.py"
 Cohesion: 0.10
@@ -88,13 +93,21 @@ Nodes (6): createBuilding(), HIDDEN_BY_DEFAULT, HOVER_COLOR, mountControls(), ST
 Cohesion: 0.15
 Nodes (12): 3D campus map (tom-claude; built and working, standalone for now), Architecture, Board: XIAO ESP32S3 Sense on Velxio (the Infineon PSOC Edge E84 is no longer used), Contracts (code against these; whoever changes one updates this file in the same PR), Frontend flow (claude-3 / Martha; every call above is live on `uvicorn app.main:app`), Lost items, PLAN: Smart Campus Room Booking (Infineon challenge), building V, Product (+4 more)
 
+### Community 9 - "db.py"
+Cohesion: 0.21
+Nodes (8): hash_password(), columns(), connect(), db_path(), init(), load_rooms(), upgrade(), test_search_finds_map_labels()
+
 ### Community 11 - "test_api.py"
 Cohesion: 0.08
 Nodes (48): app_env(), book(), reading(), room(), sensor_until(), test_availability_slots(), test_bad_input_gives_400_with_error(), test_board_disconnect_and_recovery_during_demo() (+40 more)
 
+### Community 12 - "register"
+Cohesion: 0.23
+Nodes (10): new_token(), valid_email(), Credentials, login(), logout(), post_reading(), register(), Registration (+2 more)
+
 ### Community 13 - "main.py"
-Cohesion: 0.05
-Nodes (32): check_password(), hash_password(), new_token(), valid_email(), columns(), connect(), db_path(), init() (+24 more)
+Cohesion: 0.13
+Nodes (8): BookingRequest, in_transaction(), lifespan(), mqtt_reading(), RatingRequest, Reading, vision_reading(), test_camera_count_overrules_board_presence()
 
 ### Community 14 - "api.js"
 Cohesion: 0.13
@@ -112,12 +125,12 @@ Nodes (32): claude-2 (3D model), claude-3 (Website UI), gemini (Data, simulation
 Cohesion: 0.06
 Nodes (54): answer(), number(), parse(), ApiError, availability(), booking_out(), calendar(), can_rate() (+46 more)
 
-### Community 20 - "webcam.py"
-Cohesion: 0.11
-Nodes (11): check_left_item(), main(), prep_96(), run_person_detect(), detect_left_items(), is_valid_new_object(), load_labels(), main() (+3 more)
+### Community 25 - "session_user"
+Cohesion: 0.36
+Nodes (4): api_error(), current_user(), session_user(), validation_error()
 
 ## Knowledge Gaps
-- **7 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
+- **11 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
@@ -131,8 +144,8 @@ _Questions this graph is uniquely positioned to answer:_
 - **Why does `people()` connect `createPicker` to `PLAN: Smart Campus Room Booking (Infineon challenge), building V`, `app.js`, `booking.py`, `api.js`?**
   _High betweenness centrality (0.361) - this node is a cross-community bridge._
 - **Should `vision.py` be split into smaller, more focused modules?**
-  _Cohesion score 0.06533776301218161 - nodes in this community are weakly interconnected._
+  _Cohesion score 0.06327683615819209 - nodes in this community are weakly interconnected._
 - **Should `gen_campus.py` be split into smaller, more focused modules?**
-  _Cohesion score 0.10121951219512196 - nodes in this community are weakly interconnected._
+  _Cohesion score 0.1 - nodes in this community are weakly interconnected._
 - **Should `test_api.py` be split into smaller, more focused modules?**
   _Cohesion score 0.0818452380952381 - nodes in this community are weakly interconnected._
