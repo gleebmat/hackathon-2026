@@ -306,7 +306,7 @@
       <span class="label kicker pulse" id="sosOpenKicker"></span>
       <h2 id="sosOpenTitle" data-t="sos_open"></h2>
       <p class="lead" id="sosOpenText"></p>
-      <div class="row"><button class="btn line" id="sosHide" data-t="sos_hide"></button></div>
+      <div class="row"><button class="btn line" id="sosHide" data-t="sos_hide"></button><button class="btn danger" id="sosEnd" data-t="sos_end"></button></div>
     </div>
   </div>
   <div class="banner hidden" id="sosBanner" role="alert"></div>
@@ -355,10 +355,10 @@
       remind_title: "Time for a break", remind_text: "You've been studying for {m} minutes. Stand up, stretch, and drink some water.",
       ear: "Listening for fire alarms. Sound stays on this device.",
       fire_src: "Smoke alarm sound detected at {t}",
-      sos_kicker: "Emergency", sos_ask: "Call emergency services?", sos_ask_lead: "Campus security is told that there is an emergency in this room.",
-      sos_yes: "Yes, call now", sos_open_kicker: "Emergency reported", sos_open: "Help has been called",
-      sos_open_text: "Reported at {t}. Stay calm, and stay in the room if it is safe.",
-      sos_hide: "Hide this message", sos_banner: "Emergency reported at {t}. Help is on the way.",
+      sos_kicker: "Emergency", sos_ask: "Call the police?", sos_ask_lead: "The police (133) are called to this room. Only in a real emergency.",
+      sos_yes: "Yes, call now", sos_open_kicker: "SOS", sos_calling: "Calling the police (133)…", sos_calling_text: "Connecting. Stay in the room if it is safe.",
+      sos_open: "Police called", sos_open_text: "Called at {t}. Help is on the way: stay calm and stay in the room if it is safe.",
+      sos_hide: "Hide this message", sos_end: "End emergency", sos_banner: "Police called at {t}. Help is on the way.",
       offline: "No connection to the server. Retrying…", no_token: "This display isn't paired with the room (token missing).",
       err_no_booking: "Nobody has booked this room right now, so there's nothing to hold. Book it first.",
       err_no_camera: "no webcam here and the room camera is off."
@@ -391,10 +391,10 @@
       remind_title: "Zeit für eine Pause", remind_text: "Ihr lernt seit {m} Minuten. Aufstehen, strecken und etwas Wasser trinken.",
       ear: "Achtet auf Feueralarm. Der Ton bleibt auf diesem Gerät.",
       fire_src: "Rauchmelder-Ton erkannt um {t}",
-      sos_kicker: "Notfall", sos_ask: "Notruf absetzen?", sos_ask_lead: "Der Campus-Sicherheitsdienst erfährt, dass es in diesem Raum einen Notfall gibt.",
-      sos_yes: "Ja, jetzt rufen", sos_open_kicker: "Notfall gemeldet", sos_open: "Hilfe wurde gerufen",
-      sos_open_text: "Gemeldet um {t}. Ruhig bleiben und, wenn es sicher ist, im Raum bleiben.",
-      sos_hide: "Meldung ausblenden", sos_banner: "Notfall gemeldet um {t}. Hilfe ist unterwegs.",
+      sos_kicker: "Notfall", sos_ask: "Polizei rufen?", sos_ask_lead: "Die Polizei (133) wird in diesen Raum gerufen. Nur im echten Notfall.",
+      sos_yes: "Ja, jetzt rufen", sos_open_kicker: "SOS", sos_calling: "Polizei wird gerufen (133)…", sos_calling_text: "Verbindung wird hergestellt. Wenn es sicher ist, im Raum bleiben.",
+      sos_open: "Polizei gerufen", sos_open_text: "Gerufen um {t}. Hilfe ist unterwegs: ruhig bleiben und, wenn es sicher ist, im Raum bleiben.",
+      sos_hide: "Meldung ausblenden", sos_end: "Notfall beenden", sos_banner: "Polizei gerufen um {t}. Hilfe ist unterwegs.",
       offline: "Keine Verbindung zum Server. Neuer Versuch…", no_token: "Dieses Display ist nicht mit dem Raum verbunden (Token fehlt).",
       err_no_booking: "Der Raum ist gerade nicht gebucht, es gibt nichts zu reservieren. Bitte zuerst buchen.",
       err_no_camera: "keine Webcam hier und die Raumkamera ist aus."
@@ -922,12 +922,26 @@
     catch (e) { fail(e); }
   });
   $("sosHide").addEventListener("click", () => { sosHidden = S && S.emergency && S.emergency.id; renderEmergency(); });
+  $("sosEnd").addEventListener("click", async () => {
+    try { await api("DELETE", "/emergency"); if (S) S.emergency = null; renderEmergency(); $("sos").focus(); }
+    catch (e) { fail(e); }
+  });
+  // the simulated call: "Calling the police (133)…" for a few seconds, then "Police called"
+  const CALL_MS = 4000;
+  let sosCalled = false;
+  setInterval(() => { if (S && S.emergency && !sosCalled) renderEmergency(); }, 500);
   function renderEmergency() {
     const em = S && S.emergency;
     const at = em ? hhmm(parseLocal(em.created_at)) : "";
+    sosCalled = !em || Date.now() - parseLocal(em.created_at) >= CALL_MS;
     $("sosOpen").classList.toggle("hidden", !em || sosHidden === em.id);
     $("sosBanner").classList.toggle("hidden", !em || sosHidden !== em.id);
-    if (em) { $("sosOpenText").textContent = t("sos_open_text", { t: at }); $("sosBanner").innerHTML = ic("phone") + t("sos_banner", { t: at }); }
+    if (em) {
+      $("sosOpenTitle").textContent = t(sosCalled ? "sos_open" : "sos_calling");
+      $("sosOpenText").textContent = sosCalled ? t("sos_open_text", { t: at }) : t("sos_calling_text");
+      $("sosHide").disabled = $("sosEnd").disabled = !sosCalled;
+      $("sosBanner").innerHTML = ic("phone") + t("sos_banner", { t: at });
+    }
   }
 
   /* ---------- static text + language ---------- */

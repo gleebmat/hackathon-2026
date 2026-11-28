@@ -113,7 +113,7 @@ const DICT = {
     sc_close: "Close the room panel or a dialog", sc_help: "Show this help", sc_lang: "Switch language",
     map_all: "All", map_all_buildings: "All buildings", map_all_floors: "All floors", map_every_floor: "Show every floor",
     map_offices: "Offices", map_offices_title: "Show or hide the offices",
-    map_entrance: "Main entrance", map_compass: "N,E,S,W", map_compass_title: "Turn the map so north is up",
+    map_entrance: "Main entrance", map_compass: "N,E,S,W", map_compass_title: "Back to the standard view",
     map_floor: "Floor {n}", map_floor_title: "Floor {n} (floors above are hidden)",
   },
   de: {
@@ -222,7 +222,7 @@ const DICT = {
     sc_close: "Raumpanel oder Dialog schließen", sc_help: "Diese Hilfe anzeigen", sc_lang: "Sprache wechseln",
     map_all: "Alle", map_all_buildings: "Alle Gebäude", map_all_floors: "Alle Etagen", map_every_floor: "Alle Etagen zeigen",
     map_offices: "Büros", map_offices_title: "Büros ein- oder ausblenden",
-    map_entrance: "Haupteingang", map_compass: "N,O,S,W", map_compass_title: "Karte nach Norden ausrichten",
+    map_entrance: "Haupteingang", map_compass: "N,O,S,W", map_compass_title: "Zurück zur Standardansicht",
     map_floor: "Etage {n}", map_floor_title: "Etage {n} (Etagen darüber ausgeblendet)",
   },
 };

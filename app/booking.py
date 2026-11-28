@@ -205,8 +205,6 @@ def room_state(conn: sqlite3.Connection, room: sqlite3.Row, now: datetime) -> di
     seats_free = 0 if exclusive or not bookable else max(0, room["capacity"] - max(booked, people))
     deadlines = [d for d in (ghost_deadline(b, seen, now) for b in current) if d]
     breaks = [b["break_until"] for b in current if b["break_until"] and parse(b["break_until"]) > now]
-    emergency = conn.execute("SELECT 1 FROM emergencies WHERE room_id = ? AND resolved_at IS NULL",
-                             (room["id"],)).fetchone() is not None
 
     if room["closed"]:
         status = "closed"
@@ -234,9 +232,7 @@ def room_state(conn: sqlite3.Connection, room: sqlite3.Row, now: datetime) -> di
             # the board only knows yes/no (presence model), so the UI shows "someone is here" instead of a number.
             "booked": booked, "present": seen["people"], "counted": seen["counted"],
             "ghost_release_at": min(deadlines).isoformat() if deadlines else None,
-            # room display (app/display.py): a running break, the playing soundscape and an open emergency
-            "break_until": max(breaks) if breaks else None, "sound": display.sound(room["id"])["kind"],
-            "emergency": emergency,
+            "break_until": max(breaks) if breaks else None,   # "take a break" on the room display (app/display.py)
             "bookings_now": [{"id": b["id"], "mode": b["mode"], "purpose": b["purpose"], "seats": b["seats"],
                               "end": b["end"], "shareable": b["mode"] == "partial"} for b in current]}
 

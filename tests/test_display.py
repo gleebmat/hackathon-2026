@@ -13,7 +13,7 @@ TOKEN = {"X-Display-Token": display.TOKEN}
 
 @pytest.fixture(autouse=True)
 def clean_display():
-    for state in (display.sounds, display.selfies, display.frames, display.board_seen):
+    for state in (display.sounds, display.selfies, display.frames, display.board_seen, display.noise_before):
         state.clear()
 
 
@@ -41,15 +41,32 @@ def test_actions_need_the_display_token(app_env):
         assert act(path, token={}, **body).status_code == 403
         assert act(path, token={"X-Display-Token": "guess"}, **body).status_code == 403
     assert act("break", method="delete", token={}).status_code == 403
+    assert act("emergency", method="delete", token={}).status_code == 403
 
 
 def test_soundscape(app_env):
     assert act("sound", kind="rain", volume=30).json() == {"kind": "rain", "volume": 30}
-    assert room(TestClient(main.app), ROOM)["sound"] == "rain"
+    assert TestClient(main.app).get(f"/api/display/{ROOM}").json()["sound"]["kind"] == "rain"
     assert act("sound", kind="disco").status_code == 400
     assert act("sound", kind="ocean", volume=101).status_code == 400
     act("sound", kind="off")
-    assert room(TestClient(main.app), ROOM)["sound"] == "off"
+    assert TestClient(main.app).get(f"/api/display/{ROOM}").json()["sound"]["kind"] == "off"
+
+
+def test_own_soundscape_is_not_room_noise(app_env):
+    c = TestClient(main.app)
+
+    def board(db):
+        assert c.post("/api/readings", json={"room_id": ROOM, "noise_db": db, "display": True}).status_code == 200
+        return room(c, ROOM)["noise_db"]
+
+    assert board(36) == 36
+    act("sound", kind="rain", volume=80)
+    assert board(72) == 36 and room(c, ROOM)["noise_class"] == "quiet"   # the mic hears the rain: ignored
+    act("sound", kind="off")
+    assert board(52) == 52                                             # real noise counts again
+    reading(c, ROOM, noise_db=70)                                      # a reading without the display: unchanged
+    assert room(c, ROOM)["noise_db"] == 70
 
 
 def test_break_keeps_the_booking_while_the_room_is_empty(app_env, time_now):
@@ -103,21 +120,18 @@ def test_selfie_from_the_display_webcam(app_env):
     assert act("selfie", image=base64.b64encode(b"GIF89a").decode()).status_code == 400
 
 
-def test_emergency(app_env):
+def test_emergency_calls_police(app_env):
     assert act("emergency").status_code == 400                          # "Are you sure?" not confirmed
     assert act("emergency", confirm=False).status_code == 400
     first = act("emergency", confirm=True).json()
     assert first["room_id"] == ROOM and first["resolved_at"] is None
     assert act("emergency", confirm=True).json()["id"] == first["id"]  # pressing again: same alarm
-    anon = TestClient(main.app)
-    assert room(anon, ROOM)["emergency"] is True
-    assert anon.get(f"/api/display/{ROOM}").json()["emergency"]["id"] == first["id"]
-    assert anon.get("/api/emergencies").status_code == 401
-    staff = user(2)
-    assert [e["id"] for e in staff.get("/api/emergencies").json()] == [first["id"]]
-    assert staff.post(f"/api/emergencies/{first['id']}/resolve").json()["resolved_at"]
-    assert staff.post(f"/api/emergencies/{first['id']}/resolve").status_code == 404
-    assert room(anon, ROOM)["emergency"] is False and staff.get("/api/emergencies").json() == []
+    c = TestClient(main.app)
+    assert c.get(f"/api/display/{ROOM}").json()["emergency"]["id"] == first["id"]
+    assert "emergency" not in room(c, ROOM)                              # display only, not the website
+    assert act("emergency", method="delete").json() == {"room_id": ROOM, "emergency": None}
+    assert c.get(f"/api/display/{ROOM}").json()["emergency"] is None
+    assert act("emergency", confirm=True).json()["id"] != first["id"]  # a new SOS is a new alarm
 
 
 def test_board_with_display_is_online(app_env):

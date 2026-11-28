@@ -179,14 +179,14 @@ the page URL as header `X-Display-Token` (403 without it). QR codes use the publ
 | POST | `/api/display/{room}/sound` | `{kind: off\|rain\|ocean\|forest\|cafe\|white\|pink\|brown, volume: 0-100}` (2. soundscapes): the backend only stores it, the page plays it (WebAudio or files) |
 | POST | `/api/display/{room}/selfie` | (3. selfie) optional `{image: base64 JPEG}` = the photo the display took with its webcam; without it, the board camera's newest frame → `{url, qr_svg, expires_at}`; the photo lives in memory for 10 min, never on disk; 409 when there's no image and the board camera isn't live; 400 when the image isn't a JPEG |
 | GET | `/api/selfies/{token}` | the selfie JPEG (what the QR opens); 404 once expired |
-| POST | `/api/display/{room}/emergency` | `{confirm: true}` (4. emergency, after the page's "Are you sure?") → the open emergency; pressing again returns the same one. Simulated: logged and shown on the website, nobody is really called |
-| GET | `/api/emergencies` | open emergencies for the website (logged in) |
-| POST | `/api/emergencies/{id}/resolve` | marks one handled (logged in) |
+| POST | `/api/display/{room}/emergency` | `{confirm: true}` (4. SOS, after the page's "Are you sure?") → the open emergency; pressing again returns the same one. Simulated police call (133): logged, nobody is really called |
+| DELETE | `/api/display/{room}/emergency` | "End emergency" on the display: closes it |
 | POST / DELETE | `/api/display/{room}/break` | `{minutes: 5-30}` (5. take a break) → `{break_until}` on every running booking in the room; 409 when nobody booked. While it runs the booking is never released as a ghost; afterwards the empty timer starts again. DELETE ends it early |
 
-Website fields: every room has `break_until` (null or ISO time), `sound` (`"off"`, `"rain"`, ...) and `emergency`
-(true while one is open); bookings have `break_until`. Show "On break until 14:20", the playing sound and a red
-emergency alert (`GET /api/emergencies`, resolve button).
+These features are for the room display only; the website shows none of them (rooms and bookings carry
+`break_until`, used by the ghost release).
+- **Own soundscape:** the board mic also hears the sound the display plays. While a soundscape is on, readings from
+  the display board keep the noise measured before it started, so the room never turns "loud" from its own sound.
 
 **The page (`web/display.html`).** Laid out for 800x480 and scaled to any window. Home: a ring of five cards you
 swipe through (finger or mouse, the arrows, or the arrow keys; tap a side card to bring it to the middle). The middle
@@ -199,10 +199,10 @@ while the fire-alarm listener runs, language, SOS. Plain campus-system look on p
 lines, AAU blue (`#497284`, from the logo), no decoration; red only for SOS and the fire alarm. Text contrast at least
 4.5:1, touch targets at least 44 px (middle card 268x356), text at least 15 px, nothing overflows at 800x480 in
 English or German (checked on every screen and state, overlays included), English/German (same `roomv-lang` choice as
-the website), screen-reader labels, reduced motion respected. SOS asks "Are you sure?" first and shows "Help has been
-called" until the website resolves it. Selfie: this computer's webcam (preview mirrored, photo not), else the board
-camera's frame. Sounds are synthesised in the page (Web Audio), no files; the café is murmuring voices, cups and
-spoons and the coffee machine.
+the website), screen-reader labels, reduced motion respected. SOS is always top right, asks "Call the police?" first,
+shows "Calling the police (133)…" for a few seconds, then "Police called" until someone presses "End emergency".
+Selfie: this computer's webcam (preview mirrored, photo not), else the board camera's frame. Sounds are synthesised
+in the page (Web Audio), no files; the café is murmuring voices, cups and spoons and the coffee machine.
 
 Shown without a button:
 - **Break reminder** ("Time for a break": stand up, stretch, drink some water) every 45 minutes while people study in
@@ -253,9 +253,11 @@ The backend already serves it at **http://localhost:8000/map3d/**. It isn't wire
   other). Rooms drawn: teaching rooms, offices, toilets; bookable: seminar / computer / group-work rooms and lecture
   halls with their real seats (55+ seats show as not bookable); Omansaal (Z.1.29) left out. `doors`: doors to the
   outside at ground level (from the plan's door-swing drawings, layer `cartolines`); `pillars`: legs under Nexus's
-  overhang; `machines`: coffee (green) and vending (red) machines on floor 1, snapped to a free spot by a wall. Pieces under 40 m² or thinner than 1.6 m join their neighbour; holes under 80 m² are filled. Z.1.04 is the sensor-board room (an office in reality,
+  overhang; `machines`: coffee (green) and vending (red) machines on floor 1, snapped to a free spot by a wall. `link: true`
+  blocks are bridges and corridors to another building (narrower than 8 m, or underground beyond the building's body);
+  the map hides them when one building is selected. Pieces under 40 m² or thinner than 1.6 m join their neighbour; holes under 80 m² are filled. Z.1.04 is the sensor-board room (an office in reality,
   a 51-seat seminar room here). Main entrance: Z, east, floor 1 (`entrances`). `north` = true north in the model.
-- **Data:** `campus.json` = `{north: [x, z], buildings: [{id, name, floors, floor_height, blocks: [{poly, holes?, floors}], rooms: [{id, label?, floor, storeys?, x, z, w, d, poly, holes?, capacity, type, bookable, name}], entrances?: [{x, z, floor, dir, main}], doors?: [{x, z, floor, dir}], pillars?: [{poly, to_floor}], machines?: [{kind, x, z, floor, dir}]}]}`. `label` is the main name shown on the map (HS 1-4, HS A-C; search accepts it, e.g. "HS1"), `storeys: 2` = a tall hall with the floor above cut open.
+- **Data:** `campus.json` = `{north: [x, z], buildings: [{id, name, floors, floor_height, blocks: [{poly, holes?, floors, link?}], rooms: [{id, label?, floor, storeys?, x, z, w, d, poly, holes?, capacity, type, bookable, name}], entrances?: [{x, z, floor, dir, main}], doors?: [{x, z, floor, dir}], pillars?: [{poly, to_floor}], machines?: [{kind, x, z, floor, dir}]}]}`. `label` is the main name shown on the map (HS 1-4, HS A-C; search accepts it, e.g. "HS1"), `storeys: 2` = a tall hall with the floor above cut open.
   Units are metres; the origin is the centre of V; x runs along N (roughly east), z across (roughly south).
 - **Regenerate:** `uv run --with shapely python tools/campus3d/fetch_plan.py` (only to refresh the data), then
   `uv run --with shapely python tools/campus3d/gen_campus.py`; restart the backend afterwards (it reads the rooms).

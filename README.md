@@ -41,7 +41,8 @@ API docs: http://localhost:8000/docs. The map alone: http://localhost:8000/map3d
   sensor-board room, a 51-seat seminar room here. Refresh the data with
   `uv run --with shapely python tools/campus3d/fetch_plan.py`, rebuild with
   `uv run --with shapely python tools/campus3d/gen_campus.py` (then restart the backend: it reads the bookable rooms).
-  The map opens on floor 1 (also when you pick a building); a compass (top left) turns with it, click it for north-up; the main entrance (Z, east,
+  The map opens on floor 1 (also when you pick a building); a compass (top left) turns with it, click it to go back to the standard view; a single building is shown without the bridges and corridors to its
+  neighbours; the main entrance (Z, east,
   floor 1) has a blue door frame, canopy and tag; offices show by default, the "Offices" button hides them.
 - **Notifications** (bell next to My bookings, unread counter, "Mark all as read"): booking starts in 10 min, ends in
   N min, time is over, ghost warning (nobody detected, released at HH:MM), booking released for inactivity, quiet room
@@ -55,8 +56,8 @@ API docs: http://localhost:8000/docs. The map alone: http://localhost:8000/map3d
   sharers but **don't block booking the whole room** (a private booking just moves them out).
 - **Room display (board room):** the board has no display or speaker, so when it runs the backend opens a small
   window (Edge or Chrome) that acts as its touch display: book-a-room QR, soundscapes, selfie QR (your webcam),
-  take a break, emergency, a break reminder every 45 min and a fire-alarm alert for deaf students (from the alarm's
-  sound); a swipeable ring of cards sized for the E84 kit's 4.3" 800x480 screen
+  take a break, SOS (simulated police call), a break reminder every 45 min and a fire-alarm alert for deaf students
+  (from the alarm's sound); a swipeable ring of cards sized for the E84 kit's 4.3" 800x480 screen
   (`web/display.html`, API in `docs/PLAN.md`, "Room display"). It closes when the board stops. Chrome somewhere else:
   set `DISPLAY_BROWSER`. Without the board: `$env:DISPLAY_TOKEN='dev-display'`, start the backend, open
   http://localhost:8000/display.html?room=Z.1.04&token=dev-display.

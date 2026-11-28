@@ -130,15 +130,19 @@ tested in the browser.
 ---
 
 ## arshia (Room display page)
-**Status (28 Nov):** `web/display.html` done, on branch `arshia/room-display-page` (on top of `gleb/room-display`).
-Tests pass; every feature tried against the running backend (sound, break with and without a booking, selfie from
-a webcam stream and the no-camera fallback, SOS raised and resolved from the website, EN/DE, 800x480 and 480x320
-windows); the fire-alarm detector tested with generated alarm beeps (noise and a single beep don't trigger it).
-- Page: a swipeable ring of five cards for the 4.3" screen (room status in the middle, two cards each side), break
-  reminder every 45 min and a fire-alarm alert for deaf students, both without a button; details in PLAN "Room display".
-- Backend, small: selfie can carry the display's webcam photo (`{image}`), QR SVG gets the SVG namespace (the `/qr`
-  endpoint didn't load as an `<img>`), display window 800x520 (the E84 kit's 800x480 panel) with camera and
-  microphone allowed.
+**Status (28 Nov):** `web/display.html` done (first version merged in #40; the redesign on branch
+`arshia/room-display-page`). Every feature tried against the running backend (sound, break with and without a
+booking, selfie from a webcam stream and the no-camera fallback, SOS, EN/DE, 800x480 and 480x320 windows); the
+fire-alarm detector tested with generated alarm beeps (noise and a single beep don't trigger it).
+- Page: a swipeable ring of five cards for the 4.3" screen (room status in the middle, two cards each side), plain
+  campus-system look with the AAU logo, break reminder every 45 min and a fire-alarm alert for deaf students (both
+  without a button), a real café soundscape; details in PLAN "Room display".
+- Display window may use camera and microphone without a prompt (`--use-fake-ui-for-media-stream`).
+- Backend, small: selfie can carry the display's webcam photo (`{image}`), QR SVG gets the SVG namespace (the `/qr` endpoint didn't load as an `<img>`),
+  display window 800x520 (the E84 kit's 800x480 panel).
+- Gleb (28 Nov): quiet room removed (page, API, tests); SOS = simulated police call (133), ended on the display;
+  the room's own soundscape no longer counts as room noise.
+  Display features stay on the display: the website endpoints for emergencies are gone.
 
 ---
 

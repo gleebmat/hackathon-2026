@@ -5,8 +5,8 @@ online the backend opens a chromeless Edge/Chrome window (~480x320, like the Inf
 closes it again when the board goes offline. The page (frontend) calls /api/display/<room>/... with the token from its
 URL: book-a-room QR, soundscapes, selfie QR, emergency and take-a-break.
 
-State kept here, in memory: the playing soundscape per room, selfies (10 minutes, never written to disk), and when
-each display board was last heard. Breaks and emergencies are in the database (app/db.py).
+State kept here, in memory: the playing soundscape per room, selfies (10 minutes, never written to
+disk), and when each display board was last heard. Breaks and emergencies are in the database (app/db.py).
 """
 
 import logging
@@ -38,6 +38,7 @@ sounds: dict[str, dict] = {}                         # room -> {"kind", "volume"
 selfies: dict[str, tuple[bytes, datetime]] = {}      # token -> (jpeg, expires)
 frames: dict[str, tuple[bytes, float]] = {}          # room -> (latest decrypted camera jpeg, time.monotonic())
 board_seen: dict[str, float] = {}                    # room -> time.monotonic() of the last reading with "display"
+noise_before: dict[str, float] = {}                  # room -> board noise measured while no soundscape played
 lock = threading.Lock()
 
 
@@ -63,6 +64,15 @@ def sound(room_id: str) -> dict:
 def set_sound(room_id: str, kind: str, volume: int) -> dict:
     sounds[room_id] = {"kind": kind, "volume": volume}
     return sounds[room_id]
+
+
+def room_noise(room_id: str, measured: float) -> float | None:
+    """The board's microphone also hears the soundscape the display plays. While one plays, the room keeps the noise
+    measured before it started (None if there was none), so its own sound never makes the room "loud"."""
+    if sound(room_id)["kind"] == "off":
+        noise_before[room_id] = measured
+        return measured
+    return noise_before.get(room_id)
 
 
 # --- camera frames and selfies ---
