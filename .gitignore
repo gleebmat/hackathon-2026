@@ -45,3 +45,6 @@ graphify-out/.graphify_*
 *.db-wal
 *.db-shm
 
+
+# public address of the running tunnel (tools/tunnel.py)
+tunnel_url.txt

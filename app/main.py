@@ -1,6 +1,7 @@
 """Campus room booking API. Run: uvicorn app.main:app --reload"""
 
 import os
+import secrets
 import sqlite3
 from contextlib import asynccontextmanager
 from datetime import date, datetime, timedelta
@@ -12,7 +13,7 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, ValidationError
 
-from app import assistant, auth, booking, campus_sim, clock, db, mqtt_feed, vision
+from app import assistant, auth, booking, campus_sim, clock, db, display, mqtt_feed, vision
 from app.booking import ApiError
 
 WEB_DIR = db.ROOT / "web"
@@ -26,6 +27,7 @@ async def lifespan(_app: FastAPI):
     if os.environ.get("MQTT_FEED", "1") != "0":
         detector = vision.start(vision_reading)
         mqtt_client = mqtt_feed.start(mqtt_reading, detector.submit if detector else None)
+    display.start(int(os.environ.get("PORT", "8000")))
     yield
     if mqtt_client:
         mqtt_client.loop_stop()
@@ -289,6 +291,144 @@ def suggest(conn: Conn, mode: Mode, hours: float = Query(ge=0.5, le=booking.MAX_
     return booking.suggest(conn, start, hours, mode, seats, purpose, now)
 
 
+# --- room display: the board room's pretend touch screen and speaker (app/display.py) ---
+
+DisplayToken = Annotated[str | None, Header(alias="X-Display-Token")]
+
+
+def display_room(conn: sqlite3.Connection, room_id: str, token: str | None) -> sqlite3.Row:
+    """Only the display window (its URL carries the token) may act for the room."""
+    if not secrets.compare_digest(token or "", display.TOKEN):
+        raise ApiError(403, "Bad display token")
+    return booking.get_room(conn, room_id)
+
+
+def open_emergency(conn: sqlite3.Connection, room_id: str) -> sqlite3.Row | None:
+    return conn.execute("SELECT * FROM emergencies WHERE room_id = ? AND resolved_at IS NULL ORDER BY id DESC",
+                        (room_id,)).fetchone()
+
+
+def emergency_out(row: sqlite3.Row) -> dict:
+    return {"id": row["id"], "room_id": row["room_id"], "created_at": row["created_at"],
+            "resolved_at": row["resolved_at"]}
+
+
+def booking_link(request: Request, room_id: str) -> str:
+    return f"{display.public_url(str(request.base_url))}/?room={room_id}"
+
+
+@app.get("/api/display/{room_id}")
+def display_state(room_id: str, request: Request, conn: Conn):
+    """Everything the display shows; it polls this every second or two."""
+    now = clock.now()
+    state = booking.room_state(conn, booking.get_room(conn, room_id), now)
+    emergency = open_emergency(conn, room_id)
+    return {"room_id": room_id, "label": state["label"], "name": state["name"], "status": state["status"],
+            "people": state["people"], "noise_db": state["noise_db"], "board_online": display.online(room_id),
+            "bookings_now": state["bookings_now"], "break_until": state["break_until"],
+            "sound": display.sound(room_id), "sounds": list(display.SOUNDS),
+            "emergency": emergency_out(emergency) if emergency else None,
+            "booking_url": booking_link(request, room_id)}
+
+
+@app.get("/api/display/{room_id}/qr")
+def display_booking_qr(room_id: str, request: Request, conn: Conn):
+    """QR code (SVG) that opens this room's booking page on a phone."""
+    booking.get_room(conn, room_id)
+    return Response(display.qr_svg(booking_link(request, room_id)), media_type="image/svg+xml",
+                    headers={"Cache-Control": "no-cache"})
+
+
+class SoundRequest(BaseModel):
+    kind: Literal[display.SOUNDS]
+    volume: int = Field(50, ge=0, le=100)
+
+
+@app.post("/api/display/{room_id}/sound")
+def display_sound(room_id: str, body: SoundRequest, conn: Conn, token: DisplayToken = None):
+    display_room(conn, room_id, token)
+    return display.set_sound(room_id, body.kind, body.volume)
+
+
+class BreakRequest(BaseModel):
+    minutes: int = Field(ge=5, le=30)
+
+
+@app.post("/api/display/{room_id}/break")
+def display_break(room_id: str, body: BreakRequest, conn: Conn, token: DisplayToken = None):
+    """Everyone in the room steps out for a few minutes: the booking isn't released as a ghost meanwhile."""
+    display_room(conn, room_id, token)
+    now = clock.now()
+    current = booking.current_bookings(conn, room_id, now)
+    if not current:
+        raise ApiError(409, "Nobody has booked this room right now")
+    until = (now + timedelta(minutes=body.minutes)).isoformat(timespec="seconds")
+    conn.executemany("UPDATE bookings SET break_until = ? WHERE id = ?", [(until, b["id"]) for b in current])
+    return {"room_id": room_id, "break_until": until}
+
+
+@app.delete("/api/display/{room_id}/break")
+def display_break_end(room_id: str, conn: Conn, token: DisplayToken = None):
+    display_room(conn, room_id, token)
+    now = clock.now().isoformat(timespec="seconds")
+    conn.execute("UPDATE bookings SET break_until = ? WHERE room_id = ? AND status = 'active' AND break_until > ?",
+                 (now, room_id, now))
+    return {"room_id": room_id, "break_until": None}
+
+
+@app.post("/api/display/{room_id}/selfie")
+def display_selfie(room_id: str, request: Request, conn: Conn, token: DisplayToken = None):
+    """The board camera's newest frame as a selfie: a QR code to download it, gone after 10 minutes."""
+    display_room(conn, room_id, token)
+    taken = display.take_selfie(room_id, clock.now())
+    if taken is None:
+        raise ApiError(409, "The camera isn't live right now")
+    url = f"{display.public_url(str(request.base_url))}/api/selfies/{taken[0]}"
+    return {"url": url, "qr_svg": display.qr_svg(url), "expires_at": taken[1].isoformat(timespec="seconds")}
+
+
+@app.get("/api/selfies/{token}")
+def get_selfie(token: str):
+    jpeg = display.selfie(token, clock.now())
+    if jpeg is None:
+        raise ApiError(404, "This selfie has expired")
+    return Response(jpeg, media_type="image/jpeg", headers={"Cache-Control": "no-store"})
+
+
+class EmergencyRequest(BaseModel):
+    confirm: Literal[True]   # the display asked "Are you sure?" first
+
+
+@app.post("/api/display/{room_id}/emergency")
+def display_emergency(room_id: str, body: EmergencyRequest, conn: Conn, token: DisplayToken = None):
+    """Emergency button. Simulated: recorded and shown on the website; a real one would call campus security."""
+    display_room(conn, room_id, token)
+    row = open_emergency(conn, room_id)
+    if row is None:
+        cur = conn.execute("INSERT INTO emergencies (room_id, created_at) VALUES (?, ?)",
+                           (room_id, clock.now().isoformat(timespec="seconds")))
+        row = conn.execute("SELECT * FROM emergencies WHERE id = ?", (cur.lastrowid,)).fetchone()
+        display.log.warning("EMERGENCY in %s: campus security notified (simulated)", room_id)
+    return emergency_out(row)
+
+
+@app.get("/api/emergencies")
+def emergencies(_user: User, conn: Conn):
+    """Open emergencies, newest first, for the website's alerts."""
+    rows = conn.execute("SELECT * FROM emergencies WHERE resolved_at IS NULL ORDER BY id DESC").fetchall()
+    return [emergency_out(r) for r in rows]
+
+
+@app.post("/api/emergencies/{emergency_id}/resolve")
+def resolve_emergency(emergency_id: int, user: User, conn: Conn):
+    row = conn.execute("SELECT * FROM emergencies WHERE id = ? AND resolved_at IS NULL", (emergency_id,)).fetchone()
+    if row is None:
+        raise ApiError(404, "No open emergency with that id")
+    conn.execute("UPDATE emergencies SET resolved_at = ?, resolved_by = ? WHERE id = ?",
+                 (clock.now().isoformat(timespec="seconds"), user["id"], emergency_id))
+    return emergency_out(conn.execute("SELECT * FROM emergencies WHERE id = ?", (emergency_id,)).fetchone())
+
+
 # --- sensors ---
 
 class Reading(BaseModel):
@@ -298,6 +438,7 @@ class Reading(BaseModel):
     people: int | None = Field(None, ge=0, le=1000)
     presence: bool | None = None
     left_items: int | None = Field(None, ge=0, le=100)   # items left behind, counted on the board
+    display: bool | None = None   # the board "has" the room display and speaker (app/display.py)
 
 
 VISION_FRESH = timedelta(seconds=5)
@@ -305,6 +446,8 @@ vision_at: dict[str, datetime] = {}   # when the camera detector (app/vision.py)
 
 
 def save_reading(conn: sqlite3.Connection, body: Reading) -> None:
+    if body.display:
+        display.heard(body.room_id)
     people = body.people if body.people is not None else (None if body.presence is None else int(body.presence))
     left_items = body.left_items
     seen = vision_at.get(body.room_id)

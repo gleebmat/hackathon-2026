@@ -28,7 +28,11 @@ CREATE TABLE IF NOT EXISTS favorites (
 CREATE TABLE IF NOT EXISTS bookings (
     id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id), room_id TEXT NOT NULL REFERENCES rooms(id),
     start TEXT NOT NULL, end TEXT NOT NULL, mode TEXT NOT NULL, seats INTEGER NOT NULL, purpose TEXT NOT NULL,
-    custom_purpose TEXT, status TEXT NOT NULL DEFAULT 'active', checked_in_at TEXT, created_at TEXT NOT NULL);
+    custom_purpose TEXT, status TEXT NOT NULL DEFAULT 'active', checked_in_at TEXT, created_at TEXT NOT NULL,
+    break_until TEXT);
+CREATE TABLE IF NOT EXISTS emergencies (
+    id INTEGER PRIMARY KEY, room_id TEXT NOT NULL REFERENCES rooms(id), created_at TEXT NOT NULL,
+    resolved_at TEXT, resolved_by INTEGER REFERENCES users(id));
 CREATE INDEX IF NOT EXISTS bookings_room_time ON bookings (room_id, status, start);
 CREATE INDEX IF NOT EXISTS bookings_user_time ON bookings (user_id, status, start);
 """
@@ -96,6 +100,8 @@ def upgrade(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE rooms ADD COLUMN listed INTEGER NOT NULL DEFAULT 1")
     if "label" not in columns(conn, "rooms"):
         conn.execute("ALTER TABLE rooms ADD COLUMN label TEXT")
+    if "break_until" not in columns(conn, "bookings"):
+        conn.execute("ALTER TABLE bookings ADD COLUMN break_until TEXT")
     if columns(conn, "readings") not in (set(), READINGS_COLUMNS):
         conn.execute("DROP TABLE readings")
     conn.execute(READINGS)

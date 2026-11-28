@@ -75,6 +75,11 @@ and left items (yes/no) reach the website. 50 tests pass. Runbook: `README.md`.
 - Favorite rooms (28 Nov): `favorites` table per account, `GET /api/favorites`, `PUT/DELETE /api/favorites/{id}`,
   `favorite` flag on rooms, `likes` count on room detail (see PLAN API). UI: heart with like count in the room panel,
   "Favourite rooms" list at the top of "My bookings" (opens the room, ♥ unlikes), ♥ on the room cards.
+- Room display (28 Nov, backend): `app/display.py` + `/api/display/...` (see PLAN "Room display"): window opens with
+  the board (`"display":true` in the sketch) and closes when it stops; QR booking link, soundscape state, selfie from
+  the camera frame (10 min, memory only), simulated emergency (table `emergencies`), take a break (bookings
+  `break_until`, pauses ghost release). Public site: `tools/tunnel.py` (Cloudflare quick tunnel). Page
+  `web/display.html` and the website parts: frontend friend.
 
 ---
 

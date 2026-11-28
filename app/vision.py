@@ -24,7 +24,7 @@ import numpy as np
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from PIL import Image
 
-from app import db
+from app import db, display
 
 log = logging.getLogger(__name__)
 
@@ -155,10 +155,12 @@ class Vision:
                 frames, self.latest = self.latest, {}
             for room_id, payload in frames.items():
                 try:
-                    people, items = self.detect(decrypt(self.key, payload))
+                    jpeg = decrypt(self.key, payload)
+                    people, items = self.detect(jpeg)
                 except Exception:   # wrong key, cut-off frame: skip it
                     log.warning("frame from %s could not be read (wrong key?)", room_id)
                     continue
+                display.camera_frame(room_id, jpeg)   # the room display's selfie button takes this frame
                 shown = self.rooms[room_id].add(people, len(items))
                 if (shown, [i[0] for i in items]) != self.shown.get(room_id):
                     self.shown[room_id] = (shown, [i[0] for i in items])

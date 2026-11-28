@@ -38,6 +38,12 @@ API docs: http://localhost:8000/docs. The map alone: http://localhost:8000/map3d
   search, dark and see-through with a "🔒 55+" badge on the map, no room cards, closed slots, skipped by the assistant
   and suggestions, and the campus simulator doesn't book them. People sitting in a room without a booking take seats from
   sharers but **don't block booking the whole room** (a private booking just moves them out).
+- **Room display (board room):** the board has no display or speaker, so when it runs the backend opens a small
+  window (Edge or Chrome) that acts as its touch display: book-a-room QR, soundscapes, selfie QR, emergency, take a break
+  (API in `docs/PLAN.md`, "Room display"). It closes when the board stops. Chrome somewhere else: set `DISPLAY_BROWSER`.
+- **Public website:** `python tools/tunnel.py` (backend running) prints a public `https://...trycloudflare.com`
+  address for phones and the jury; the display's QR codes use it. New address on every start. Needs `cloudflared`
+  (`winget install --id Cloudflare.cloudflared`). Anyone with the link can use the site and the demo accounts.
 - **Port:** any free port works (`uvicorn app.main:app --port 8011` is fine too). The board doesn't talk to the
   port: it publishes to an MQTT broker and the backend subscribes, so only the browser URL changes.
 - **Database:** a local SQLite file (`campus.db`, or `DB_PATH`), gitignored. Accounts, sessions, bookings and

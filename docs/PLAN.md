@@ -164,6 +164,30 @@ can't take it). Times are campus time (Europe/Vienna) without a zone: `"2026-11-
   - Events must be full bookings.
   - A student can't hold two bookings at the same time, and their active bookings on one day total at most 4 h.
 
+### Room display + speaker (gleb-claude backend `app/display.py`, page `web/display.html` by the frontend friend)
+The XIAO has no display or speaker, so a small window on the laptop pretends to be the Infineon kit's touch display.
+The board sends `"display": true` in its readings (`HAS_DISPLAY` in the sketch); while it does, the backend opens a
+chromeless Edge/Chrome window (480x360) on `/display.html?room=Z.1.04&token=<token>` and closes it ~10 s after the
+board stops (`DISPLAY_WINDOW=0` turns this off, `DISPLAY_BROWSER` = browser path, `DISPLAY_TOKEN` fixes the token;
+the log prints the URL to open it by hand). Sound plays in that window (laptop speakers). Actions send the token from
+the page URL as header `X-Display-Token` (403 without it). QR codes use the public address (`tools/tunnel.py`).
+
+| Method | Path | What it does |
+|---|---|---|
+| GET | `/api/display/{room}` | `{room_id, label, name, status, people, noise_db, board_online, bookings_now, break_until, sound:{kind, volume}, sounds:[...], emergency:{id, room_id, created_at, resolved_at}\|null, booking_url}`; poll it every 1-2 s; no token needed |
+| GET | `/api/display/{room}/qr` | SVG QR code of `booking_url` (1. book a room) |
+| POST | `/api/display/{room}/sound` | `{kind: off\|rain\|ocean\|forest\|cafe\|white\|pink\|brown, volume: 0-100}` (2. soundscapes): the backend only stores it, the page plays it (WebAudio or files) |
+| POST | `/api/display/{room}/selfie` | (3. selfie) the board camera's newest frame → `{url, qr_svg, expires_at}`; the photo lives in memory for 10 min, never on disk; 409 when the camera isn't live |
+| GET | `/api/selfies/{token}` | the selfie JPEG (what the QR opens); 404 once expired |
+| POST | `/api/display/{room}/emergency` | `{confirm: true}` (4. emergency, after the page's "Are you sure?") → the open emergency; pressing again returns the same one. Simulated: logged and shown on the website, nobody is really called |
+| GET | `/api/emergencies` | open emergencies for the website (logged in) |
+| POST | `/api/emergencies/{id}/resolve` | marks one handled (logged in) |
+| POST / DELETE | `/api/display/{room}/break` | `{minutes: 5-30}` (5. take a break) → `{break_until}` on every running booking in the room; 409 when nobody booked. While it runs the booking is never released as a ghost; afterwards the empty timer starts again. DELETE ends it early |
+
+Website fields: every room has `break_until` (null or ISO time), `sound` (`"off"`, `"rain"`, ...) and `emergency`
+(true while one is open); bookings have `break_until`. Show "On break until 14:20", the playing sound and a red
+emergency alert (`GET /api/emergencies`, resolve button).
+
 ### Frontend flow (claude-3 / Martha; every call above is live on `uvicorn app.main:app`)
 1. **Login page:** `POST /api/login` or `POST /api/register`, then the main page. On load, `GET /api/me`; 401 →
    login page. The session is a cookie, so the frontend never stores a token (serve `web/` from the backend).

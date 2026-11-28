@@ -10,6 +10,8 @@ import random
 import sqlite3
 from datetime import date, datetime, time, timedelta
 
+from app import display
+
 # The one room wired to the PSOC Edge E84 in the Live Lab; every other room is simulated.
 BOARD_ROOM = os.environ.get("BOARD_ROOM", "Z.1.04")
 OPEN = time.min
@@ -98,11 +100,15 @@ def sensor(conn: sqlite3.Connection, room_id: str, now: datetime) -> dict:
     return out
 
 
-def ghost_deadline(booking: sqlite3.Row, seen: dict) -> datetime | None:
-    """When a running booking is released if the room stays empty, or None while people are (or may be) there."""
+def ghost_deadline(booking: sqlite3.Row, seen: dict, now: datetime) -> datetime | None:
+    """When a running booking is released if the room stays empty, or None while people are (or may be) there.
+    A break ("take a break" on the room display) keeps the booking; the empty timer starts again when it ends."""
     if seen["people"] != 0 or seen["empty_since"] is None:
         return None
-    since = max(seen["empty_since"], parse(booking["start"]), parse(booking["created_at"]))
+    if booking["break_until"] and parse(booking["break_until"]) > now:
+        return None
+    since = max(seen["empty_since"], parse(booking["start"]), parse(booking["created_at"]),
+                parse(booking["break_until"]) if booking["break_until"] else seen["empty_since"])
     if seen["people_at"] < since + min(GHOST_GRACE, GHOST_AFTER / 2):
         return None
     return since + GHOST_AFTER
@@ -117,11 +123,11 @@ def booking_out(conn: sqlite3.Connection, row: sqlite3.Row, now: datetime, user_
     start, end = parse(row["start"]), parse(row["end"])
     deadline = None
     if row["status"] == "active" and start <= now < end:
-        deadline = ghost_deadline(row, sensor(conn, row["room_id"], now))
+        deadline = ghost_deadline(row, sensor(conn, row["room_id"], now), now)
     return {"id": row["id"], "room_id": row["room_id"], "start": row["start"], "end": row["end"],
             "hours": (end - start).total_seconds() / 3600, "mode": row["mode"], "seats": row["seats"],
             "purpose": row["purpose"], "custom_purpose": row["custom_purpose"], "status": row["status"],
-            "checked_in": row["checked_in_at"] is not None,
+            "checked_in": row["checked_in_at"] is not None, "break_until": row["break_until"],
             "ghost_release_at": deadline.isoformat() if deadline else None, "mine": row["user_id"] == user_id,
             "my_rating": my_rating(conn, user_id, row["room_id"]) if row["user_id"] == user_id else None}
 
@@ -197,7 +203,10 @@ def room_state(conn: sqlite3.Connection, room: sqlite3.Row, now: datetime) -> di
     exclusive = any(b["mode"] == "full" for b in current)
     bookable = not room["closed"] and room["capacity"] < BOOKABLE_BELOW
     seats_free = 0 if exclusive or not bookable else max(0, room["capacity"] - max(booked, people))
-    deadlines = [d for d in (ghost_deadline(b, seen) for b in current) if d]
+    deadlines = [d for d in (ghost_deadline(b, seen, now) for b in current) if d]
+    breaks = [b["break_until"] for b in current if b["break_until"] and parse(b["break_until"]) > now]
+    emergency = conn.execute("SELECT 1 FROM emergencies WHERE room_id = ? AND resolved_at IS NULL",
+                             (room["id"],)).fetchone() is not None
 
     if room["closed"]:
         status = "closed"
@@ -225,6 +234,9 @@ def room_state(conn: sqlite3.Connection, room: sqlite3.Row, now: datetime) -> di
             # the board only knows yes/no (presence model), so the UI shows "someone is here" instead of a number.
             "booked": booked, "present": seen["people"], "counted": seen["counted"],
             "ghost_release_at": min(deadlines).isoformat() if deadlines else None,
+            # room display (app/display.py): a running break, the playing soundscape and an open emergency
+            "break_until": max(breaks) if breaks else None, "sound": display.sound(room["id"])["kind"],
+            "emergency": emergency,
             "bookings_now": [{"id": b["id"], "mode": b["mode"], "purpose": b["purpose"], "seats": b["seats"],
                               "end": b["end"], "shareable": b["mode"] == "partial"} for b in current]}
 
@@ -446,6 +458,6 @@ def release_ghosts(conn: sqlite3.Connection, now: datetime) -> None:
                         (fmt(now), fmt(now))).fetchall()
     for b in rows:
         seen = sensor(conn, b["room_id"], now)
-        deadline = ghost_deadline(b, seen)
+        deadline = ghost_deadline(b, seen, now)
         if deadline and seen["people_at"] >= deadline:
             conn.execute("UPDATE bookings SET status = 'released' WHERE id = ?", (b["id"],))
