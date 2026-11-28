@@ -162,7 +162,8 @@ export function createBuilding(el, input, opts = {}) {
       scene.add(g);
     }
     for (const b of bd.blocks) {
-      const bTop = (b.floors ?? bd.floors).length * H;     // low annexes can have fewer storeys
+      const fl = b.floors ?? bd.floors;                    // a piece spans its own floors (e.g. a bridge on floor 1)
+      const bBase = Math.min(...fl) * H, bTop = (Math.max(...fl) + 1) * H;
       const roof = slab(b, bTop, true, roofMat, 0.5);
       edges(roof, 0x4b5768, 0.55);
       shell.add(roof);
@@ -170,7 +171,7 @@ export function createBuilding(el, input, opts = {}) {
       pts.forEach(([x0, z0], i) => {                       // one glass wall per footprint edge
         const [x1, z1] = pts[(i + 1) % pts.length], len = Math.hypot(x1 - x0, z1 - z0);
         if (len < 0.05) return;
-        const w = box((x0 + x1) / 2, (z0 + z1) / 2, len, 0.3, 0, bTop, glass, shell);
+        const w = box((x0 + x1) / 2, (z0 + z1) / 2, len, 0.3, bBase, bTop - bBase, glass, shell);
         w.rotation.y = -Math.atan2(z1 - z0, x1 - x0);
       });
       const c = b.courtyard;
@@ -179,7 +180,7 @@ export function createBuilding(el, input, opts = {}) {
         box(cx, cz - c.d / 2, c.w, 0.3, H, top - H, glass, shell); box(cx, cz + c.d / 2, c.w, 0.3, H, top - H, glass, shell);
         box(cx - c.w / 2, cz, 0.3, c.d, H, top - H, glass, shell); box(cx + c.w / 2, cz, 0.3, c.d, H, top - H, glass, shell);
       }
-      for (const [x, z] of pts) { bb.expandByPoint(new THREE.Vector3(x, 0, z)); bb.expandByPoint(new THREE.Vector3(x, bTop, z)); }
+      for (const [x, z] of pts) { bb.expandByPoint(new THREE.Vector3(x, bBase, z)); bb.expandByPoint(new THREE.Vector3(x, bTop, z)); }
     }
     bounds.union(bb);
     for (const c of bd.connectors ?? []) {
@@ -192,7 +193,14 @@ export function createBuilding(el, input, opts = {}) {
         transparent: true, opacity: isAtrium ? 0.75 : 0.92 });
       let geo;
       if (r.poly) {   // non-rectangular room (curved wing, fan-shaped hall): extrude its outline, centred on x,z
-        geo = new THREE.ExtrudeGeometry(polyShape(r.poly, r.x, r.z), { depth: h, bevelEnabled: false });
+        const shape = polyShape(r.poly, r.x, r.z);
+        for (const hp of r.holes ?? []) {   // a room around an open space (e.g. a reading hall around an atrium)
+          const p = new THREE.Path();
+          hp.forEach(([x, z], i) => (i ? p.lineTo(x - r.x, -(z - r.z)) : p.moveTo(x - r.x, -(z - r.z))));
+          p.closePath();
+          shape.holes.push(p);
+        }
+        geo = new THREE.ExtrudeGeometry(shape, { depth: h, bevelEnabled: false });
         geo.rotateX(-Math.PI / 2);
         geo.translate(0, -h / 2, 0);
       } else {
@@ -515,11 +523,11 @@ function mountControls(el, api, labels = {}) {
   compass.type = "button";
   compass.title = L.compassTitle ?? "Turn the map so north is up";
   compass.setAttribute("aria-label", compass.title);
-  compass.style.cssText = "position:absolute;left:12px;top:12px;z-index:5;width:64px;height:64px;padding:0;border:0;" +
+  compass.style.cssText = "position:absolute;left:12px;top:12px;z-index:5;width:76px;height:76px;padding:0;border:0;" +
     "border-radius:50%;cursor:pointer;background:rgba(249,251,255,.94);" +
     "box-shadow:0 0 0 1px #e3e3e0,0 2px 6px rgba(20,30,60,.12);pointer-events:auto";
   const [lN, lE, lS, lW] = L.compass ?? ["N", "E", "S", "W"];
-  compass.innerHTML = `<svg viewBox="-27 -27 54 54" width="64" height="64" aria-hidden="true">
+  compass.innerHTML = `<svg viewBox="-27 -27 54 54" width="76" height="76" aria-hidden="true">
     <g class="rose">
       <circle r="22" fill="none" stroke="#d6dbe5" stroke-width="1"/>
       <path d="M0 -17 L4.5 0 L0 2.5 L-4.5 0 Z" fill="#c8412f"/>

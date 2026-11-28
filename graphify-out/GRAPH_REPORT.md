@@ -1,17 +1,17 @@
 # Graph Report - hackathon-2026  (2026-11-28)
 
 ## Corpus Check
-- 38 files · ~77,123 words
+- 37 files · ~107,927 words
 - Verdict: corpus is large enough that graph structure adds value.
 - Unclassified: 10 file(s) not represented in the graph (top: .tflite 4, (none) 2, .example 1)
 
 ## Summary
-- 585 nodes · 1449 edges · 23 communities (16 shown, 7 thin omitted)
+- 557 nodes · 1410 edges · 23 communities (16 shown, 7 thin omitted)
 - Extraction: 98% EXTRACTED · 2% INFERRED · 0% AMBIGUOUS · INFERRED: 33 edges (avg confidence: 0.9)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `c96e6299`
+- Built from commit: `0bf6837b`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -41,9 +41,9 @@
 5. `ApiError` - 21 edges
 6. `createPicker()` - 21 edges
 7. `room()` - 20 edges
-8. `esc()` - 18 edges
-9. `now()` - 18 edges
-10. `openRoom()` - 16 edges
+8. `now()` - 18 edges
+9. `esc()` - 18 edges
+10. `request()` - 16 edges
 
 ## Surprising Connections (you probably didn't know these)
 - `gleb-claude (Backend + integration)` --references--> `people()`  [INFERRED]
@@ -75,12 +75,12 @@ Cohesion: 0.07
 Nodes (97): agoText(), ask(), boardCard(), bookingCard(), busySlot(), canBook(), cancelBooking(), checkAlerts() (+89 more)
 
 ### Community 5 - "vision.py"
-Cohesion: 0.07
+Cohesion: 0.06
 Nodes (13): start(), count(), decrypt(), frame_key(), letterbox(), nms(), Room, start() (+5 more)
 
 ### Community 6 - "gen_campus.py"
-Cohesion: 0.07
-Nodes (27): build_l(), build_n(), build_s(), build_v(), build_wing(), build_z(), name_real_rooms(), snap_connectors() (+19 more)
+Cohesion: 0.14
+Nodes (13): number(), parse(), test_building_filter_and_nonsense(), test_requests_are_understood(), coords(), final_clip(), floor_outlines(), is_courtyard() (+5 more)
 
 ### Community 7 - "building3d.js"
 Cohesion: 0.25
@@ -96,7 +96,7 @@ Nodes (6): claude-2 (3D model), claude-3 (Website UI), gemini (Data, simulation,
 
 ### Community 11 - "test_api.py"
 Cohesion: 0.08
-Nodes (48): app_env(), book(), reading(), room(), sensor_until(), test_availability_slots(), test_bad_input_gives_400_with_error(), test_board_disconnect_and_recovery_during_demo() (+40 more)
+Nodes (47): app_env(), book(), reading(), room(), sensor_until(), test_availability_slots(), test_bad_input_gives_400_with_error(), test_board_disconnect_and_recovery_during_demo() (+39 more)
 
 ### Community 12 - "db.py"
 Cohesion: 0.12
@@ -104,7 +104,7 @@ Nodes (11): check_password(), hash_password(), new_token(), valid_email(), colum
 
 ### Community 13 - "main.py"
 Cohesion: 0.06
-Nodes (35): now(), to_local(), api_error(), ask_assistant(), BookingRequest, calendar(), cancel_booking(), create_booking() (+27 more)
+Nodes (34): now(), to_local(), api_error(), ask_assistant(), BookingRequest, calendar(), cancel_booking(), create_booking() (+26 more)
 
 ### Community 14 - "api.js"
 Cohesion: 0.19
@@ -119,12 +119,12 @@ Cohesion: 0.17
 Nodes (26): locale, createPicker(), cardHtml(), cardState(), choose(), defaultStart(), drawCalendar(), drawKinds() (+18 more)
 
 ### Community 19 - "booking.py"
-Cohesion: 0.08
-Nodes (40): answer(), number(), parse(), ApiError, availability(), booking_out(), calendar(), can_rate() (+32 more)
+Cohesion: 0.09
+Nodes (38): answer(), ApiError, availability(), booking_out(), calendar(), can_rate(), create_booking(), current_bookings() (+30 more)
 
 ### Community 20 - "webcam.py"
-Cohesion: 0.10
-Nodes (11): check_left_item(), main(), prep_96(), run_person_detect(), detect_left_items(), is_valid_new_object(), load_labels(), main() (+3 more)
+Cohesion: 0.09
+Nodes (13): check_left_item(), main(), prep_96(), run_person_detect(), detect_left_items(), is_valid_new_object(), load_labels(), main() (+5 more)
 
 ## Knowledge Gaps
 - **7 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
@@ -133,16 +133,16 @@ Nodes (11): check_left_item(), main(), prep_96(), run_person_detect(), detect_le
 _Questions this graph is uniquely positioned to answer:_
 
 - **Why does `API (gleb-claude; implemented in `app/`, tested in `tests/test_api.py`)` connect `booking.py` to `PLAN: Smart Campus Room Booking (Infineon challenge), building V`, `app.js`, `api.js`?**
-  _High betweenness centrality (0.419) - this node is a cross-community bridge._
+  _High betweenness centrality (0.428) - this node is a cross-community bridge._
 - **Are the 9 inferred relationships involving `ApiError` (e.g. with `answer()` and `add_booking()`) actually correct?**
   _`ApiError` has 9 INFERRED edges - model-reasoned connections that need verification._
 - **Should `app.js` be split into smaller, more focused modules?**
   _Cohesion score 0.06662859318484675 - nodes in this community are weakly interconnected._
 - **Why does `people()` connect `app.js` to `PLAN: Smart Campus Room Booking (Infineon challenge), building V`, `LOG: one section per agent`, `createPicker`, `booking.py`?**
-  _High betweenness centrality (0.357) - this node is a cross-community bridge._
+  _High betweenness centrality (0.366) - this node is a cross-community bridge._
 - **Should `vision.py` be split into smaller, more focused modules?**
-  _Cohesion score 0.06538461538461539 - nodes in this community are weakly interconnected._
+  _Cohesion score 0.06341463414634146 - nodes in this community are weakly interconnected._
 - **Should `gen_campus.py` be split into smaller, more focused modules?**
-  _Cohesion score 0.06745098039215686 - nodes in this community are weakly interconnected._
+  _Cohesion score 0.13846153846153847 - nodes in this community are weakly interconnected._
 - **Should `test_api.py` be split into smaller, more focused modules?**
-  _Cohesion score 0.07726075504828797 - nodes in this community are weakly interconnected._
+  _Cohesion score 0.08365384615384615 - nodes in this community are weakly interconnected._

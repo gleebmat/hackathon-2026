@@ -270,7 +270,8 @@ export function t(key, vars = {}) {
 export const people = (n) => t(n === 1 ? "n_person" : "n_people", { n });
 
 // Room types come in English from the room data (web/map3d/campus.json).
-const ROOM_TYPES_DE = { "Seminar room": "Seminarraum", "Lecture hall": "Hörsaal", "Event hall": "Veranstaltungssaal" };
+const ROOM_TYPES_DE = { "Seminar room": "Seminarraum", "Lecture hall": "Hörsaal", "Event hall": "Veranstaltungssaal",
+  "Computer room": "Computerraum", "Group work room": "Gruppenarbeitsraum", "Student work room": "Studierendenarbeitsraum" };
 export const tRoom = (name) => (lang === "de" && ROOM_TYPES_DE[name]) || name;
 
 export function tError(message) {

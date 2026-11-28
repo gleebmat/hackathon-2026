@@ -191,16 +191,17 @@ EfficientDet-Lite2, which also names the object) is too big for the board (7.6 M
 ### 3D campus map (tom-claude; built and working, standalone for now)
 The map is in **`web/map3d/`**: `index.html` (the demo page), `building3d.js` (the module) and `campus.json` (the data).
 The backend already serves it at **http://localhost:8000/map3d/**. It isn't wired into the UI yet, on purpose.
-- **Buildings:** V, N, Z, L and S, from campusplan.aau.at, simplified, with overlaps removed. Z joins N with three
-  corridors and S with three tunnels in the same lines (courtyards between them; a tunnel stops where a building is in
-  the way and goes on behind it); L stands between Z and S. The main entrance is on Z's east side (`entrances`).
-  `north` = true north in the model, for the compass (the grid is turned ~6° against north). V's room numbers are
-  real; N, Z, L and S numbers are generated (`N.1.44` …). Bookable rooms are seminar rooms, lecture halls, the
-  Aula and the atrium. Offices are hidden by default.
-- **Data:** `campus.json` = `{buildings: [{id, name, floors, floor_height, blocks: [{x,z,w,d} | {poly, holes?, floors?, open?}], rooms: [{id, label?, floor, storeys?, x, z, w, d, poly?, angle?, capacity, type, bookable, name}], connectors?: [{x, z, w, d, floors, tunnel?}], entrances?: [{x, z, dir, main}]}], north: [x, z]}`. `label` is the main name shown on the map (HS 1-4, HS A-C; search accepts it, e.g. "HS1"), `storeys: 2` = a tall hall with the floor above cut open.
-  Units are metres; the origin is the centre of V; x points east and z points south.
-- **Regenerate:** `uv run --with shapely python tools/campus3d/gen_campus.py`. It reads `building_v_rooms.json`
-  and writes `web/map3d/campus.json`, which the backend also reads (restart it after regenerating).
+- **Buildings:** V, N, Z, L (library), S and O (Nexus), built from campusplan.aau.at's floor-plan data
+  (`tools/campus3d/fetch_plan.py` downloads it from the public GeoServer into `aau_plan.json`; `gen_campus.py` builds
+  `campus.json`). Real outlines and room numbers on every floor; pieces that exist only on some floors (the floor-1
+  bridges Z-S) carry their floors; courtyards are left out; no overlaps (rooms clipped to their building and each
+  other). Rooms drawn: teaching rooms, offices, toilets; bookable: seminar / computer / group-work rooms and lecture
+  halls with their real seats (55+ seats show as not bookable). Z.1.04 is the sensor-board room (an office in reality,
+  a 51-seat seminar room here). Main entrance: Z, east, floor 1 (`entrances`). `north` = true north in the model.
+- **Data:** `campus.json` = `{north: [x, z], buildings: [{id, name, floors, floor_height, blocks: [{poly, holes?, floors}], rooms: [{id, label?, floor, storeys?, x, z, w, d, poly, holes?, capacity, type, bookable, name}], entrances?: [{x, z, floor, dir, main}]}]}`. `label` is the main name shown on the map (HS 1-4, HS A-C, Omansaal; search accepts it, e.g. "HS1"), `storeys: 2` = a tall hall with the floor above cut open.
+  Units are metres; the origin is the centre of V; x runs along N (roughly east), z across (roughly south).
+- **Regenerate:** `uv run --with shapely python tools/campus3d/fetch_plan.py` (only to refresh the data), then
+  `uv run --with shapely python tools/campus3d/gen_campus.py`; restart the backend afterwards (it reads the rooms).
 
 ```js
 import { createBuilding } from "./building3d.js";      // path relative to web/map3d/

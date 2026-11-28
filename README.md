@@ -27,11 +27,16 @@ API docs: http://localhost:8000/docs. The map alone: http://localhost:8000/map3d
   CAMPUSonline, Moodle, campus map, IT Service Desk), how booking works and the team's contacts (`web/js/footer.js`).
   Rooms can be shared as links (`/?room=Z.1.04`, "Copy link" in the room panel), bookings exported to a calendar
   (`.ics`, "Calendar" in My bookings), and `?` shows the keyboard shortcuts. Login photo: carinthia.com
-  (`web/img/login.jpg`). The 3D map opens on floor 1 (where the board room Z.1.04 is); "All floors" shows everything. A compass above the
-  building buttons turns with the map (true north; click it to turn the map north-up; top-left corner), and the main entrance (middle
-  of Z's east wall, floor 1) is marked with a blue door frame, canopy and tag. Offices show by default; the "Offices"
-  button under the floor buttons hides them. Between Z and S there are three tunnels (in line with the
-  three corridors to N) with open courtyards between them, not a hall.
+  (`web/img/login.jpg`).
+- **3D map = the real campus plan:** buildings V, N, Z, L (library), S and O (Nexus) are built from
+  campusplan.aau.at's own floor-plan data (every room with its real number and seats; courtyards left out; corridors,
+  stairs, storage and technical rooms are part of the building but not drawn as rooms). Bookable: the real seminar,
+  computer and group-work rooms and lecture halls (53 rooms). Exception: **Z.1.04** (in reality an office) is our
+  sensor-board room, a 51-seat seminar room here. Refresh the data with
+  `uv run --with shapely python tools/campus3d/fetch_plan.py`, rebuild with
+  `uv run --with shapely python tools/campus3d/gen_campus.py` (then restart the backend: it reads the bookable rooms).
+  The map opens on floor 1; a compass (top left) turns with it, click it for north-up; the main entrance (Z, east,
+  floor 1) has a blue door frame, canopy and tag; offices show by default, the "Offices" button hides them.
 - **Notifications** (bell next to My bookings, unread counter, "Mark all as read"): booking starts in 10 min, ends in
   N min, time is over, ghost warning (nobody detected, released at HH:MM), booking released for inactivity, quiet room
   getting loud, something left behind, booked, cancelled. New ones also pop up as toasts; clicking one opens the room.
