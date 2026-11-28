@@ -32,7 +32,13 @@
 #if COUNT_PEOPLE
 #include "count_model_1.h"
 #include "count_model_2.h"
+#if __has_include("miniz.h")                 // the ROM decompressor's header moved between ESP-IDF versions
+#include "miniz.h"
+#elif __has_include("rom/miniz.h")
+#include "rom/miniz.h"
+#else
 #include "esp32s3/rom/miniz.h"
+#endif
 #endif
 
 const char* ROOM_ID = "Z.1.04";
