@@ -196,9 +196,11 @@ The backend already serves it at **http://localhost:8000/map3d/**. It isn't wire
   `campus.json`). Real outlines and room numbers on every floor; pieces that exist only on some floors (the floor-1
   bridges Z-S) carry their floors; courtyards are left out; no overlaps (rooms clipped to their building and each
   other). Rooms drawn: teaching rooms, offices, toilets; bookable: seminar / computer / group-work rooms and lecture
-  halls with their real seats (55+ seats show as not bookable). Z.1.04 is the sensor-board room (an office in reality,
+  halls with their real seats (55+ seats show as not bookable); Omansaal (Z.1.29) left out. `doors`: doors to the
+  outside at ground level (from the plan's door-swing drawings, layer `cartolines`); `pillars`: legs under Nexus's
+  overhang. Pieces under 40 m² or thinner than 1.6 m join their neighbour; holes under 80 m² are filled. Z.1.04 is the sensor-board room (an office in reality,
   a 51-seat seminar room here). Main entrance: Z, east, floor 1 (`entrances`). `north` = true north in the model.
-- **Data:** `campus.json` = `{north: [x, z], buildings: [{id, name, floors, floor_height, blocks: [{poly, holes?, floors}], rooms: [{id, label?, floor, storeys?, x, z, w, d, poly, holes?, capacity, type, bookable, name}], entrances?: [{x, z, floor, dir, main}]}]}`. `label` is the main name shown on the map (HS 1-4, HS A-C, Omansaal; search accepts it, e.g. "HS1"), `storeys: 2` = a tall hall with the floor above cut open.
+- **Data:** `campus.json` = `{north: [x, z], buildings: [{id, name, floors, floor_height, blocks: [{poly, holes?, floors}], rooms: [{id, label?, floor, storeys?, x, z, w, d, poly, holes?, capacity, type, bookable, name}], entrances?: [{x, z, floor, dir, main}], doors?: [{x, z, floor, dir}], pillars?: [{poly, to_floor}]}]}`. `label` is the main name shown on the map (HS 1-4, HS A-C; search accepts it, e.g. "HS1"), `storeys: 2` = a tall hall with the floor above cut open.
   Units are metres; the origin is the centre of V; x runs along N (roughly east), z across (roughly south).
 - **Regenerate:** `uv run --with shapely python tools/campus3d/fetch_plan.py` (only to refresh the data), then
   `uv run --with shapely python tools/campus3d/gen_campus.py`; restart the backend afterwards (it reads the rooms).

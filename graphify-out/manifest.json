@@ -6,9 +6,9 @@
     "semantic_hash": ""
   },
   "README.md": {
-    "mtime": 1795865734.9808815,
-    "seen": 1795865739.7791505,
-    "ast_hash": "d1ba9f9b10922d0fa4527da1a0c5f0d2",
+    "mtime": 1795866650.600697,
+    "seen": 1795866681.7282612,
+    "ast_hash": "80e106c2e6dcac5db88cc8af92d1e890",
     "semantic_hash": ""
   },
   "AGENTS.md": {
@@ -30,9 +30,9 @@
     "semantic_hash": ""
   },
   "docs/PLAN.md": {
-    "mtime": 1795865231.728039,
-    "seen": 1795865272.1265292,
-    "ast_hash": "c9d81722026aa2a385f9b5275fa0c372",
+    "mtime": 1795866650.6022277,
+    "seen": 1795866681.7282655,
+    "ast_hash": "d93adcbce4deb40b6e45e5d92a7969ab",
     "semantic_hash": ""
   },
   "app/__init__.py": {
@@ -120,21 +120,21 @@
     "semantic_hash": ""
   },
   "tools/campus3d/gen_campus.py": {
-    "mtime": 1795865648.707655,
-    "seen": 1795865739.7791123,
-    "ast_hash": "0e1aec83c9a8628128f521ff12cd9028",
+    "mtime": 1795866608.1147733,
+    "seen": 1795866681.7282162,
+    "ast_hash": "791892b736010e9ce3889c320d49489c",
     "semantic_hash": ""
   },
   "web/map3d/building3d.js": {
-    "mtime": 1795865062.0282965,
-    "seen": 1795865272.1264553,
-    "ast_hash": "7b68136e6be30b415f2433076e7a1497",
+    "mtime": 1795866608.1166458,
+    "seen": 1795866681.7282495,
+    "ast_hash": "01fc9951038eaeaf2115fe15e98e8130",
     "semantic_hash": ""
   },
   "web/map3d/campus.json": {
-    "mtime": 1795865674.4343555,
-    "seen": 1795865739.7791407,
-    "ast_hash": "df410b174eb3b9d68135667f896d61a6",
+    "mtime": 1795866616.3716488,
+    "seen": 1795866681.728252,
+    "ast_hash": "279f2303a84f29bbad632926ad2b8e87",
     "semantic_hash": ""
   },
   "web/map3d/index.html": {
@@ -246,15 +246,15 @@
     "semantic_hash": ""
   },
   "tools/campus3d/aau_plan.json": {
-    "mtime": 1795864724.4648068,
-    "seen": 1795865272.126395,
-    "ast_hash": "eaa66d0c088407c9a8ba4c7f58eff101",
+    "mtime": 1795866298.9826555,
+    "seen": 1795866681.7282093,
+    "ast_hash": "ec130dfccc67740c415ab5fa30c86108",
     "semantic_hash": ""
   },
   "tools/campus3d/fetch_plan.py": {
-    "mtime": 1795864720.2234514,
-    "seen": 1795865272.1264007,
-    "ast_hash": "76805cf3b59bd2dd77d55af88943a9bb",
+    "mtime": 1795866286.8165884,
+    "seen": 1795866681.7282128,
+    "ast_hash": "3cc2e2d5b38a5ee0d177fa0708866192",
     "semantic_hash": ""
   }
 }

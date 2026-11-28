@@ -18,17 +18,67 @@ from shapely.ops import unary_union
 
 HERE = Path(__file__).parent
 WFS = ("https://campusplan.aau.at/geoserver/wfs?service=WFS&version=2.0.0&request=GetFeature"
-       "&typeNames=indrz:spaces_{floor}_0&outputFormat=application/json&srsName=EPSG:3857")
+       "&typeNames=indrz:{layer}_{floor}_0&outputFormat=application/json&srsName=EPSG:3857")
 FLOORS = (0, 1, 2, 3)
 BUILDINGS = {"Vorstufe": "V", "Nordtrakt": "N", "Zentraltrakt": "Z", "Bibliothek": "L", "Südtrakt": "S",
              "Osttrakt": "O"}
 K = math.cos(math.radians(46.617))   # web-mercator metres -> real metres at Klagenfurt
 
 
-def fetch(floor):
-    req = urllib.request.Request(WFS.format(floor=floor), headers={"User-Agent": "campus-map-builder"})
+def fetch(floor, layer="spaces"):
+    req = urllib.request.Request(WFS.format(floor=floor, layer=layer), headers={"User-Agent": "campus-map-builder"})
     with urllib.request.urlopen(req, timeout=120) as r:
         return json.loads(r.read().decode("utf-8"))["features"]
+
+
+def outside_doors(spaces, frame):
+    """Doors to the outside: door swing arcs (quarter circles of about 1 m in the plan's drawing lines) whose hinge side
+    lies on a building's outer wall, courtyard walls included. Double doors count once."""
+    from shapely.geometry import Point
+    doors = []
+    for floor in FLOORS:
+        here = [s for s in spaces if s["f"] == floor]
+        if not here:
+            continue
+        per_building = {}
+        for s in here:
+            if not (s["type"] == 44 and not s["code"] and s["g"].area > 150):   # courtyards stay outside
+                per_building.setdefault(s["b"], []).append(s["g"])
+        outlines = {b: frame(unary_union(gs).buffer(0.3).buffer(-0.3)) for b, gs in per_building.items()}
+        found = []
+        for f in fetch(floor, "cartolines"):
+            geom = affine_transform(shape(f["geometry"]), [K, 0, 0, -K, 0, 0])
+            for line in getattr(geom, "geoms", [geom]):
+                pts = list(line.coords)
+                if len(pts) < 5:
+                    continue
+                length, chord = line.length, math.dist(pts[0], pts[-1])
+                if not (1.0 < length < 2.6 and 0.6 < chord / length < 0.95):   # quarter-circle swing of a door leaf
+                    continue
+                arc = frame(line)
+                a, b = arc.coords[0], arc.coords[-1]
+                for bid, outline in outlines.items():
+                    edge = outline.exterior if outline.geom_type == "Polygon" else None
+                    walls = outline.boundary
+                    # one end of the arc is on the wall (the leaf when closed), the other end swings into the room
+                    ends = sorted([(walls.distance(Point(a)), a), (walls.distance(Point(b)), b)])
+                    if ends[0][0] > 0.35 or not outline.buffer(1.5).contains(arc):
+                        continue
+                    hinge = walls.interpolate(walls.project(Point(ends[0][1])))
+                    # the door is to the outside if just beyond the wall there is no building
+                    probe_in = Point(ends[1][1])
+                    nx, nz = hinge.x - probe_in.x, hinge.y - probe_in.y
+                    norm = math.hypot(nx, nz) or 1
+                    outside = Point(hinge.x + nx / norm * 0.8, hinge.y + nz / norm * 0.8)
+                    if not outline.contains(probe_in) or any(o.contains(outside) for o in outlines.values()):
+                        continue
+                    found.append((bid, hinge.x, hinge.y, nx / norm, nz / norm))
+                    break
+        for bid, x, z, dx, dz in found:   # merge double doors and repeated arcs
+            if any(d["b"] == bid and d["f"] == floor and math.dist((d["x"], d["z"]), (x, z)) < 2.5 for d in doors):
+                continue
+            doors.append({"b": bid, "f": floor, "x": round(x, 2), "z": round(z, 2), "dir": [round(dx, 3), round(dz, 3)]})
+    return doors
 
 
 def main():
@@ -67,10 +117,12 @@ def main():
             holes = [[[round(x, 2), round(z, 2)] for x, z in list(i.coords)[:-1]] for i in part.interiors]
             out.append({**{k: s[k] for k in ("b", "f", "code", "type", "name", "cap")}, "poly": ring,
                         **({"holes": holes} if holes else {})})
-    data = {"source": "campusplan.aau.at GeoServer (indrz:spaces_<floor>_0)", "units": "metres; x along N, z across",
-            "north": [round(north.x, 4), round(north.y, 4)], "spaces": out}
+    doors = outside_doors(spaces, frame)
+    data = {"source": "campusplan.aau.at GeoServer (indrz:spaces_<floor>_0, door arcs from indrz:cartolines_<floor>_0)",
+            "units": "metres; x along N, z across", "north": [round(north.x, 4), round(north.y, 4)],
+            "spaces": out, "doors": doors}
     (HERE / "aau_plan.json").write_text(json.dumps(data, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
-    print(f"{len(out)} spaces, grid angle {math.degrees(ang):.2f} deg, north {data['north']}")
+    print(f"{len(out)} spaces, {len(doors)} outside doors, grid angle {math.degrees(ang):.2f} deg, north {data['north']}")
 
 
 if __name__ == "__main__":

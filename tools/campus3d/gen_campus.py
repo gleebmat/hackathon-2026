@@ -11,11 +11,13 @@ in tools/campus3d/aau_plan.json (made by fetch_plan.py from campusplan.aau.at).
 Usage: uv run --with shapely python tools/campus3d/gen_campus.py
 """
 import json
+import math
 import re
 from collections import defaultdict
 from pathlib import Path
 
-from shapely.geometry import MultiPolygon, Polygon
+from shapely.affinity import rotate
+from shapely.geometry import Point, Polygon
 from shapely.ops import polygonize, unary_union
 from shapely.validation import make_valid
 from shapely import set_precision
@@ -29,7 +31,7 @@ BUILDINGS = [  # id, name, floor height (m)
 ]
 TEACHING, OFFICE, CORRIDOR, WC, STAIRS, LIFT, STORAGE = 6, 63, 44, 91, 79, 33, 94
 BOOKABLE_NAMES = {"Seminarraum": "Seminar room", "Computerraum": "Computer room", "Gruppenarbeitsraum": "Group work room",
-                  "Omansaal": "Seminar room", "Studierendenarbeitsraum": "Student work room"}
+                  "Studierendenarbeitsraum": "Student work room"}
 OTHER_NAMES = {"Lesesaal": "Reading room", "Leseraum": "Reading room", "Labor": "Lab", "Katalograum": "Catalogue room",
                "Büro": "Office", "Besprechungsraum": "Meeting room", "Küche": "Kitchen", "Kopierraum": "Copy room"}
 BOARD_ROOM = "Z.1.04"
@@ -41,6 +43,12 @@ BOX_FILL = 0.85        # area / its tightest rectangle: at least this to count a
 OUTLINE_TOLERANCE = 0.35   # m: building outlines are simplified this much (fewer polygons, same look)
 ROOM_TOLERANCE = 0.2       # m: room outlines (lecture-hall fans keep their shape)
 COURTYARD_MIN_AREA = 150   # unnamed "corridor" spaces this big are courtyards, not building
+SKIP_ROOMS = {"Z.1.29"}    # Omansaal: left out of the map on request
+MIN_PIECE = 40.0           # m2: smaller building pieces (stair and lift shafts, odd cells) join their neighbour
+MIN_PIECE_WIDTH = 1.6      # m: thinner pieces too
+MAX_FILLED_HOLE = 80.0     # m2: shafts and small light wells inside a building are filled
+PILLARS = {"O"}            # buildings whose upper floors overhang the ground floor: legs under the overhang corners
+PILLAR_SIZE = 1.2          # m
 
 
 def poly(s):
@@ -79,9 +87,21 @@ def floor_outlines(by_floor, taken):
     return out
 
 
-def shell_blocks(outlines):
+def polys(geom):
+    for p in getattr(geom, "geoms", [geom]):
+        if isinstance(p, Polygon) and not p.is_empty:
+            yield p
+
+
+def tidy(g):
+    return set_precision(g.buffer(0.02, join_style=2).buffer(-0.02, join_style=2), 0.01)
+
+
+def shell_blocks(outlines, taken):
     """Building pieces with the floors they exist on: the floor outlines are cut into cells by all their edges, cells
-    with the same floors are joined; every run of consecutive floors becomes one block."""
+    with the same floors are joined. Small or thin pieces (shafts, odd cells) join the neighbour they share the most
+    wall with, so the model has no clutter of tiny boxes; small holes are filled. Every run of consecutive floors
+    becomes one block."""
     lines = unary_union([g.boundary for g in outlines.values()])
     groups = defaultdict(list)
     for cell in polygonize(lines):
@@ -89,8 +109,28 @@ def shell_blocks(outlines):
         fl = tuple(f for f in sorted(outlines) if outlines[f].contains(pt))
         if fl:
             groups[fl].append(cell)
+    pieces = [(p, fl) for fl, cells in groups.items() for p in polys(tidy(unary_union(cells)))]
+
+    def small(p):
+        return p.area < MIN_PIECE or p.buffer(-MIN_PIECE_WIDTH / 2, join_style=2).is_empty
+
+    while True:
+        bad = sorted((i for i, (p, _) in enumerate(pieces) if small(p)), key=lambda i: pieces[i][0].area)
+        if not bad:
+            break
+        p, _ = pieces.pop(bad[0])
+        shared = [(p.boundary.intersection(q.buffer(0.05)).length, j) for j, (q, _) in enumerate(pieces)]
+        length, j = max(shared, default=(0, None))
+        if j is not None and length > 0.3:          # an isolated small piece is dropped
+            if any(f in taken and p.intersection(taken[f]).area > 0.1 for f in pieces[j][1]):
+                continue                             # another building is there on the neighbour's floors: drop it
+            q, fq = pieces.pop(j)
+            pieces.extend((m, fq) for m in polys(tidy(unary_union([q, p]))))
+    merged = defaultdict(list)
+    for p, fl in pieces:
+        merged[fl].append(p)
     blocks = []
-    for fl, cells in groups.items():
+    for fl, ps in merged.items():
         runs, run = [], [fl[0]]
         for f in fl[1:]:
             if f == run[-1] + 1:
@@ -99,17 +139,72 @@ def shell_blocks(outlines):
                 runs.append(run)
                 run = [f]
         runs.append(run)
-        geom = set_precision(unary_union(cells).buffer(0.02, join_style=2).buffer(-0.02, join_style=2), 0.01)
-        for p in rings(geom):
-            if p.area < 8:   # slivers between floor outlines
-                continue
+        for p in polys(tidy(unary_union(ps))):
+            holes = [coords(h) for h in p.interiors if Polygon(h).area > MAX_FILLED_HOLE]
             for r in runs:
                 b = {"poly": coords(p.exterior), "floors": r}
-                holes = [coords(i) for i in p.interiors if Polygon(i).area > 4]
                 if holes:
                     b["holes"] = holes
                 blocks.append(b)
     return blocks
+
+
+def block_union(b, floor):
+    return unary_union([Polygon(x["poly"], x.get("holes", [])) for x in b["blocks"] if floor in x["floors"]])
+
+
+def outside_doors(b, doors, everything):
+    """The plan's doors to the outside, snapped onto this building's wall on their floor, facing out. Only doors at
+    ground level (floors 0 and 1; the campus slopes, the main entrance is on floor 1) and only the lowest of doors
+    stacked above each other (the upper ones open onto terraces and balconies)."""
+    out = []
+    for d in sorted(doors, key=lambda d: d["f"]):
+        if d["b"] != b["id"] or d["f"] not in b["floors"] or d["f"] > 1:
+            continue
+        here = block_union(b, d["f"])
+        walls = here.boundary
+        pt = Point(d["x"], d["z"])
+        if walls.distance(pt) > 1.5:
+            continue
+        at = walls.project(pt)
+        on = walls.interpolate(at)
+        a, c = walls.interpolate(at - 0.5), walls.interpolate(at + 0.5)
+        tx, tz = c.x - a.x, c.y - a.y
+        n = math.hypot(tx, tz) or 1
+        nx, nz = -tz / n, tx / n                      # wall normal, turned to point out of the building
+        if here.contains(Point(on.x + nx * 0.6, on.y + nz * 0.6)):
+            nx, nz = -nx, -nz
+        if everything[d["f"]].contains(Point(on.x + nx * 0.6, on.y + nz * 0.6)):
+            continue                                   # another building right there: not an outside door
+        if any(e["floor"] == d["f"] and math.dist((e["x"], e["z"]), (on.x, on.y)) < 5 for e in b.get("entrances", [])):
+            continue                                   # the main entrance has its own marker
+        if any(math.dist((o["x"], o["z"]), (on.x, on.y)) < 2.5 for o in out):
+            continue
+        out.append({"x": round(on.x, 2), "z": round(on.y, 2), "floor": d["f"], "dir": [round(nx, 3), round(nz, 3)]})
+    return out
+
+
+def pillars(b):
+    """Legs for a building whose upper floor overhangs its ground floor: one at every outer corner of the overhang."""
+    ground, upper = block_union(b, 0), block_union(b, 1)
+    legs = []
+    for p in polys(upper.simplify(1.0)):
+        pts = coords(p.exterior)
+        if not Polygon(pts).exterior.is_ccw:
+            pts = pts[::-1]
+        for k, (x, z) in enumerate(pts):
+            (px, pz), (qx, qz) = pts[k - 1], pts[(k + 1) % len(pts)]
+            ax, az, bx, bz = px - x, pz - z, qx - x, qz - z
+            la, lb = math.hypot(ax, az) or 1, math.hypot(bx, bz) or 1
+            half = PILLAR_SIZE / 2 + 0.2               # the leg sits just inside the corner
+            cx, cz = x + (ax / la + bx / lb) * half, z + (az / la + bz / lb) * half
+            if not p.contains(Point(cx, cz)):          # inner corner: no leg
+                continue
+            if ground.buffer(0.5).contains(Point(cx, cz)):
+                continue                               # the ground floor is already under it
+            leg = rotate(Point(cx, cz).buffer(PILLAR_SIZE / 2, cap_style=3), math.atan2(bz, bx), use_radians=True)
+            legs.append({"poly": coords(leg.exterior), "to_floor": 1})
+    return legs
 
 
 def room_entry(s, floor, storeys, geom):
@@ -120,7 +215,7 @@ def room_entry(s, floor, storeys, geom):
     if hall:
         kind, label, eng = "seminar", f"HS {hall.group(1)}", "Lecture hall"
     elif s["type"] == TEACHING or name in BOOKABLE_NAMES:
-        kind, label, eng = "seminar", "Omansaal" if name == "Omansaal" else None, BOOKABLE_NAMES.get(name) or OTHER_NAMES.get(name, name)
+        kind, label, eng = "seminar", None, BOOKABLE_NAMES.get(name) or OTHER_NAMES.get(name, name)
     elif s["type"] == WC:
         kind, label, eng = "wc", None, "WC"
     else:
@@ -203,7 +298,7 @@ def main():
             name_s = s["name"].strip()
             teaching = s["type"] == TEACHING or name_s.startswith("Hörsaal") or s["code"] == BOARD_ROOM
             office = s["type"] == OFFICE and name_s in REAL_OFFICES and poly(s).area >= MIN_OFFICE_AREA and is_box(poly(s))
-            if (teaching or office) and s["code"] and poly(s).area >= 3:
+            if (teaching or office) and s["code"] and s["code"] not in SKIP_ROOMS and poly(s).area >= 3:
                 per_code[s["code"]].append(s)
         rooms, placed = [], defaultdict(list)
         teaching_first = sorted(per_code.items(), key=lambda kv: (kv[1][0]["type"] != TEACHING, kv[0]))
@@ -225,24 +320,31 @@ def main():
                 for f in span:
                     placed[f].append(geom)
         rooms.sort(key=lambda r: r["id"])
-        for f, g in outlines.items():
-            taken[f] = g if f not in taken else taken[f].union(g)
         b = {"id": bid, "name": name, "floors": sorted(by_floor), "floor_height": height,
-             "blocks": shell_blocks(outlines), "rooms": rooms,
+             "blocks": shell_blocks(outlines, taken), "rooms": rooms,
              "source": "campusplan.aau.at floor plans (tools/campus3d/aau_plan.json), real room numbers"}
         if bid == "Z":   # main entrance: the outer wall of "Eingang" (Z.1.R0) on floor 1, facing east
             door = next(s for s in mine if s["code"] == "Z.1.R0")
             g = poly(door)
             b["entrances"] = [{"x": round(g.bounds[2], 2), "z": round(g.centroid.y, 2), "floor": door["f"],
                                "dir": [1, 0], "main": True}]
+        for f in b["floors"]:
+            g = block_union(b, f)
+            taken[f] = g if f not in taken else taken[f].union(g)
+        if bid in PILLARS:
+            b["pillars"] = pillars(b)
         final_clip(b)
         buildings.append(b)
+    everything = {f: unary_union([block_union(b, f) for b in buildings]) for f in range(4)}
+    for b in buildings:
+        b["doors"] = outside_doors(b, plan.get("doors", []), everything)
     campus = {"campus": "AAU Klagenfurt", "units": "metres; x along the campus grid (~east), z across (~south); "
               "origin = centre of building V", "north": plan["north"], "buildings": buildings}
     OUT.write_text(json.dumps(campus, ensure_ascii=False, indent=1), encoding="utf-8")
     for b in buildings:
         print(b["id"], b["floors"], len(b["blocks"]), "blocks,", len(b["rooms"]), "rooms,",
-              sum(r["bookable"] for r in b["rooms"]), "bookable")
+              sum(r["bookable"] for r in b["rooms"]), "bookable,", len(b["doors"]), "doors,", len(b.get("pillars", [])),
+              "legs")
 
 
 if __name__ == "__main__":

@@ -138,6 +138,13 @@ export function createBuilding(el, input, opts = {}) {
     return m;
   };
 
+  // --- outside doors and legs (shared geometry: there are many doors) ---
+  const doorParts = [
+    [new THREE.BoxGeometry(0.3, 3.0, 2.8), new THREE.MeshStandardMaterial({ color: 0xf1f4f9, roughness: 0.6 }), 0.12, 1.5],
+    [new THREE.BoxGeometry(0.4, 2.6, 2.1), new THREE.MeshStandardMaterial({ color: 0x34405a, roughness: 0.5 }), 0.2, 1.3],
+  ];
+  const pillarMat = new THREE.MeshStandardMaterial({ color: 0xb8c0cc, roughness: 0.8 });
+
   // --- buildings ---
   const floorGroups = new Map();   // "V:1" -> Group (slab + rooms of that floor)
   const shells = [];               // per building: walls + roof
@@ -187,6 +194,25 @@ export function createBuilding(el, input, opts = {}) {
       box(c.x, c.z, c.w, c.d, 0, c.floors.length * H, glass, shell, 0.5);
     }
     for (const e of bd.entrances ?? []) pendingEntrances.push([bd, e, H]);   // drawn once badge() exists
+    for (const d of bd.doors ?? []) {          // doors to the outside: a dark door leaf in a light frame on the wall
+      const door = new THREE.Group();
+      for (const [geo, mat, x, y] of doorParts) {
+        const m = new THREE.Mesh(geo, mat);
+        m.position.set(x, y, 0);
+        door.add(m);
+      }
+      door.position.set(d.x, d.floor * H, d.z);
+      door.rotation.y = -Math.atan2(d.dir[1], d.dir[0]);   // local +x points out of the door
+      (floorGroups.get(`${bd.id}:${d.floor}`) ?? scene).add(door);
+    }
+    for (const p of bd.pillars ?? []) {        // legs under an overhanging upper floor, from the ground up to it
+      const h = p.to_floor * H;
+      const leg = new THREE.Mesh(new THREE.ExtrudeGeometry(polyShape(p.poly), { depth: h, bevelEnabled: false }), pillarMat);
+      leg.rotation.x = -Math.PI / 2;
+      leg.castShadow = true;
+      edges(leg, 0x5b6676, 0.5);
+      shell.add(leg);
+    }
     for (const r of bd.rooms) {
       const isAtrium = r.type === "atrium", h = isAtrium ? 0.25 : (r.storeys ?? 1) * H - 0.8;   // tall halls span floors
       const mat = new THREE.MeshStandardMaterial({ color: TYPE_COLOR[r.type] ?? 0xcccccc, roughness: 0.7,
@@ -322,7 +348,8 @@ export function createBuilding(el, input, opts = {}) {
   });
 
   // --- visibility state ---
-  let highlight = null, halo = null, floorFilter = null, buildingFilter = null,
+  const DEFAULT_FLOOR = opts.floor ?? 1;   // the map opens on floor 1: the main entrance and the board room are there
+  let highlight = null, halo = null, floorFilter = DEFAULT_FLOOR, buildingFilter = null,
     showOffices = opts.offices ?? true;   // offices show by default; the "Offices" button hides them
   // buildingFilter: null (everything) or a Set of building ids (one building, or a group such as "Lakeside")
   const inView = (id) => buildingFilter === null || buildingFilter.has(id);
@@ -415,7 +442,9 @@ export function createBuilding(el, input, opts = {}) {
   };
   for (const [bd, e, H] of pendingEntrances) addEntrance(bd, e, H);
 
-  const north = input.north ?? [0, -1];   // true north in the model (x east, z south), from gen_campus.py
+  const north = input.north ?? [0, -1];
+  // floor 1 if the visible building(s) have it, else everything
+  const defaultFloor = () => buildings.some((bd) => inView(bd.id) && bd.floors.includes(DEFAULT_FLOOR)) ? DEFAULT_FLOOR : null;   // true north in the model (x east, z south), from gen_campus.py
   const api = {
     /** Clockwise angle (radians) from the top of the screen to true north: the compass needle turns by it. */
     heading() {
@@ -477,17 +506,15 @@ export function createBuilding(el, input, opts = {}) {
     buildings: () => buildings.map((bd) => ({ id: bd.id, name: bd.name, floors: bd.floors, group: bd.group ?? null })),
     /** Back to the current building (or the whole campus), all floors, nothing focused. */
     showAll() {
-      clearHighlight(); floorFilter = null;
-      applyVisibility();
-      goTo(view(filterBox()));
+      clearHighlight();
+      api.setFloor(defaultFloor());
     },
     /** Isolate one building (id like "V") or show all (null). Resets floor filter and focus. */
     setBuilding(id) {
       const ids = buildings.filter((bd) => bd.id === id || bd.group === id).map((bd) => bd.id);
       buildingFilter = id && ids.length ? new Set(ids) : null;
-      clearHighlight(); floorFilter = null;
-      applyVisibility();
-      goTo(view(filterBox()));
+      clearHighlight();
+      api.setFloor(defaultFloor());
       return buildingFilter ? id : null;
     },
     /** Show floors 0..n of the visible building(s), or all floors (null). */
@@ -499,6 +526,7 @@ export function createBuilding(el, input, opts = {}) {
       const bd = buildings.find((x) => inView(x.id)) ?? buildings[0];
       goTo(view(box, floorFilter === null ? null : floorFilter * bd.floor_height + 1));
     },
+    floor: () => floorFilter,
     setOfficesVisible(v) { showOffices = !!v; applyVisibility(); },
     officesVisible: () => showOffices,
     onRoomClick(cb) { clickCb = cb; },
@@ -553,7 +581,7 @@ function mountControls(el, api, labels = {}) {
     requestAnimationFrame(spin);
   };
   spin();
-  let building = null, floor = null;
+  let building = null, floor = api.floor?.() ?? null;
   const row = () => {
     const r = document.createElement("div");
     r.style.cssText = "display:flex;gap:3px;flex-wrap:wrap;padding:3px;border-radius:10px;" +
@@ -576,9 +604,9 @@ function mountControls(el, api, labels = {}) {
     bRow.replaceChildren(); fRow.replaceChildren(); oRow.replaceChildren();
     button(oRow, `${offices ? "✓ " : ""}${L.offices ?? "Offices"}`, offices, L.officesTitle ?? "Show or hide the offices",
       () => { offices = !offices; api.setOfficesVisible(offices); render(); });
-    button(bRow, L.all, building === null, L.allBuildings, () => { building = api.setBuilding(null); floor = null; render(); });
+    button(bRow, L.all, building === null, L.allBuildings, () => { building = api.setBuilding(null); floor = api.floor(); render(); });
     for (const b of api.buildings()) {
-      button(bRow, b.id, building === b.id, b.name, () => { building = api.setBuilding(b.id); floor = null; render(); });
+      button(bRow, b.id, building === b.id, b.name, () => { building = api.setBuilding(b.id); floor = api.floor(); render(); });
     }
     const floors = [...new Set(api.buildings().filter((b) => !building || b.id === building).flatMap((b) => b.floors))]
       .sort((a, b) => b - a);
@@ -588,9 +616,9 @@ function mountControls(el, api, labels = {}) {
     }
   };
   // keep the selector in sync when the page calls the API directly
-  for (const [name, after] of [["setBuilding", (id) => { building = id ?? null; floor = null; }],
+  for (const [name, after] of [["setBuilding", (id) => { building = id ?? null; floor = api.floor(); }],
                                ["setFloor", (_, n) => { floor = n === null || n === undefined ? null : Number(n); }],
-                               ["showAll", () => { floor = null; }],
+                               ["showAll", () => { floor = api.floor(); }],
                                ["focusRoom", (key) => { if (!key) return; floor = null; if (building && key.split(".")[0] !== building) building = null; }]]) {
     const orig = api[name];
     api[name] = (...args) => { const res = orig(...args); after(res, args[0]); render(); return res; };

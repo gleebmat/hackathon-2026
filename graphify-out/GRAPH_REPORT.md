@@ -1,17 +1,17 @@
 # Graph Report - hackathon-2026  (2026-11-28)
 
 ## Corpus Check
-- 37 files · ~84,317 words
+- 37 files · ~84,597 words
 - Verdict: corpus is large enough that graph structure adds value.
 - Unclassified: 10 file(s) not represented in the graph (top: .tflite 4, (none) 2, .example 1)
 
 ## Summary
-- 559 nodes · 1413 edges · 23 communities (16 shown, 7 thin omitted)
-- Extraction: 98% EXTRACTED · 2% INFERRED · 0% AMBIGUOUS · INFERRED: 33 edges (avg confidence: 0.9)
+- 569 nodes · 1440 edges · 27 communities (19 shown, 8 thin omitted)
+- Extraction: 98% EXTRACTED · 2% INFERRED · 0% AMBIGUOUS · INFERRED: 34 edges (avg confidence: 0.9)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `8e2b1eab`
+- Built from commit: `cf451b63`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -29,9 +29,13 @@
 - main.py
 - api.js
 - plan2d.js
+- now
 - createPicker
 - booking.py
 - webcam.py
+- campus_sim.py
+- ApiError
+- NoCacheStatic
 
 ## God Nodes (most connected - your core abstractions)
 1. `t()` - 46 edges
@@ -46,21 +50,21 @@
 10. `request()` - 16 edges
 
 ## Surprising Connections (you probably didn't know these)
+- `3D campus map (tom-claude; built and working, standalone for now)` --references--> `pillars()`  [INFERRED]
+  docs/PLAN.md → tools/campus3d/gen_campus.py
+- `Roles` --references--> `people()`  [INFERRED]
+  docs/PLAN.md → web/js/i18n.js
 - `API (gleb-claude; implemented in `app/`, tested in `tests/test_api.py`)` --references--> `building()`  [INFERRED]
   docs/PLAN.md → web/js/api.js
 - `gleb-claude (Backend + integration)` --references--> `people()`  [INFERRED]
   docs/LOG.md → web/js/i18n.js
-- `Roles` --references--> `people()`  [INFERRED]
-  docs/PLAN.md → web/js/i18n.js
 - `API (gleb-claude; implemented in `app/`, tested in `tests/test_api.py`)` --references--> `q()`  [INFERRED]
   docs/PLAN.md → web/js/api.js
-- `API (gleb-claude; implemented in `app/`, tested in `tests/test_api.py`)` --references--> `people()`  [INFERRED]
-  docs/PLAN.md → web/js/i18n.js
 
 ## Import Cycles
 - None detected.
 
-## Communities (23 total, 7 thin omitted)
+## Communities (27 total, 8 thin omitted)
 
 ### Community 1 - "hackathon-2026"
 Cohesion: 0.29
@@ -72,15 +76,15 @@ Nodes (8): Code, Docs, Git workflow (several people push to this repo at once), 
 
 ### Community 3 - "app.js"
 Cohesion: 0.07
-Nodes (98): agoText(), ask(), boardCard(), bookingCard(), busySlot(), canBook(), cancelBooking(), checkAlerts() (+90 more)
+Nodes (97): agoText(), ask(), boardCard(), bookingCard(), busySlot(), canBook(), cancelBooking(), checkAlerts() (+89 more)
 
 ### Community 5 - "vision.py"
-Cohesion: 0.05
-Nodes (17): number(), parse(), start(), count(), decrypt(), frame_key(), letterbox(), nms() (+9 more)
+Cohesion: 0.06
+Nodes (13): start(), count(), decrypt(), frame_key(), letterbox(), nms(), Room, start() (+5 more)
 
 ### Community 6 - "gen_campus.py"
-Cohesion: 0.13
-Nodes (12): fetch(), main(), coords(), final_clip(), floor_outlines(), is_box(), is_courtyard(), main() (+4 more)
+Cohesion: 0.11
+Nodes (19): fetch(), main(), frame(), outside_doors(), block_union(), coords(), final_clip(), floor_outlines() (+11 more)
 
 ### Community 7 - "building3d.js"
 Cohesion: 0.25
@@ -103,8 +107,8 @@ Cohesion: 0.12
 Nodes (11): check_password(), hash_password(), new_token(), valid_email(), columns(), connect(), db_path(), init() (+3 more)
 
 ### Community 13 - "main.py"
-Cohesion: 0.06
-Nodes (35): now(), to_local(), api_error(), ask_assistant(), BookingRequest, calendar(), cancel_booking(), create_booking() (+27 more)
+Cohesion: 0.11
+Nodes (16): BookingRequest, Credentials, in_transaction(), lifespan(), login(), logout(), mqtt_reading(), post_reading() (+8 more)
 
 ### Community 14 - "api.js"
 Cohesion: 0.19
@@ -114,35 +118,47 @@ Nodes (21): ApiError, ask(), availability(), book(), building(), calendar(), can
 Cohesion: 0.36
 Nodes (7): createPlan(), render(), roomSvg(), schedule(), esc(), OUTER, YARD
 
+### Community 17 - "now"
+Cohesion: 0.13
+Nodes (14): now(), to_local(), ask_assistant(), calendar(), cancel_booking(), create_booking(), get_conn(), me() (+6 more)
+
 ### Community 18 - "createPicker"
-Cohesion: 0.18
-Nodes (25): createPicker(), cardHtml(), cardState(), choose(), defaultStart(), drawCalendar(), drawKinds(), expected() (+17 more)
+Cohesion: 0.17
+Nodes (26): locale, createPicker(), cardHtml(), cardState(), choose(), defaultStart(), drawCalendar(), drawKinds() (+18 more)
 
 ### Community 19 - "booking.py"
-Cohesion: 0.09
-Nodes (37): answer(), ApiError, availability(), booking_out(), calendar(), can_rate(), create_booking(), current_bookings() (+29 more)
+Cohesion: 0.13
+Nodes (30): availability(), booking_out(), calendar(), can_rate(), create_booking(), current_bookings(), fmt(), free_hours() (+22 more)
 
 ### Community 20 - "webcam.py"
 Cohesion: 0.12
 Nodes (11): check_left_item(), main(), prep_96(), run_person_detect(), detect_left_items(), is_valid_new_object(), load_labels(), main() (+3 more)
 
+### Community 23 - "campus_sim.py"
+Cohesion: 0.15
+Nodes (9): answer(), number(), parse(), slot_start(), add_booking(), target(), tick(), user_id() (+1 more)
+
+### Community 25 - "ApiError"
+Cohesion: 0.24
+Nodes (6): ApiError, api_error(), current_user(), room_detail(), session_user(), validation_error()
+
 ## Knowledge Gaps
-- **7 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
+- **8 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
 - **Why does `API (gleb-claude; implemented in `app/`, tested in `tests/test_api.py`)` connect `booking.py` to `PLAN: Smart Campus Room Booking (Infineon challenge), building V`, `app.js`, `api.js`?**
-  _High betweenness centrality (0.427) - this node is a cross-community bridge._
+  _High betweenness centrality (0.414) - this node is a cross-community bridge._
 - **Are the 9 inferred relationships involving `ApiError` (e.g. with `answer()` and `add_booking()`) actually correct?**
   _`ApiError` has 9 INFERRED edges - model-reasoned connections that need verification._
 - **Should `app.js` be split into smaller, more focused modules?**
-  _Cohesion score 0.06572068707991038 - nodes in this community are weakly interconnected._
+  _Cohesion score 0.06662859318484675 - nodes in this community are weakly interconnected._
 - **Why does `people()` connect `app.js` to `PLAN: Smart Campus Room Booking (Infineon challenge), building V`, `LOG: one section per agent`, `createPicker`, `booking.py`?**
-  _High betweenness centrality (0.365) - this node is a cross-community bridge._
+  _High betweenness centrality (0.362) - this node is a cross-community bridge._
 - **Should `vision.py` be split into smaller, more focused modules?**
-  _Cohesion score 0.05176470588235294 - nodes in this community are weakly interconnected._
-- **Why does `can_rate()` connect `booking.py` to `main.py`?**
-  _High betweenness centrality (0.168) - this node is a cross-community bridge._
+  _Cohesion score 0.06341463414634146 - nodes in this community are weakly interconnected._
+- **Why does `can_rate()` connect `booking.py` to `ApiError`?**
+  _High betweenness centrality (0.157) - this node is a cross-community bridge._
 - **Should `gen_campus.py` be split into smaller, more focused modules?**
-  _Cohesion score 0.13227513227513227 - nodes in this community are weakly interconnected._
+  _Cohesion score 0.10526315789473684 - nodes in this community are weakly interconnected._

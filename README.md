@@ -32,11 +32,13 @@ API docs: http://localhost:8000/docs. The map alone: http://localhost:8000/map3d
   campusplan.aau.at's own floor-plan data (every room with its real number and seats; courtyards left out; corridors,
   stairs, storage, technical rooms and toilets are part of the building but not drawn as rooms; offices are drawn
   only if they are real, box-shaped offices or meeting rooms; outlines are simplified to keep the model light). Bookable: the real seminar,
-  computer and group-work rooms and lecture halls (53 rooms). Exception: **Z.1.04** (in reality an office) is our
+  computer and group-work rooms and lecture halls (52 rooms; the Omansaal is left out). Doors to the outside
+  (ground level) come from the plan's door drawings; Nexus stands on legs under its overhanging upper floors; stair
+  and lift shafts and other small pieces are merged into the building so the model stays light. Exception: **Z.1.04** (in reality an office) is our
   sensor-board room, a 51-seat seminar room here. Refresh the data with
   `uv run --with shapely python tools/campus3d/fetch_plan.py`, rebuild with
   `uv run --with shapely python tools/campus3d/gen_campus.py` (then restart the backend: it reads the bookable rooms).
-  The map opens on floor 1; a compass (top left) turns with it, click it for north-up; the main entrance (Z, east,
+  The map opens on floor 1 (also when you pick a building); a compass (top left) turns with it, click it for north-up; the main entrance (Z, east,
   floor 1) has a blue door frame, canopy and tag; offices show by default, the "Offices" button hides them.
 - **Notifications** (bell next to My bookings, unread counter, "Mark all as read"): booking starts in 10 min, ends in
   N min, time is over, ghost warning (nobody detected, released at HH:MM), booking released for inactivity, quiet room
