@@ -22,6 +22,9 @@ Presence, noise, ghost release and left items tested end to end with a webcam. T
 - 28 Nov: website in English and German, footer (AAU links, team contacts), share links, .ics export, shortcuts,
   new login photo.
 
+- 28 Nov: booking rules (walk-ins don't block a whole-room booking; only rooms under 55 seats bookable, shown as
+  "Not bookable"), map opens on floor 1, notification center; demo frame key shared in the repo.
+
 **Next:** physical-board test.
 
 ---

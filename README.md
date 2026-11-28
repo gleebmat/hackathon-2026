@@ -27,9 +27,16 @@ API docs: http://localhost:8000/docs. The map alone: http://localhost:8000/map3d
   CAMPUSonline, Moodle, campus map, IT Service Desk), how booking works and the team's contacts (`web/js/footer.js`).
   Rooms can be shared as links (`/?room=Z.1.04`, "Copy link" in the room panel), bookings exported to a calendar
   (`.ics`, "Calendar" in My bookings), and `?` shows the keyboard shortcuts. Login photo: carinthia.com
-  (`web/img/login.jpg`).
+  (`web/img/login.jpg`). The 3D map opens on floor 1 (where the board room Z.1.04 is); "All floors" shows everything.
+- **Notifications** (bell next to My bookings, unread counter, "Mark all as read"): booking starts in 10 min, ends in
+  N min, time is over, ghost warning (nobody detected, released at HH:MM), booking released for inactivity, quiet room
+  getting loud, something left behind, booked, cancelled. New ones also pop up as toasts; clicking one opens the room.
+  Stored per account in the browser (`localStorage`), so each comes once, also across reloads; they follow the
+  language switch.
 - **Booking rules:** only rooms with **fewer than 55 seats** can be booked (`BOOKABLE_BELOW` in `app/booking.py`); lecture
-  halls, the Aula and the atrium show live status only. People sitting in a room without a booking take seats from
+  halls, the Aula and the atrium show live status only: status `unbookable`, "🔒 Not bookable" in the panel and the
+  search, dark and see-through with a "🔒 55+" badge on the map, no room cards, closed slots, skipped by the assistant
+  and suggestions, and the campus simulator doesn't book them. People sitting in a room without a booking take seats from
   sharers but **don't block booking the whole room** (a private booking just moves them out).
 - **Port:** any free port works (`uvicorn app.main:app --port 8011` is fine too). The board doesn't talk to the
   port: it publishes to an MQTT broker and the backend subscribes, so only the browser URL changes.
