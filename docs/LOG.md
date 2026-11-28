@@ -29,6 +29,8 @@ Presence, noise, ghost release and left items tested end to end with a webcam. T
   bridges Z-S, no overlaps), compass, main entrance, offices toggle.
 - 28 Nov: page addresses for every view (room, My bookings, map building/floor, day; Back/Forward work); database
   writes queued in-process (`db.WRITE_LOCK`): no more "database is locked" with many devices at once.
+- 28 Nov: "Show the way": walking routes on the 3D map from the main entrance (or the nearest door) to every
+  bookable room and lecture hall, with stairs found in the plan's drawings (`tools/campus3d/gen_routes.py`).
 
 **Next:** physical-board test.
 

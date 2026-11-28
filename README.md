@@ -43,7 +43,15 @@ API docs: http://localhost:8000/docs. The map alone: http://localhost:8000/map3d
   upper right. Exception: **Z.1.04** (in reality an office) is our
   sensor-board room, a 51-seat seminar room here. Refresh the data with
   `uv run --with shapely python tools/campus3d/fetch_plan.py`, rebuild with
-  `uv run --with shapely python tools/campus3d/gen_campus.py` (then restart the backend: it reads the bookable rooms).
+  `uv run --with shapely python tools/campus3d/gen_campus.py`, then the walking routes with
+  `uv run --with shapely --with scipy python tools/campus3d/gen_routes.py` (then restart the backend: it reads the
+  bookable rooms).
+- **Show the way:** every bookable room and lecture hall has a "Show the way" button: a blue route on the 3D map,
+  drawn over everything, with a dot walking it, from the main entrance (Z, floor 1) along corridors, through the
+  Aula, over the bridges and up or down the stairs to the room's door, plus distance and walking time. Rooms more
+  than 150 m from the main entrance start at the nearest outside door instead (e.g. Nexus, the far ends of N). Stairs
+  are found in the plan's drawings (rows of tread lines, the same stairwell on each floor), because the plan's
+  "staircase" labels are unreliable; room doors come from the door swings in the plan.
   The map opens on floor 1 (also when you pick a building); a compass (top left) turns with it, click it to go back to the standard view; a single building is shown without the bridges and corridors to its
   neighbours; the main entrance (Z, east,
   floor 1) has a blue door frame, canopy and tag; offices show by default, the "Offices" button hides them.

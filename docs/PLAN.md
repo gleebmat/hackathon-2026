@@ -260,7 +260,15 @@ The backend already serves it at **http://localhost:8000/map3d/**. It isn't wire
 - **Data:** `campus.json` = `{north: [x, z], buildings: [{id, name, floors, floor_height, blocks: [{poly, holes?, floors, link?}], rooms: [{id, label?, floor, storeys?, x, z, w, d, poly, holes?, capacity, type, bookable, name}], entrances?: [{x, z, floor, dir, main}], doors?: [{x, z, floor, dir}], pillars?: [{poly, to_floor}], machines?: [{kind, x, z, floor, dir}]}]}`. `label` is the main name shown on the map (HS 1-4, HS A-C; search accepts it, e.g. "HS1"), `storeys: 2` = a tall hall with the floor above cut open.
   Units are metres; the origin is the centre of V; x runs along N (roughly east), z across (roughly south).
 - **Regenerate:** `uv run --with shapely python tools/campus3d/fetch_plan.py` (only to refresh the data), then
-  `uv run --with shapely python tools/campus3d/gen_campus.py`; restart the backend afterwards (it reads the rooms).
+  `uv run --with shapely python tools/campus3d/gen_campus.py` and
+  `uv run --with shapely --with scipy python tools/campus3d/gen_routes.py`; restart the backend afterwards.
+- **Routes** (`campus.json` `routes`, `gen_routes.py`): `{room id: {from: "main" | "door", start: [x, z, floor],
+  points: [[x, z, floor, y], ...], length}}` for every lecture hall and seminar room (no offices). Walkable = the
+  plan's corridors, halls, entrances, bridges, stairwells, lifts and the library reading rooms, on a 0.5 m grid;
+  floors connect only where a stair flight (found in the drawing lines by `fetch_plan.py`, `aau_plan.json` `stairs`)
+  is on both floors; a floor change costs 8 m extra. Start: the main entrance, or the nearest outside door if the
+  walk is over 150 m. End: the room's door (`room_doors`, from door swings), else the wall it shares with a corridor.
+  Map: `showRoute(route, {startLabel})`, `clearRoute()`.
 
 ```js
 import { createBuilding } from "./building3d.js";      // path relative to web/map3d/

@@ -431,7 +431,7 @@ export function createBuilding(el, input, opts = {}) {
     floorFilter = Math.max(...r.points.map((p) => p[2]));
     applyVisibility();
     const box = new THREE.Box3().setFromPoints(pts);
-    box.expandByVector(new THREE.Vector3(12, 4, 12));
+    box.expandByVector(new THREE.Vector3(20, 4, 20));
     goTo(view(box));
   }
   function moveRouteDot(dt) {
@@ -720,6 +720,7 @@ function mountControls(el, api, labels = {}, onSelect = null) {
   for (const [name, after] of [["setBuilding", (id) => { building = id ?? null; floor = api.floor(); }],
                                ["setFloor", (_, n) => { floor = n === null || n === undefined ? null : Number(n); }],
                                ["showAll", () => { floor = api.floor(); }],
+                               ["showRoute", () => { building = null; floor = api.floor(); }],
                                ["focusRoom", (key) => { if (!key) return; floor = null; if (building && key.split(".")[0] !== building) building = null; }]]) {
     const orig = api[name];
     api[name] = (...args) => { const res = orig(...args); after(res, args[0]); render(); return res; };

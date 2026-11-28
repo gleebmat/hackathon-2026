@@ -129,6 +129,7 @@ async function buildView() {
       import("../map3d/building3d.js"),
       fetch("map3d/campus.json").then((r) => { if (!r.ok) throw new Error("no campus.json"); return r.json(); }),
     ]);
+    state.routes = campus.routes ?? {};
     state.view = createBuilding(el, campus, { labels: {
       all: t("map_all"), allBuildings: t("map_all_buildings"), allFloors: t("map_all_floors"),
       everyFloor: t("map_every_floor"), floor: t("map_floor"), floorTitle: t("map_floor_title"),
@@ -330,7 +331,10 @@ function showRoomInfo(r) {
     box.className = "map-info";
     card.append(box);
     box.addEventListener("click", (e) => {
+      const way = e.target.closest("[data-action=way]");
+      if (way) return showWay(way.dataset.room);
       if (!e.target.closest(".map-info-x")) return;
+      state.view?.clearRoute?.();
       box.classList.remove("on");
       leaveRoute("room");
       state.view?.showAll();
@@ -341,7 +345,7 @@ function showRoomInfo(r) {
     <div class="muted small">${esc(r.label ? `${r.id} · ${r.name}` : r.name)}</div>
     <div class="map-info-facts"><span>${ic("seat")} ${esc(t("seats_n", { n: r.capacity }))}</span>
       <span>${ic("sound")} ${Math.round(r.noise_db)} dB</span></div>
-    <p class="map-info-note">${ic("lock")} ${esc(t("info_not_bookable"))}</p>`;
+    <p class="map-info-note">${ic("lock")} ${esc(t("info_not_bookable"))}</p>${wayButton(r.id)}`;
   box.classList.add("on");
 }
 
@@ -352,6 +356,7 @@ function hideRoomInfo() {
 async function openRoom(id, opts) {
   closeSuggestions();
   setRoute({ room: id, view: null }, { push: !opts?.replaceRoute });
+  state.view?.clearRoute?.();
   const known = state.rooms.find((r) => r.id === id);
   if (known && known.bookable === false) return showRoomInfo(known);
   hideRoomInfo();
@@ -425,6 +430,7 @@ function closeSheet({ route = true } = {}) {
     dlg.classList.remove("closing");
     dlg.hidden = true;
     state.sheet = null;
+    state.view?.clearRoute?.();
     applyingRoute = true;   // the map goes back to the building/floor in the address, without rewriting it
     try {
       state.view?.showAll();
@@ -520,6 +526,7 @@ function renderSheetHead() {
     </div>
     <div class="sheet-tools">
       ${favButton(r)}
+      ${wayButton(r.id)}
       <button class="btn btn-sm" type="button" data-action="share">${t("copy_link")}</button>
       <button class="icon-btn" type="button" data-action="close" aria-label="${t("close")}"><svg class="icon"><use href="#i-close"/></svg></button>
     </div>`;
@@ -530,6 +537,26 @@ function renderSheetHead() {
   const ghost = r.status === "ghost" && r.ghost_release_at
     ? `<div class="ghost-alert" style="margin-top:8px">${t("ghost_room", { t: esc(r.ghost_release_at.slice(11, 19)) })}</div>` : "";
   $("sh-now").innerHTML = `<div class="block-title"><h3>${t("right_now")}</h3></div>${r.board ? boardCard(r) : ""}<div class="now-list">${now}</div>${sensorCheck(r)}${ghost}${ratingBox(r)}`;
+}
+
+// ---------- "Show the way": walking route on the 3D map ----------
+// Routes come with the map (campus.json "routes", tools/campus3d/gen_routes.py): from the main entrance, or for far
+// rooms from the nearest outside door, along corridors and stairs to the room's door.
+
+function wayButton(id) {
+  if (!state.routes?.[id] || !state.view?.showRoute) return "";
+  return `<button class="btn btn-sm way-btn" type="button" data-action="way" data-room="${esc(id)}">${ic("pin")} ${esc(t("way_btn"))}</button>`;
+}
+
+function showWay(id) {
+  const r = state.routes?.[id];
+  if (!r) return;
+  state.view.showRoute(r, { startLabel: t(r.from === "main" ? "way_start" : "way_door") });   // the main entrance has its own tag
+  $("building").scrollIntoView({ behavior: "smooth", block: "center" });
+  const floors = [...new Set(r.points.map((p) => p[2]))];
+  const stairs = floors.length > 1 ? t("way_stairs", { n: r.points.at(-1)[2] }) : "";
+  toast(t("way_info", { from: t(r.from === "main" ? "way_from_main" : "way_from_door"), m: Math.round(r.length),
+    min: Math.max(1, Math.ceil(r.length / 72)), stairs }), { ms: 7000 });   // walking 1.2 m/s
 }
 
 // ---------- Favourite rooms (stored per account in the backend) ----------
@@ -794,6 +821,7 @@ function wireSheet() {
     if (!t || t.disabled) return;
     if (t.dataset.action === "close") return closeSheet();
     if (t.dataset.action === "share") return copyRoomLink(sh.roomId);
+    if (t.dataset.action === "way") return showWay(sh.roomId);
     if (t.dataset.action === "fav") return toggleFavorite(t);
     if (t.dataset.date) {
       sh.date = t.dataset.date;
