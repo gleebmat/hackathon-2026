@@ -4,8 +4,8 @@
 // /api/rooms/{id}/availability (30-min slots), per docs/PLAN.md.
 import * as api from "./api.js";
 
-const OPEN_HOUR = 8;
-const SLOTS = 28;
+const OPEN_HOUR = 0;
+const SLOTS = 48;
 const HORIZON_DAYS = 14;
 const DURATIONS = [0.5, 1, 2, 3, 4];
 const NOISE = ["quiet", "moderate", "loud"];
@@ -174,7 +174,7 @@ export function createPicker(root, { onOpen, onError }) {
   }
 
   function defaultStart(key) {
-    return key === todayKey() ? Math.min(SLOTS - 1, minStart(key) + 1) : 12;
+    return key === todayKey() ? Math.min(SLOTS - 1, minStart(key)) : 24;
   }
 
   function fitTime(next) {

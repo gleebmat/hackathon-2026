@@ -153,7 +153,7 @@ def test_cancelled_hours_are_given_back(app_env):
 def test_time_rules(app_env):
     a = user(1)
     assert book(a, start="2026-11-27T12:15").status_code == 400
-    assert book(a, start="2026-11-27T21:00", hours=2).status_code == 400
+    assert book(a, start="2026-11-27T23:30", hours=0.5).status_code == 201
     assert book(a, start="2026-11-27T07:30", hours=1).status_code == 400
     assert book(a, start="2026-11-27T09:00", hours=1).status_code == 400  # past
     assert book(a, start="2026-12-31T12:00", hours=1).status_code == 400  # too far ahead
@@ -204,7 +204,7 @@ def test_availability_slots(app_env):
     a = user(1)
     book(a, start="2026-11-27T12:00", hours=1, seats=3)
     slots = a.get("/api/rooms/V.1.07a/availability").json()["slots"]
-    assert len(slots) == 28 and slots[0]["status"] == "past"
+    assert len(slots) == 48 and slots[0]["status"] == "past"
     noon = next(s for s in slots if s["start"] == "12:00")
     assert noon == {"start": "12:00", "end": "12:30", "status": "partial", "seats_free": 9, "shareable": True,
                     "noise": "moderate"}
@@ -311,9 +311,9 @@ def test_calendar_has_every_room_in_one_call(app_env):
     assert cal["date"] == "2026-11-27" and set(cal["rooms"]) == {r["id"] for r in a.get("/api/rooms").json()}
     room_cal = cal["rooms"]["V.1.07a"]
     assert room_cal["slots"] == a.get("/api/rooms/V.1.07a/availability").json()["slots"]
-    assert room_cal["free_hours"] == 12.0  # 10:00-22:00 still bookable (shared at 12:00 still counts)
+    assert room_cal["free_hours"] == 14.0  # 10:00-24:00 still bookable (shared at 12:00 still counts)
     assert cal["rooms"]["V.1.24"]["free_hours"] == 0  # closed
-    assert a.get("/api/calendar", params={"date": "2026-11-28"}).json()["rooms"]["V.1.07a"]["free_hours"] == 14.0
+    assert a.get("/api/calendar", params={"date": "2026-11-28"}).json()["rooms"]["V.1.07a"]["free_hours"] == 24.0
     assert a.get("/api/calendar", params={"date": "bad"}).status_code == 400
 
 
@@ -526,3 +526,11 @@ def test_board_disconnect_and_recovery_during_demo(app_env, time_now, monkeypatc
         time_now["t"] = NOW + timedelta(seconds=seconds)
         reading(c, rid, people=0)
     assert c.get("/api/bookings/mine").json()[0]["status"] == "released"
+
+
+def test_last_and_first_overnight_slots(app_env):
+    c = user(1)
+    assert book(c, start="2026-11-27T23:30", hours=0.5).status_code == 201
+    assert book(c, start="2026-11-28T00:00", hours=0.5).status_code == 201
+    slots = c.get("/api/rooms/V.1.07a/availability").json()["slots"]
+    assert slots[-1]["start"] == "23:30" and slots[-1]["end"] == "24:00"

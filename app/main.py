@@ -186,7 +186,7 @@ def room_availability(room_id: str, conn: Conn, day: date | None = Query(None, a
     room = booking.get_room(conn, room_id)
     day = day or now.date()
     return {"room_id": room_id, "date": day.isoformat(), "open": f"{booking.OPEN:%H:%M}",
-            "close": f"{booking.CLOSE:%H:%M}", "slots": booking.availability(conn, room, day, now, live_data())}
+            "close": "24:00", "slots": booking.availability(conn, room, day, now, live_data())}
 
 
 @app.get("/api/calendar")

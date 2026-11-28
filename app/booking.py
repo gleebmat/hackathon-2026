@@ -11,7 +11,7 @@ from datetime import date, datetime, time, timedelta
 
 # The one room wired to the PSOC Edge E84 in the Live Lab; every other room is simulated.
 BOARD_ROOM = os.environ.get("BOARD_ROOM", "Z.1.04")
-OPEN, CLOSE = time(8, 0), time(22, 0)
+OPEN = time.min
 SLOT = timedelta(minutes=30)
 MAX_HOURS_PER_DAY = 4.0
 BOOKING_HORIZON_DAYS = 14
@@ -232,8 +232,8 @@ def validate_times(start: datetime, hours: float, now: datetime) -> datetime:
     if hours * 2 != int(hours * 2) or not 0.5 <= hours <= MAX_HOURS_PER_DAY:
         raise ApiError(400, "Book between 0.5 and 4 hours, in steps of 0.5")
     end = start + timedelta(hours=hours)
-    if start.time() < OPEN or end > datetime.combine(start.date(), CLOSE):
-        raise ApiError(400, f"Rooms can be booked from {OPEN:%H:%M} to {CLOSE:%H:%M}")
+    if end > datetime.combine(start.date() + timedelta(days=1), OPEN):
+        raise ApiError(400, "Book each calendar day separately for overnight stays")
     if start < slot_start(now):
         raise ApiError(400, "That time is in the past")
     if start.date() > now.date() + timedelta(days=BOOKING_HORIZON_DAYS):
@@ -314,7 +314,7 @@ def search(conn: sqlite3.Connection, q: str) -> list[sqlite3.Row]:
 
 
 def availability(conn: sqlite3.Connection, room: sqlite3.Row, day: date, now: datetime, live: dict) -> list[dict]:
-    t, close = datetime.combine(day, OPEN), datetime.combine(day, CLOSE)
+    t, close = datetime.combine(day, OPEN), datetime.combine(day + timedelta(days=1), OPEN)
     bookings = overlapping(conn, room["id"], t, close)
     people_now = room_state(conn, room, now, live)["people"]
     slots = []
@@ -336,7 +336,7 @@ def availability(conn: sqlite3.Connection, room: sqlite3.Row, day: date, now: da
             status = "partial"
         else:
             status = "free"
-        slots.append({"start": f"{t:%H:%M}", "end": f"{end:%H:%M}", "status": status, "seats_free": seats_free,
+        slots.append({"start": f"{t:%H:%M}", "end": "24:00" if end == close else f"{end:%H:%M}", "status": status, "seats_free": seats_free,
                       "shareable": bool(here) and not exclusive, "noise": loudest(here)})
         t = end
     return slots
@@ -353,7 +353,7 @@ def calendar(conn: sqlite3.Connection, day: date, now: datetime, live: dict) -> 
     for room in listed_rooms(conn):
         slots = availability(conn, room, day, now, live)
         rooms[room["id"]] = {"free_hours": free_hours(slots), "slots": slots}
-    return {"date": day.isoformat(), "open": f"{OPEN:%H:%M}", "close": f"{CLOSE:%H:%M}", "rooms": rooms}
+    return {"date": day.isoformat(), "open": f"{OPEN:%H:%M}", "close": "24:00", "rooms": rooms}
 
 
 def can_rate(conn: sqlite3.Connection, user_id: int, room_id: str, now: datetime) -> bool:

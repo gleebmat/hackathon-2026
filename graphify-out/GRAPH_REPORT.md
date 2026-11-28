@@ -1,17 +1,17 @@
 # Graph Report - campus  (2026-11-28)
 
 ## Corpus Check
-- 35 files · ~65,822 words
+- 35 files · ~65,952 words
 - Verdict: corpus is large enough that graph structure adds value.
 - Unclassified: 7 file(s) not represented in the graph (top: (none) 2, .tflite 2, .example 1)
 
 ## Summary
-- 508 nodes · 1167 edges · 22 communities (16 shown, 6 thin omitted)
+- 509 nodes · 1171 edges · 22 communities (16 shown, 6 thin omitted)
 - Extraction: 98% EXTRACTED · 2% INFERRED · 0% AMBIGUOUS · INFERRED: 20 edges (avg confidence: 0.89)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `52e7929f`
+- Built from commit: `03771598`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -34,8 +34,8 @@
 - webcam.py
 
 ## God Nodes (most connected - your core abstractions)
-1. `user()` - 28 edges
-2. `book()` - 25 edges
+1. `user()` - 29 edges
+2. `book()` - 26 edges
 3. `ApiError` - 17 edges
 4. `createPicker()` - 17 edges
 5. `room_state()` - 16 edges
@@ -84,7 +84,7 @@ Nodes (12): 3D campus map (tom-claude; built and working, standalone for now), A
 
 ### Community 6 - "gen_campus.py"
 Cohesion: 0.08
-Nodes (23): build_l(), build_n(), build_s(), build_v(), build_wing(), build_z(), name_real_rooms(), snap_connectors() (+15 more)
+Nodes (22): build_l(), build_n(), build_s(), build_wing(), build_z(), name_real_rooms(), snap_connectors(), teal_spans_m() (+14 more)
 
 ### Community 7 - "building3d.js"
 Cohesion: 0.14
@@ -99,12 +99,12 @@ Cohesion: 0.10
 Nodes (39): app_env(), book(), reading(), room(), sensor_until(), test_availability_slots(), test_bad_input_gives_400_with_error(), test_board_disconnect_and_recovery_during_demo() (+31 more)
 
 ### Community 12 - "db.py"
-Cohesion: 0.10
+Cohesion: 0.09
 Nodes (11): check_password(), hash_password(), new_token(), columns(), connect(), db_path(), init(), load_rooms() (+3 more)
 
 ### Community 13 - "main.py"
 Cohesion: 0.06
-Nodes (32): valid_email(), now(), to_local(), api_error(), BookingRequest, calendar(), cancel_booking(), create_booking() (+24 more)
+Nodes (33): valid_email(), now(), to_local(), api_error(), BookingRequest, calendar(), cancel_booking(), create_booking() (+25 more)
 
 ### Community 14 - "api.js"
 Cohesion: 0.20
@@ -123,8 +123,8 @@ Cohesion: 0.11
 Nodes (34): ApiError, availability(), booking_out(), calendar(), can_rate(), create_booking(), current_bookings(), fmt() (+26 more)
 
 ### Community 20 - "webcam.py"
-Cohesion: 0.18
-Nodes (11): check_left_item(), main(), prep_96(), run_person_detect(), detect_left_items(), is_valid_new_object(), load_labels(), main() (+3 more)
+Cohesion: 0.17
+Nodes (12): check_left_item(), main(), prep_96(), run_person_detect(), detect_left_items(), is_valid_new_object(), load_labels(), main() (+4 more)
 
 ## Knowledge Gaps
 - **6 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
@@ -133,16 +133,16 @@ Nodes (11): check_left_item(), main(), prep_96(), run_person_detect(), detect_le
 _Questions this graph is uniquely positioned to answer:_
 
 - **Why does `free_hours()` connect `booking.py` to `building3d.js`?**
-  _High betweenness centrality (0.373) - this node is a cross-community bridge._
+  _High betweenness centrality (0.372) - this node is a cross-community bridge._
 - **Are the 3 inferred relationships involving `ApiError` (e.g. with `api_error()` and `create_booking()`) actually correct?**
   _`ApiError` has 3 INFERRED edges - model-reasoned connections that need verification._
 - **Should `app.js` be split into smaller, more focused modules?**
-  _Cohesion score 0.09317051108095885 - nodes in this community are weakly interconnected._
+  _Cohesion score 0.09362279511533243 - nodes in this community are weakly interconnected._
 - **Why does `claude-3 (Website UI)` connect `building3d.js` to `booking.py`?**
-  _High betweenness centrality (0.365) - this node is a cross-community bridge._
+  _High betweenness centrality (0.364) - this node is a cross-community bridge._
 - **Should `test_ntfy_feed.py` be split into smaller, more focused modules?**
   _Cohesion score 0.1164021164021164 - nodes in this community are weakly interconnected._
 - **Should `gen_campus.py` be split into smaller, more focused modules?**
-  _Cohesion score 0.07777777777777778 - nodes in this community are weakly interconnected._
+  _Cohesion score 0.08478513356562137 - nodes in this community are weakly interconnected._
 - **Should `building3d.js` be split into smaller, more focused modules?**
   _Cohesion score 0.14285714285714285 - nodes in this community are weakly interconnected._

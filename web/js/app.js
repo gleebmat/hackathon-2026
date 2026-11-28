@@ -816,6 +816,24 @@ async function main() {
   });
   await Promise.all([refreshRooms(), refreshMine()]);
   await createView();
+  // Refresh just the visible sensor panel between full campus polls.
+  let sensorPending = false;
+  setInterval(async () => {
+    const sh = state.sheet;
+    if (sensorPending || !sh?.room?.board || sh.busy || document.hidden) return;
+    sensorPending = true;
+    try {
+      const room = await api.room(sh.roomId);
+      if (state.sheet === sh) {
+        sh.room = room;
+        renderSheetHead();
+      }
+    } catch (err) {
+      handleAuth(err);
+    } finally {
+      sensorPending = false;
+    }
+  }, 500);
   let tick = 0;
   setInterval(async () => {
     await Promise.all([refreshRooms(), refreshMine()]);
