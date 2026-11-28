@@ -459,7 +459,7 @@ function mountControls(el, api, labels = {}) {
   const row = () => {
     const r = document.createElement("div");
     r.style.cssText = "display:flex;gap:3px;flex-wrap:wrap;padding:3px;border-radius:10px;" +
-      "background:rgba(249,251,255,.94);box-shadow:0 0 0 1px #e3e3e0;pointer-events:auto";
+      "background:rgba(249,251,255,.94);box-shadow:0 0 0 1px #e1e5ec;pointer-events:auto";
     box.appendChild(r);
     return r;
   };

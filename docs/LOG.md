@@ -93,7 +93,7 @@ the browser.
 **What the redesign changes** (all in `web/`, plus the map proposal in `web/map3d/building3d.js`)
 - Name and logo: "Campus Booking System", a black monogram tile `cb.` (no mascot).
 - Palette (chosen by Martha, THEME block at the top of `css/style.css`): `--bg #f3f5f8`, `--surface #f9fbff`,
-  `--surface-2 #f1f1ef`, `--border #e3e3e0`, `--text #2a2420`, `--muted #6d685d`, `--brand`/`--accent #2f5be0`;
+  `--surface-2 #eef1f5`, `--border #e1e5ec`, `--text #2a2420`, `--muted #6d685d`, `--brand`/`--accent #2f5be0`;
   status `--free #23865a`, `--shared #c98512`, `--full #b42318`, `--ghost #8b5cf6`, `--closed #94a3b8`;
   `--star #c98512`. No gradients; radii 7–14 px.
 - Fonts: Bricolage Grotesque (headings, room ids), Instrument Sans (text), IBM Plex Mono (times).
