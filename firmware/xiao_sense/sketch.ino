@@ -23,14 +23,16 @@
 #include "tensorflow/lite/schema/schema_generated.h"
 #include "person_model.h"
 
-// People count (optional): Seeed's Swift-YOLO Nano person detector (models/swift_yolo_nano_person_192_int8.tflite,
-// base64 in count_model.h) runs in the background on the other CPU core and counts people every few seconds; the
-// fast person model above still decides presence every frame. Set COUNT_PEOPLE to 0 to go back to presence only
-// (count_model.h is then not needed).
+// People count (optional): Seeed's Swift-YOLO Nano person detector (models/swift_yolo_nano_person_192_int8.tflite)
+// runs in the background on the other CPU core and counts people every few seconds; the fast person model above
+// still decides presence every frame. The 1.9 MB model doesn't fit next to the firmware in the 3 MB app flash, so
+// the board downloads it into PSRAM over WiFi at startup. Set COUNT_PEOPLE to 0 to go back to presence only.
 #define COUNT_PEOPLE 1
 #if COUNT_PEOPLE
-#include "count_model.h"
-#include "mbedtls/base64.h"
+#include <HTTPClient.h>
+#include <WiFiClientSecure.h>
+const char* COUNT_MODEL_URL =
+    "https://raw.githubusercontent.com/gleebmat/hackathon-2026/main/models/swift_yolo_nano_person_192_int8.tflite";
 #endif
 
 const char* ROOM_ID = "Z.1.04";
@@ -153,13 +155,39 @@ volatile int peopleCount = -1;
 volatile uint32_t countAt = 0;
 tflite::MicroInterpreter* counter = nullptr;
 
+// Downloads the count model into PSRAM. The file is public; a corrupt download fails the model's own checks.
+uint8_t* downloadModel() {
+  WiFiClientSecure tls;
+  tls.setInsecure();
+  HTTPClient http;
+  if (!http.begin(tls, COUNT_MODEL_URL)) return nullptr;
+  int code = http.GET();
+  int len = http.getSize();
+  if (code != 200 || len <= 0) {
+    Serial.printf("count model download failed (HTTP %d)\n", code);
+    http.end();
+    return nullptr;
+  }
+  uint8_t* buf = (uint8_t*)heap_caps_aligned_alloc(16, len, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+  WiFiClient* stream = http.getStreamPtr();
+  int got = 0;
+  uint32_t t0 = millis();
+  while (buf && got < len && millis() - t0 < 180000) {
+    int n = stream->available();
+    if (n > 0) got += stream->readBytes(buf + got, min(n, len - got));
+    else delay(5);
+  }
+  http.end();
+  Serial.printf("count model: %d of %d bytes in %lus\n", got, len, (unsigned long)((millis() - t0) / 1000));
+  if (got == len) return buf;
+  free(buf);
+  return nullptr;
+}
+
 bool startCounter() {
-  uint8_t* model = (uint8_t*)heap_caps_aligned_alloc(16, COUNT_MODEL_BYTES, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+  uint8_t* model = downloadModel();
   uint8_t* mem = (uint8_t*)heap_caps_aligned_alloc(16, COUNT_ARENA, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
-  size_t n = 0;
   if (!model || !mem) return false;
-  if (mbedtls_base64_decode(model, COUNT_MODEL_BYTES, &n, (const unsigned char*)g_count_model_b64,
-                            sizeof(g_count_model_b64) - 1) != 0 || n != COUNT_MODEL_BYTES) return false;
   static tflite::MicroMutableOpResolver<13> ops;
   ops.AddConv2D();
   ops.AddPad();
@@ -413,14 +441,6 @@ void setup() {
   Serial.println(camOk ? "CAM OK" : "CAM FAILED");
   modelOk = startModel();
   Serial.println(modelOk ? "MODEL OK" : "MODEL FAILED");
-#if COUNT_PEOPLE
-  if (startCounter()) {
-    xTaskCreatePinnedToCore(counterTask, "count", 16384, nullptr, 1, nullptr, 0);   // loop() runs on core 1
-    Serial.println("COUNT OK");
-  } else {
-    Serial.println("COUNT FAILED");
-  }
-#endif
   mic.setPinsPdmRx(42, 41);
   micOk = mic.begin(I2S_MODE_PDM_RX, 16000, I2S_DATA_BIT_WIDTH_16BIT, I2S_SLOT_MODE_MONO);
   Serial.println(micOk ? "MIC OK" : "MIC FAILED");
@@ -428,7 +448,15 @@ void setup() {
   WiFi.begin("Velxio-GUEST");   // Velxio's built-in open network; use your own SSID on the real board
   for (int i = 0; i < 40 && WiFi.status() != WL_CONNECTED; i++) delay(250);
   Serial.println(WiFi.status() == WL_CONNECTED ? "WIFI OK" : "WIFI FAILED");
-  topic = String("aau-hack26/rooms/") + ROOM_ID + "/readings";
+#if COUNT_PEOPLE
+  if (WiFi.status() == WL_CONNECTED && startCounter()) {
+    xTaskCreatePinnedToCore(counterTask, "count", 16384, nullptr, 1, nullptr, 0);   // loop() runs on core 1
+    Serial.println("COUNT OK");
+  } else {
+    Serial.println("COUNT FAILED (presence only)");
+  }
+#endif
+  topic =String("aau-hack26/rooms/") + ROOM_ID + "/readings";
   mqtt.setServer(MQTT_HOST, MQTT_PORT);
 }
 
