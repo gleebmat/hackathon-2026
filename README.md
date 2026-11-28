@@ -32,9 +32,9 @@ API docs: http://localhost:8000/docs. The map alone: http://localhost:8000/map3d
 
 ## The board: XIAO ESP32S3 Sense in Velxio
 
-**What runs on the board** (`firmware/xiao_sense/sketch.ino`, about one reading per second in the simulator):
+**What runs on the board** (`firmware/xiao_sense/sketch.ino`, one reading per camera frame, ~1 s in the simulator or ~2 s while the people counter runs; the website polls every 1 s and the open room panel every 0.5 s):
 - **Presence:** Arshia's 96x96 person model (`models/vww_96_int8.tflite`, as a C array in `person_model.h`) with
-  TensorFlow Lite Micro. It says yes/no (score 0..1, threshold 0.60, majority of the last 3 frames). It can't count.
+  TensorFlow Lite Micro. It says yes/no (score 0..1): present at once when one frame scores 0.70+, or when 2 of the last 3 frames reach 0.60; gone when 2 of 3 drop below 0.60. It can't count.
 - **People count** (switch `COUNT_PEOPLE` at the top of the sketch, on by default): Seeed's Swift-YOLO Nano person
   detector (`models/swift_yolo_nano_person_192_int8.tflite`, 192x192, found 4/4 and 2/2 people on test photos) runs
   on the second CPU core while someone is present. In Velxio one count takes **about 45 s** (2.6 s on a real board),
@@ -94,6 +94,28 @@ the sketch here, paste it into Velxio (or the other way round) and save (File > 
   - when you leave, leave completely and don't move the camera or the chair (a moved chair is a change too; a
     camera nudge of up to 3 px is compensated, and smooth light changes are ignored);
   - remove the object and it goes back to 0; after 5 clean checks the board keeps refreshing its snapshot again.
+
+## Board limits (the brief for choosing models)
+
+Everything below was measured in Velxio on 28 Nov; a model for left items (or a faster people count) has to fit it.
+
+| Limit | Value | What it means for a model |
+|---|---|---|
+| Chip | ESP32-S3, 2 cores at 240 MHz, 512 KB SRAM, **8 MB PSRAM**, 8 MB flash | weights and working memory (tensor arena) go in PSRAM; a few MB is fine |
+| App flash in Velxio | **3 MB** (custom `partitions.csv` is ignored); the firmware itself is ~1.4 MB | **~1.6 MB left for models**, more if zlib-compressed (int8 weights shrink ~20%), see `tools/make_count_header.py` |
+| Files in Velxio | max **4 million characters** per file | a model as a C array must be split (as `count_model_1.h` / `_2.h`) |
+| Network in Velxio | plain MQTT/HTTP only, **HTTPS fails** | models can't be downloaded at startup; they must be compiled in |
+| Runtime | TensorFlow Lite Micro (`Chirale_TensorFlowLite`), **int8** `.tflite` | ops known to work: CONV_2D, DEPTHWISE_CONV_2D, FULLY_CONNECTED, AVERAGE/MAX_POOL_2D, ADD, MUL, CONCATENATION, PAD, PADV2, RESIZE_NEAREST_NEIGHBOR, LOGISTIC, SOFTMAX, RESHAPE, TRANSPOSE, SPLIT_V, QUANTIZE; no custom ops (e.g. `TFLite_Detection_PostProcess`) |
+| Speed in Velxio | **~8 million multiply-adds per second** (reference kernels, no ESP-NN/SIMD): the 7.5 M MAC person model takes ~0.95 s, Swift-YOLO Nano (186 M MACs) ~45 s | for a "live" feel (≤ ~1-2 s per frame) a model must stay **under ~10-15 M MACs** per frame; the real board is ~10-20x faster |
+| Second core | usable (the people counter runs there) | in Velxio both cores share the host's speed: a second model slows the first one down |
+| Camera | 96x96 RGB565 frames (your webcam, scaled) | models get a 96x96 picture (bigger input = upscaled, no extra detail); small objects (keys, pens) are only a few pixels |
+| Espressif ESP-DL models | need ESP-IDF components and the S3 vector instructions | not usable in Velxio's Arduino build (fine on a real board) |
+
+**What we are looking for (left items):** an int8 TFLite object detector for 96x96 input, under ~15 M MACs and ~1.5 MB,
+with classes like backpack, handbag, suitcase, laptop, cell phone, bottle, book, umbrella (COCO has all of them).
+Pretrained models that small only exist for "person", so it will most likely be a **FOMO** model (Edge Impulse,
+MobileNetV2 0.35 backbone, 96x96, a few M MACs, outputs object centres that can be counted) trained on that COCO
+subset, ideally with a "person" class too so it can replace both current models.
 
 ## Graphify (code knowledge graph, saves AI tokens)
 
