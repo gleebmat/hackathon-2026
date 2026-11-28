@@ -6,9 +6,9 @@
     "semantic_hash": ""
   },
   "README.md": {
-    "mtime": 1795862726.4726877,
-    "seen": 1795862733.898339,
-    "ast_hash": "30d343d71a7ff2dce62a258b7794772f",
+    "mtime": 1795863767.744769,
+    "seen": 1795863774.8203402,
+    "ast_hash": "4f3360ca75eed7898bbc3cd209b9d8da",
     "semantic_hash": ""
   },
   "AGENTS.md": {
@@ -90,9 +90,9 @@
     "semantic_hash": ""
   },
   "web/js/app.js": {
-    "mtime": 1795862610.200323,
-    "seen": 1795862733.8983176,
-    "ast_hash": "81f6800fe0ee26575b8334cd7b8bb13c",
+    "mtime": 1795863674.6558206,
+    "seen": 1795863774.820317,
+    "ast_hash": "c0e4af5f78f0fde92c4ac7ec46d34fd5",
     "semantic_hash": ""
   },
   "web/js/plan2d.js": {
@@ -132,27 +132,27 @@
     "semantic_hash": ""
   },
   "tools/campus3d/gen_campus.py": {
-    "mtime": 1795862502.7326424,
-    "seen": 1795862733.8983037,
-    "ast_hash": "795a0ec5ac88458e71215bdf98fee12b",
+    "mtime": 1795863674.651748,
+    "seen": 1795863774.8203006,
+    "ast_hash": "d9bf2dffea97ca29d3a332b56e13a72b",
     "semantic_hash": ""
   },
   "tools/campus3d/resolve_overlaps.py": {
-    "mtime": 1795862502.7316425,
-    "seen": 1795862733.898306,
-    "ast_hash": "455c483bdcdc1e0c078e11ddd1e0b1b9",
+    "mtime": 1795863674.6502426,
+    "seen": 1795863774.8203042,
+    "ast_hash": "55661c9230824a721c6d69a0bb15bfa0",
     "semantic_hash": ""
   },
   "web/map3d/building3d.js": {
-    "mtime": 1795862665.5129495,
-    "seen": 1795862733.898328,
-    "ast_hash": "96a96264c63ea99b4c998e34bc268fcb",
+    "mtime": 1795863720.7303925,
+    "seen": 1795863774.8203285,
+    "ast_hash": "4289cb2e6f02a700f3f7c423eea0fa43",
     "semantic_hash": ""
   },
   "web/map3d/campus.json": {
-    "mtime": 1795862504.9883468,
-    "seen": 1795862733.8983302,
-    "ast_hash": "27f72bf992363c741dd533678121fbee",
+    "mtime": 1795863676.6259105,
+    "seen": 1795863774.8203304,
+    "ast_hash": "7e997e46faeb19328b8dd72da4637709",
     "semantic_hash": ""
   },
   "web/map3d/index.html": {
@@ -210,9 +210,9 @@
     "semantic_hash": ""
   },
   "web/js/i18n.js": {
-    "mtime": 1795862610.202834,
-    "seen": 1795862733.8983216,
-    "ast_hash": "058d80ef772efbefcb4ea9a6f3c2a342",
+    "mtime": 1795863674.6558206,
+    "seen": 1795863774.8203218,
+    "ast_hash": "cd133da47ab8d7fa99d116c82dfbea35",
     "semantic_hash": ""
   },
   "web/img/login.jpg": {

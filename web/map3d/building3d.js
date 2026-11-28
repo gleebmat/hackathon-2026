@@ -314,7 +314,8 @@ export function createBuilding(el, input, opts = {}) {
   });
 
   // --- visibility state ---
-  let highlight = null, halo = null, floorFilter = null, buildingFilter = null, showOffices = false;
+  let highlight = null, halo = null, floorFilter = null, buildingFilter = null,
+    showOffices = opts.offices ?? true;   // offices show by default; the "Offices" button hides them
   // buildingFilter: null (everything) or a Set of building ids (one building, or a group such as "Lakeside")
   const inView = (id) => buildingFilter === null || buildingFilter.has(id);
   const filterBox = () => {
@@ -350,36 +351,38 @@ export function createBuilding(el, input, opts = {}) {
   function addEntrance(bd, e, H) {
     const [dx, dz] = e.dir ?? [1, 0];
     const group = new THREE.Group();
-    const frameMat = new THREE.MeshStandardMaterial({ color: 0x2f5be0, roughness: 0.5 });
-    const frame = (w, h, d, x, y, z) => {
-      const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), frameMat);
+    const blue = new THREE.MeshStandardMaterial({ color: 0x2f5be0, roughness: 0.45 });
+    const part = (w, h, d, x, y, z, mat = blue) => {
+      const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
       m.position.set(x, y, z);
+      m.castShadow = true;
       group.add(m);
     };
-    const across = 2.8, height = 2.6, t = 0.18;             // door width, height, frame thickness (m)
-    // frame posts and lintel just outside the wall, door opening facing `dir`
-    frame(t, height, t, 0.1, height / 2, -across / 2);
-    frame(t, height, t, 0.1, height / 2, across / 2);
-    frame(t, t, across + t, 0.1, height, 0);
-    const mat = new THREE.Mesh(new THREE.PlaneGeometry(2.4, across + 0.6),
-      new THREE.MeshStandardMaterial({ color: 0x2f5be0, transparent: true, opacity: 0.35, depthWrite: false }));
-    mat.rotation.x = -Math.PI / 2;
-    mat.position.set(1.4, 0.06, 0);
-    group.add(mat);
+    const across = 6, height = 3.4, t = 0.4;                  // door opening width and height, frame thickness (m)
+    part(t, height, t, 0.25, height / 2, -across / 2);           // frame posts and lintel on the wall
+    part(t, height, t, 0.25, height / 2, across / 2);
+    part(t, t, across + t, 0.25, height, 0);
+    part(3.2, 0.22, across + 2, 1.6, height + 0.45, 0);           // canopy over the door
+    part(4, 0.18, across + 1, 2, 0.09, 0,                         // landing in front of the door
+      new THREE.MeshStandardMaterial({ color: 0x2f5be0, transparent: true, opacity: 0.45, depthWrite: false }));
     const tag = badge(entranceLabel, "#2f5be0");
-    tag.scale.set(7.2, 2.7, 1);                              // readable from the default view, still small
-    tag.position.set(3.2, height + 3.4, 0);
+    tag.scale.multiplyScalar(3);                             // three times a room badge
+    tag.position.set(4, height + 4.5, 0);
     group.add(tag);
-    group.position.set(e.x, 0, e.z);
+    const floor = e.floor ?? 0;
+    group.position.set(e.x, floor * H, e.z);
     group.rotation.y = -Math.atan2(dz, dx);                  // local +x points out of the door
-    (floorGroups.get(`${bd.id}:0`) ?? scene).add(group);
+    (floorGroups.get(`${bd.id}:${floor}`) ?? scene).add(group);
   }
 
   // A badge floating over a room. With `chip`, a small drawing of the sensor board (a chip with pins and a camera
   // lens) comes first: it marks the room the real board watches.
   const badge = (text, color, chip = false) => {
     const c = document.createElement("canvas");
-    c.width = chip ? 384 : 256; c.height = 96;
+    const measure = c.getContext("2d");
+    measure.font = "bold 44px system-ui, sans-serif";
+    c.width = chip ? 384 : Math.max(256, Math.ceil(measure.measureText(text).width + 64));   // wide enough for the text
+    c.height = 96;
     const x = c.getContext("2d");
     x.fillStyle = color; x.beginPath(); x.roundRect(4, 4, c.width - 8, 88, 40); x.fill();
     if (chip) {
@@ -393,12 +396,12 @@ export function createBuilding(el, input, opts = {}) {
       x.fillStyle = "#fff"; x.beginPath(); x.arc(72, 48, 5, 0, Math.PI * 2); x.fill();
     }
     x.fillStyle = "#fff"; x.font = "bold 44px system-ui, sans-serif"; x.textAlign = "center"; x.textBaseline = "middle";
-    x.fillText(text, chip ? 236 : 128, 50);
+    x.fillText(text, chip ? 236 : c.width / 2, 50);
     // the board's badge keeps the same size on screen at any zoom, so the sensor room is easy to spot
     const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(c), depthTest: false,
                                                           sizeAttenuation: !chip }));
     if (chip) s.scale.set(0.16, 0.04, 1);
-    else s.scale.set(4.2, 1.6, 1);
+    else s.scale.set(1.6 * c.width / 96, 1.6, 1);   // keeps the canvas proportions
     s.renderOrder = 10;
     return s;
   };
@@ -489,6 +492,7 @@ export function createBuilding(el, input, opts = {}) {
       goTo(view(box, floorFilter === null ? null : floorFilter * bd.floor_height + 1));
     },
     setOfficesVisible(v) { showOffices = !!v; applyVisibility(); },
+    officesVisible: () => showOffices,
     onRoomClick(cb) { clickCb = cb; },
     onRoomHover(cb) { hoverCb = cb; },
   };
@@ -511,10 +515,11 @@ function mountControls(el, api, labels = {}) {
   compass.type = "button";
   compass.title = L.compassTitle ?? "Turn the map so north is up";
   compass.setAttribute("aria-label", compass.title);
-  compass.style.cssText = "width:54px;height:54px;padding:0;border:0;border-radius:50%;cursor:pointer;" +
-    "background:rgba(249,251,255,.94);box-shadow:0 0 0 1px #e3e3e0,0 2px 6px rgba(20,30,60,.12);pointer-events:auto";
+  compass.style.cssText = "position:absolute;left:12px;top:12px;z-index:5;width:64px;height:64px;padding:0;border:0;" +
+    "border-radius:50%;cursor:pointer;background:rgba(249,251,255,.94);" +
+    "box-shadow:0 0 0 1px #e3e3e0,0 2px 6px rgba(20,30,60,.12);pointer-events:auto";
   const [lN, lE, lS, lW] = L.compass ?? ["N", "E", "S", "W"];
-  compass.innerHTML = `<svg viewBox="-27 -27 54 54" width="54" height="54" aria-hidden="true">
+  compass.innerHTML = `<svg viewBox="-27 -27 54 54" width="64" height="64" aria-hidden="true">
     <g class="rose">
       <circle r="22" fill="none" stroke="#d6dbe5" stroke-width="1"/>
       <path d="M0 -17 L4.5 0 L0 2.5 L-4.5 0 Z" fill="#c8412f"/>
@@ -524,7 +529,7 @@ function mountControls(el, api, labels = {}) {
           dominant-baseline="central" font-family="'Instrument Sans',system-ui,sans-serif">${t}</text>`).join("")}
     </g></svg>`;
   compass.onclick = () => api.faceNorth?.();
-  box.appendChild(compass);
+  el.appendChild(compass);
   const rose = compass.querySelector(".rose");
   const letters = [...compass.querySelectorAll(".l")];
   let lastDeg = null;
@@ -548,7 +553,7 @@ function mountControls(el, api, labels = {}) {
     box.appendChild(r);
     return r;
   };
-  const bRow = row(), fRow = row();
+  const bRow = row(), fRow = row(), oRow = row();
   const button = (parent, text, on, title, click) => {
     const b = document.createElement("button");
     b.textContent = text;
@@ -558,8 +563,11 @@ function mountControls(el, api, labels = {}) {
     b.onclick = click;
     parent.appendChild(b);
   };
+  let offices = api.officesVisible?.() ?? true;
   const render = () => {
-    bRow.replaceChildren(); fRow.replaceChildren();
+    bRow.replaceChildren(); fRow.replaceChildren(); oRow.replaceChildren();
+    button(oRow, `${offices ? "✓ " : ""}${L.offices ?? "Offices"}`, offices, L.officesTitle ?? "Show or hide the offices",
+      () => { offices = !offices; api.setOfficesVisible(offices); render(); });
     button(bRow, L.all, building === null, L.allBuildings, () => { building = api.setBuilding(null); floor = null; render(); });
     for (const b of api.buildings()) {
       button(bRow, b.id, building === b.id, b.name, () => { building = api.setBuilding(b.id); floor = null; render(); });

@@ -201,10 +201,25 @@ def smooth_connectors(buildings, max_shift=8.0, step=0.25):
                 c.update(x=round(x, 2), z=round((z0 + z1) / 2, 2), d=round(z1 - z0, 2))
 
 
-def split_tunnels(buildings, min_len=2.0):
-    """A tunnel runs as one long strip; every stretch of it that lies between two buildings becomes its own corridor,
-    so it stops where a building (with its rooms) is in the way and goes on behind it. Stretches that touch a
-    building on one end only (past the last one) are dropped."""
+def _free_runs(everything, x, w, z0, z1, edge, min_len):
+    """Stretches of a full-width strip (x +- w/2, z0..z1) that no building touches, each with a building at both ends."""
+    strip = box(x - w / 2, z0, x + w / 2, z1)
+    blocked = sorted((g.bounds[1], g.bounds[3]) for g in _pieces(strip.intersection(everything), 0.01))
+    runs, z = [], z0
+    for b0, b1 in blocked + [(z1, z1)]:
+        if b0 - z >= min_len:
+            ends = [box(x - w / 2, z, x + w / 2, z + 0.05), box(x - w / 2, b0 - 0.05, x + w / 2, b0)]
+            if all(e.intersects(edge) for e in ends):
+                runs.append((z, b0))
+        z = max(z, b1)
+    return runs
+
+
+def split_tunnels(buildings, min_len=2.0, max_shift=3.0, step=0.25):
+    """A tunnel is a straight strip of its full width. It first slides sideways (at most max_shift) so that as little
+    as possible is in its way (e.g. it runs along a building instead of into it); every stretch between two buildings
+    then becomes its own corridor, so it stops where a building is in the way and goes on behind it. Nothing of a
+    tunnel overlaps a building."""
     everything = unary_union([bd["_footprint"] for bd in buildings])
     edge = everything.buffer(0.2)
     for bd in buildings:
@@ -213,13 +228,18 @@ def split_tunnels(buildings, min_len=2.0):
             if not c.get("tunnel"):
                 keep.append(c)
                 continue
-            pieces = sorted(_pieces(_bpoly(c).difference(everything), 0.5), key=lambda g: g.bounds[1])
-            for p in pieces[:c.get("max_pieces", 9)]:
-                x0, z0, x1, z1 = p.bounds
-                ends = [box(x0, z0, x1, z0 + 0.05), box(x0, z1 - 0.05, x1, z1)]
-                if z1 - z0 >= min_len and all(e.intersects(edge) for e in ends):
-                    keep.append({"x": round((x0 + x1) / 2, 2), "z": round((z0 + z1) / 2, 2), "w": round(x1 - x0, 2),
-                                 "d": round(z1 - z0, 2), "floors": c["floors"], "tunnel": True})
+            z0, z1 = c["z"] - c["d"] / 2, c["z"] + c["d"] / 2
+            best = None
+            for k in range(int(max_shift / step) + 1):
+                for shift in ((0.0,) if k == 0 else (k * step, -k * step)):
+                    runs = _free_runs(everything, c["x"] + shift, c["w"], z0, z1, edge, min_len)
+                    longest = max((b - a for a, b in runs), default=0)
+                    if best is None or longest > best[0] + 0.5:
+                        best = (longest, c["x"] + shift, runs)
+            _, x, runs = best
+            for a, b in runs:
+                keep.append({"x": round(x, 2), "z": round((a + b) / 2, 2), "w": c["w"], "d": round(b - a, 2),
+                             "floors": c["floors"], "tunnel": True})
         bd["connectors"] = keep
 
 
@@ -230,3 +250,20 @@ def wall_point(buildings, x, z, direction):
     hit = LineString([(x - direction * 30, z), (x + direction * 30, z)]).intersection(everything)
     xs = [c[0] for g in getattr(hit, "geoms", [hit]) for c in g.coords]
     return {"x": round(max(xs) if direction > 0 else min(xs), 2), "z": round(z, 2)}
+
+
+def wall_middle(buildings, building_id, x, z):
+    """Middle of the straight east/west wall of a building nearest to (x, z): where a door on that wall belongs."""
+    from shapely.geometry import Point
+    foot = next(bd["_footprint"] for bd in buildings if bd["id"] == building_id)
+    rings = [foot.exterior] if hasattr(foot, "exterior") else [g.exterior for g in foot.geoms]
+    best = None
+    for ring in rings:
+        pts = list(ring.coords)
+        for (ax, az), (bx, bz) in zip(pts, pts[1:]):
+            if abs(ax - bx) > 0.3 or abs(az - bz) < 2:      # only straight north-south walls
+                continue
+            dist = Point(x, z).distance(box(min(ax, bx), min(az, bz), max(ax, bx), max(az, bz)))
+            if best is None or dist < best[0]:
+                best = (dist, (ax + bx) / 2, (az + bz) / 2)
+    return {"x": round(best[1], 2), "z": round(best[2], 2)}

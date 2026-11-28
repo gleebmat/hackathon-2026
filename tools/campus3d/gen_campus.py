@@ -375,7 +375,7 @@ if __name__ == "__main__":
               "north": [round(-math.sin(PHI), 4), round(-math.cos(PHI), 4)],
               "buildings": [build_v(), build_n(), build_z(), build_l(), build_s()]}
     from resolve_overlaps import (resolve_blocks, resolve_connectors, resolve_rooms, smooth_connectors,   # needs shapely
-                                  split_tunnels, wall_point)
+                                  split_tunnels, wall_middle)
     name_real_rooms(campus["buildings"])
     resolve_blocks(campus["buildings"])
     resolve_connectors(campus["buildings"])
@@ -388,7 +388,8 @@ if __name__ == "__main__":
         tunnel.update(z=round((top + S_WING_INSIDE) / 2, 2), d=round(S_WING_INSIDE - top, 2))
     split_tunnels(campus["buildings"])
     ex, ez = zm(*Z_ENTRANCE)
-    z["entrances"] = [{**wall_point(campus["buildings"], ex, ez, +1), "dir": [1, 0], "main": True}]
+    # the main entrance is in the middle of Z's east wall, on floor 1 (the ground rises towards it)
+    z["entrances"] = [{**wall_middle(campus["buildings"], "Z", ex, ez), "floor": 1, "dir": [1, 0], "main": True}]
     print("dropped rooms:", resolve_rooms(campus["buildings"]))
     (HERE.parent.parent / "web" / "map3d" / "campus.json").write_text(json.dumps(campus, indent=1), encoding="utf-8")
     for b in campus["buildings"]:
