@@ -34,7 +34,10 @@ API docs: http://localhost:8000/docs. The map alone: http://localhost:8000/map3d
   only if they are real, box-shaped offices or meeting rooms; outlines are simplified to keep the model light). Bookable: the real seminar,
   computer and group-work rooms and lecture halls (52 rooms; the Omansaal is left out). Doors to the outside
   (ground level) come from the plan's door drawings; Nexus stands on legs under its overhanging upper floors; stair
-  and lift shafts and other small pieces are merged into the building so the model stays light. Exception: **Z.1.04** (in reality an office) is our
+  and lift shafts and other small pieces are merged into the building so the model stays light. Coffee machines
+  (green) and vending machines (red) stand on floor 1 roughly where they really are (`MACHINES` in `gen_campus.py`;
+  each is moved to the nearest free spot against a wall). The start view looks from the south-west, north to the
+  upper right. Exception: **Z.1.04** (in reality an office) is our
   sensor-board room, a 51-seat seminar room here. Refresh the data with
   `uv run --with shapely python tools/campus3d/fetch_plan.py`, rebuild with
   `uv run --with shapely python tools/campus3d/gen_campus.py` (then restart the backend: it reads the bookable rooms).

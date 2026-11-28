@@ -144,6 +144,11 @@ export function createBuilding(el, input, opts = {}) {
     [new THREE.BoxGeometry(0.4, 2.6, 2.1), new THREE.MeshStandardMaterial({ color: 0x34405a, roughness: 0.5 }), 0.2, 1.3],
   ];
   const pillarMat = new THREE.MeshStandardMaterial({ color: 0xb8c0cc, roughness: 0.8 });
+  // coffee (green) and vending (red) machines: small boxes with a light front panel
+  const machineBody = new THREE.BoxGeometry(0.8, 1.9, 1.1), machineFront = new THREE.BoxGeometry(0.05, 0.8, 0.75);
+  const machineMat = { coffee: new THREE.MeshStandardMaterial({ color: 0x23a55a, roughness: 0.5 }),
+                       vending: new THREE.MeshStandardMaterial({ color: 0xd63a32, roughness: 0.5 }) };
+  const machineFrontMat = new THREE.MeshStandardMaterial({ color: 0xf4f6fa, roughness: 0.4 });
 
   // --- buildings ---
   const floorGroups = new Map();   // "V:1" -> Group (slab + rooms of that floor)
@@ -205,6 +210,18 @@ export function createBuilding(el, input, opts = {}) {
       door.rotation.y = -Math.atan2(d.dir[1], d.dir[0]);   // local +x points out of the door
       (floorGroups.get(`${bd.id}:${d.floor}`) ?? scene).add(door);
     }
+    for (const m of bd.machines ?? []) {
+      const g = new THREE.Group();
+      const body = new THREE.Mesh(machineBody, machineMat[m.kind] ?? machineMat.coffee);
+      body.position.y = 0.95 + SLAB;
+      body.castShadow = true;
+      const front = new THREE.Mesh(machineFront, machineFrontMat);
+      front.position.set(0.42, 1.25 + SLAB, 0);
+      g.add(body, front);
+      g.position.set(m.x, m.floor * H, m.z);
+      g.rotation.y = -Math.atan2(m.dir[1], m.dir[0]);   // the front (+x) faces away from the wall
+      (floorGroups.get(`${bd.id}:${m.floor}`) ?? scene).add(g);
+    }
     for (const p of bd.pillars ?? []) {        // legs under an overhanging upper floor, from the ground up to it
       const h = p.to_floor * H;
       const leg = new THREE.Mesh(new THREE.ExtrudeGeometry(polyShape(p.poly), { depth: h, bevelEnabled: false }), pillarMat);
@@ -257,7 +274,7 @@ export function createBuilding(el, input, opts = {}) {
   };
   // Fit the box into the canvas: the distance comes from the field of view and the canvas aspect, so the campus
   // is centred and whole at any size (the old fixed formula cut it off in wide, short containers).
-  const VIEW_DIR = new THREE.Vector3(0.22, 0.62, 0.75).normalize();
+  const VIEW_DIR = new THREE.Vector3(0.42, 0.6, 0.68).normalize();   // north shows ~40° right of up
   let lastArgs = null;   // the last box/floor framed, so a resize can frame it again
   const view = (box, floorY = null) => {
     lastArgs = [box.clone(), floorY];

@@ -18,7 +18,7 @@ from pathlib import Path
 
 from shapely.affinity import rotate
 from shapely.geometry import Point, Polygon
-from shapely.ops import polygonize, unary_union
+from shapely.ops import nearest_points, polygonize, unary_union
 from shapely.validation import make_valid
 from shapely import set_precision
 
@@ -49,6 +49,11 @@ MIN_PIECE_WIDTH = 1.6      # m: thinner pieces too
 MAX_FILLED_HOLE = 80.0     # m2: shafts and small light wells inside a building are filled
 PILLARS = {"O"}            # buildings whose upper floors overhang the ground floor: legs under the overhang corners
 PILLAR_SIZE = 1.2          # m
+# Coffee and vending machines on floor 1, roughly where they are (x, z in metres); each is moved to the nearest free
+# spot in the building (not in a room, a doorway or another machine).
+MACHINES = [("coffee", -25.2, -2.7), ("coffee", -23.3, -2.6), ("coffee", 122.9, 31.6), ("coffee", 250.5, 9.3),
+            ("coffee", 117.1, 69.2), ("vending", 120.2, 69.0), ("vending", 123.0, 70.2), ("coffee", 117.4, 144.7)]
+MACHINE_FLOOR = 1
 
 
 def poly(s):
@@ -182,6 +187,43 @@ def outside_doors(b, doors, everything):
             continue
         out.append({"x": round(on.x, 2), "z": round(on.y, 2), "floor": d["f"], "dir": [round(nx, 3), round(nz, 3)]})
     return out
+
+
+def place_machines(buildings):
+    """Puts each machine at the free spot nearest to where it roughly is, its back to the nearest wall."""
+    placed = []
+    for kind, x, z in MACHINES:
+        want = Point(x, z)
+        b = min(buildings, key=lambda b: block_union(b, MACHINE_FLOOR).distance(want))
+        here = block_union(b, MACHINE_FLOOR)
+        rooms = [Polygon(r["poly"], r.get("holes", [])) for r in b["rooms"]
+                 if r["floor"] <= MACHINE_FLOOR < r["floor"] + r.get("storeys", 1)]
+        walkable = here.difference(unary_union(rooms)) if rooms else here
+        keep_clear = [Point(d["x"], d["z"]).buffer(2.5) for d in b["doors"] + b.get("entrances", [])
+                      if d["floor"] == MACHINE_FLOOR]
+        keep_clear += [Point(m["x"], m["z"]).buffer(1.2) for m in placed if m["building"] == b["id"]]
+        free = walkable.buffer(-0.6, join_style=2)
+        if keep_clear:
+            free = free.difference(unary_union(keep_clear))
+        spot = want if free.contains(want) else nearest_points(free, want)[0]
+        # back against the nearest wall, facing the corridor (if that spot is free too)
+        edge = walkable.boundary
+        at = edge.project(spot)
+        wall = edge.interpolate(at)
+        p0, p1 = edge.interpolate(at - 0.4), edge.interpolate(at + 0.4)
+        n = math.hypot(p1.x - p0.x, p1.y - p0.y) or 1
+        nx, nz = -(p1.y - p0.y) / n, (p1.x - p0.x) / n
+        if not walkable.contains(Point(wall.x + nx * 0.3, wall.y + nz * 0.3)):
+            nx, nz = -nx, -nz
+        snug = Point(wall.x + nx * 0.5, wall.y + nz * 0.5)
+        if walkable.buffer(-0.35, join_style=2).contains(snug) and not any(k.contains(snug) for k in keep_clear):
+            spot = snug
+        placed.append({"kind": kind, "building": b["id"], "floor": MACHINE_FLOOR, "x": round(spot.x, 2),
+                       "z": round(spot.y, 2), "dir": [round(nx, 3), round(nz, 3)]})
+    for b in buildings:
+        mine = [{k: v for k, v in m.items() if k != "building"} for m in placed if m["building"] == b["id"]]
+        if mine:
+            b["machines"] = mine
 
 
 def pillars(b):
@@ -338,6 +380,7 @@ def main():
     everything = {f: unary_union([block_union(b, f) for b in buildings]) for f in range(4)}
     for b in buildings:
         b["doors"] = outside_doors(b, plan.get("doors", []), everything)
+    place_machines(buildings)
     campus = {"campus": "AAU Klagenfurt", "units": "metres; x along the campus grid (~east), z across (~south); "
               "origin = centre of building V", "north": plan["north"], "buildings": buildings}
     OUT.write_text(json.dumps(campus, ensure_ascii=False, indent=1), encoding="utf-8")
