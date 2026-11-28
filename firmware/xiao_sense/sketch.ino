@@ -177,14 +177,18 @@ bool sendFrame(camera_fb_t* fb, size_t& jpgLen) {
     free(jpg);
     return false;
   }
-  uint8_t nonce[16], block[16];
-  esp_fill_random(nonce, 16);
-  memcpy(sealed, nonce, 16);
+  // Counter mode by hand, one 16-byte block at a time: the AES unit's bulk (DMA) mode can't read PSRAM in Velxio.
+  uint8_t counter[16], stream[16];
+  esp_fill_random(counter, 16);
+  memcpy(sealed, counter, 16);
   mbedtls_aes_context aes;
   mbedtls_aes_init(&aes);
   mbedtls_aes_setkey_enc(&aes, FRAME_KEY, 128);
-  size_t off = 0;
-  mbedtls_aes_crypt_ctr(&aes, jpgLen, &off, nonce, block, jpg, sealed + 16);
+  for (size_t i = 0; i < jpgLen; i += 16) {
+    mbedtls_aes_crypt_ecb(&aes, MBEDTLS_AES_ENCRYPT, counter, stream);
+    for (size_t k = 0; k < 16 && i + k < jpgLen; k++) sealed[16 + i + k] = jpg[i + k] ^ stream[k];
+    for (int b = 15; b >= 0 && ++counter[b] == 0; b--) {}   // 128-bit big-endian counter + 1
+  }
   mbedtls_aes_free(&aes);
   free(jpg);
   const size_t n = jpgLen + 16;
