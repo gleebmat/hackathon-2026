@@ -613,3 +613,4 @@ def test_only_rooms_under_55_seats_can_be_booked(app_env, monkeypatch):
                                               "start": "2026-11-28T10:00"}).json()
     assert big["id"] not in [r["id"] for r in suggested]
     assert book(a, room=small["id"], seats=1).status_code == 201
+    assert room(a, big["id"])["status"] == "unbookable" and room(a, big["id"])["seats_free"] == 0

@@ -174,11 +174,14 @@ def room_state(conn: sqlite3.Connection, room: sqlite3.Row, now: datetime) -> di
     board = room["id"] == BOARD_ROOM
     is_live = board and seen["heard_at"] is not None and now - seen["heard_at"] <= LIVE_STALE
     exclusive = any(b["mode"] == "full" for b in current)
-    seats_free = 0 if exclusive or room["closed"] else max(0, room["capacity"] - max(booked, people))
+    bookable = not room["closed"] and room["capacity"] < BOOKABLE_BELOW
+    seats_free = 0 if exclusive or not bookable else max(0, room["capacity"] - max(booked, people))
     deadlines = [d for d in (ghost_deadline(b, seen) for b in current) if d]
 
     if room["closed"]:
         status = "closed"
+    elif not bookable:
+        status = "unbookable"   # lecture halls, Aula, atrium: live status only (BOOKABLE_BELOW)
     elif deadlines:
         status = "ghost"
     elif exclusive or (current and seats_free == 0):
@@ -195,7 +198,7 @@ def room_state(conn: sqlite3.Connection, room: sqlite3.Row, now: datetime) -> di
             "rating": round(rating["avg"], 1) if rating["votes"] else None, "votes": rating["votes"],
             "status": status, "noise_db": round(noise_db, 1),
             "noise_class": noise_class(noise_db), "people": people, "seats_free": seats_free, "board": board,
-            "bookable": not room["closed"] and room["capacity"] < BOOKABLE_BELOW,
+            "bookable": bookable,
             "live": is_live, "sensor": seen["people"] is not None, "left_items": seen["left_items"] or 0,
             # booked vs actually here: `present` is what the sensor sees (None without one); `counted` is False when
             # the board only knows yes/no (presence model), so the UI shows "someone is here" instead of a number.

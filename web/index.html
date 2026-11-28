@@ -49,6 +49,17 @@
 
     <div class="top-actions">
       <span class="lang-switch top-lang" id="top-lang"></span>
+      <div class="menu-wrap">
+        <button class="btn bell-btn" id="notes-btn" type="button" aria-haspopup="true" aria-expanded="false" data-i18n-title="notes">
+          <svg class="icon" viewBox="0 0 24 24"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 8 3 8H3s3-1 3-8M10.3 20a1.9 1.9 0 0 0 3.4 0"/></svg>
+          <span class="count hidden" id="notes-count">0</span>
+        </button>
+        <div class="menu notes-panel hidden" id="notes-panel">
+          <div class="notes-head"><b data-i18n="notes">Notifications</b>
+            <button class="link-btn small" type="button" id="notes-read" data-i18n="notes_read_all">Mark all as read</button></div>
+          <ul class="notes-list" id="notes-list"></ul>
+        </div>
+      </div>
       <button class="btn mine-btn" id="mine-btn" type="button">
         <svg class="icon"><use href="#i-cal"/></svg><span class="label" data-i18n="my_bookings">My bookings</span><span class="count" id="mine-count">0</span>
       </button>
@@ -86,6 +97,7 @@
         <span><i style="background:var(--full)"></i><span data-i18n="legend_full">Full</span></span>
         <span><i style="background:var(--ghost)"></i><span data-i18n="legend_ghost">Ghost</span></span>
         <span><i style="background:#9aa0a6"></i><span data-i18n="legend_closed">Closed</span></span>
+        <span><i class="lock-dot">🔒</i><span data-i18n="legend_unbookable">Not bookable (55+ seats)</span></span>
       </div>
     </section>
 

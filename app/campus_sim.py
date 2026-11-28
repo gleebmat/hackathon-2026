@@ -61,7 +61,8 @@ def tick(conn: sqlite3.Connection, now: datetime) -> None:
     first = _last_tick is None
     _last_tick = now
     uid = user_id(conn)
-    rooms = [r for r in booking.listed_rooms(conn) if not r["closed"] and r["id"] != booking.BOARD_ROOM]
+    rooms = [r for r in booking.listed_rooms(conn)
+             if not r["closed"] and r["capacity"] < booking.BOOKABLE_BELOW and r["id"] != booking.BOARD_ROOM]
     if not rooms:
         return
     in_use = {r["room_id"] for r in conn.execute(

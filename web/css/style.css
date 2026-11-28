@@ -798,3 +798,29 @@ details.history .booking { opacity: .7; margin-top: 8px; }
 .ask-reasons .noise-moderate { color: var(--shared); }
 .ask-reasons .noise-loud { color: var(--full); }
 @media (max-width: 560px) { .ask-form .btn { padding-inline: 14px; } }
+
+/* ===================== Not bookable rooms, notification center ===================== */
+:root { --unbookable: #475569; }
+.pill.unbookable { background: color-mix(in srgb, var(--unbookable) 14%, transparent); color: var(--unbookable); }
+.pill.unbookable::before { display: none; }
+:root[data-mode="dark"] { --unbookable: #94a3b8; }
+@media (prefers-color-scheme: dark) { :root:not([data-mode="light"]) { --unbookable: #94a3b8; } }
+.lock-dot { background: none !important; width: auto !important; height: auto !important; font-style: normal; font-size: 10px; }
+
+.bell-btn { position: relative; padding: 9px 11px; }
+.bell-btn .icon { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.bell-btn .count { position: absolute; top: -4px; right: -4px; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 999px;
+  background: var(--full); color: #fff; font-size: 11px; font-weight: 800; display: grid; place-items: center; }
+.bell-btn .count.hidden { display: none; }
+.notes-panel { width: min(380px, calc(100vw - 24px)); right: 0; padding: 12px; max-height: 70vh; overflow: auto; }
+.notes-head { display: flex; justify-content: space-between; align-items: center; padding: 2px 4px 10px; border-bottom: 1px solid var(--border); }
+.notes-list { list-style: none; margin: 0; padding: 6px 0 0; display: grid; gap: 4px; }
+.note { display: grid; grid-template-columns: 28px 1fr; gap: 8px; padding: 9px 8px; border-radius: 12px; cursor: pointer; font-size: 14px; }
+.note:hover { background: var(--surface-2); }
+.note.unread { background: color-mix(in srgb, var(--brand) 9%, transparent); }
+.note.unread .note-text { font-weight: 700; }
+.note-icon { font-size: 18px; line-height: 1.2; }
+.note-text { display: block; }
+.note.ghost .note-icon, .note.released .note-icon { filter: saturate(1.4); }
+.note-empty { padding: 16px 8px; }
+.info-note { padding: 14px 16px; border-radius: 14px; background: var(--surface-2); color: var(--muted); font-size: 14px; line-height: 1.45; }

@@ -11,7 +11,8 @@ import { TextGeometry } from "three/addons/geometries/TextGeometry.js";
 const FONT_URL = "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/fonts/helvetiker_bold.typeface.json";
 
 const TYPE_COLOR = { seminar: 0x2a8fb0, office: 0xd9dde3, wc: 0xa9c9e8, hall: 0xe3c99a, atrium: 0x9fd8b5, foyer: 0xf2f2f2 };
-const STATUS_COLOR = { free: 0xffffff, partial: 0xf5b642, full: 0xe0483e, ghost: 0x8b5cf6, closed: 0x9aa0a6 };   // ghost = the site's violet (--ghost)
+const STATUS_COLOR = { free: 0xffffff, partial: 0xf5b642, full: 0xe0483e, ghost: 0x8b5cf6, closed: 0x9aa0a6,
+  unbookable: 0x334155 };   // unbookable (55+ seats): dark and see-through, with a lock badge   // ghost = the site's violet (--ghost)
 const HOVER_COLOR = new THREE.Color(0x4f8dff);   // the room under the mouse blends towards this blue
 const HIDDEN_BY_DEFAULT = new Set(["office", "wc", "foyer"]);  // "offices" toggle
 const SLAB = 0.35;
@@ -356,14 +357,18 @@ export function createBuilding(el, input, opts = {}) {
       if (!r) return false;
       r.statusColor.setHex(status && r.data.bookable ? STATUS_COLOR[status] ?? r.baseColor : r.baseColor);
       r.mesh.material.color.copy(r.statusColor);
+      r.origOpacity ??= r.baseOpacity;
+      r.baseOpacity = status === "unbookable" ? Math.min(r.origOpacity, 0.42) : r.origOpacity;
+      r.mesh.material.opacity = r.baseOpacity;
       textColor(r);
       r.loud = noise_class === "loud";
-      const kind = board ? (live ? "board-live" : "board-off") : live ? "live" : null;   // the sensor room always has one
+      const kind = board ? (live ? "board-live" : "board-off") : live ? "live"
+        : status === "unbookable" ? "locked" : null;   // the sensor room always has one
       if (kind !== r.badgeKind) {
         if (r.badge) { r.mesh.remove(r.badge); r.badge.material.map.dispose(); r.badge.material.dispose(); r.badge = null; }
         r.badgeKind = kind;
         if (kind) {
-          r.badge = kind === "live" ? badge("● LIVE", "#e0483e")
+          r.badge = kind === "live" ? badge("● LIVE", "#e0483e") : kind === "locked" ? badge("🔒 55+", "#475569")
             : badge(kind === "board-live" ? "LIVE" : "OFFLINE", kind === "board-live" ? "#e0483e" : "#6b7280", true);
           r.badge.position.set(0, r.h / 2 + (kind === "live" ? 1.4 : 3.2), 0);
           r.mesh.add(r.badge);
