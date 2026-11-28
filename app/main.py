@@ -12,7 +12,7 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, ValidationError
 
-from app import auth, booking, clock, db, mqtt_feed
+from app import auth, booking, clock, db, mqtt_feed, vision
 from app.booking import ApiError
 
 WEB_DIR = db.ROOT / "web"
@@ -22,7 +22,10 @@ SESSION_DAYS = 7
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     db.init()
-    mqtt_client = mqtt_feed.start(mqtt_reading) if os.environ.get("MQTT_FEED", "1") != "0" else None
+    mqtt_client = None
+    if os.environ.get("MQTT_FEED", "1") != "0":
+        detector = vision.start(vision_reading)
+        mqtt_client = mqtt_feed.start(mqtt_reading, detector.submit if detector else None)
     yield
     if mqtt_client:
         mqtt_client.loop_stop()
@@ -264,9 +267,19 @@ class Reading(BaseModel):
     left_items: int | None = Field(None, ge=0, le=100)   # items left behind, counted on the board
 
 
+VISION_FRESH = timedelta(seconds=5)
+vision_at: dict[str, datetime] = {}   # when the camera detector (app/vision.py) last counted each room
+
+
 def save_reading(conn: sqlite3.Connection, body: Reading) -> None:
     people = body.people if body.people is not None else (None if body.presence is None else int(body.presence))
-    booking.record_reading(conn, body.room_id, body.noise_db, people, clock.now(), body.left_items,
+    left_items = body.left_items
+    seen = vision_at.get(body.room_id)
+    if seen and clock.now() - seen < VISION_FRESH:   # the camera detector counts this room: only the noise is used
+        people = left_items = None
+        if body.noise_db is None:
+            return
+    booking.record_reading(conn, body.room_id, body.noise_db, people, clock.now(), left_items,
                            counted=body.people is not None)
 
 
@@ -279,18 +292,13 @@ def post_reading(body: Reading, conn: Conn, x_token: str | None = Header(None)):
     return {"ok": True}
 
 
-def mqtt_reading(payload: dict) -> bool:
-    """A reading that arrived over MQTT (app/mqtt_feed.py): same validation and storage as POST /api/readings.
-    Returns False when it was rejected (bad fields, unknown room)."""
-    try:
-        body = Reading(**payload)
-    except ValidationError:
-        return False
+def in_transaction(work) -> bool:
+    """Runs work(conn) in its own write transaction (for the MQTT and vision threads). False if it was rejected."""
     conn = db.connect()
     try:
         conn.execute("BEGIN IMMEDIATE")
         try:
-            save_reading(conn, body)
+            work(conn)
         except BaseException:
             conn.execute("ROLLBACK")
             raise
@@ -300,6 +308,23 @@ def mqtt_reading(payload: dict) -> bool:
         return False
     finally:
         conn.close()
+
+
+def mqtt_reading(payload: dict) -> bool:
+    """A reading that arrived over MQTT (app/mqtt_feed.py): same validation and storage as POST /api/readings.
+    Returns False when it was rejected (bad fields, unknown room)."""
+    try:
+        body = Reading(**payload)
+    except ValidationError:
+        return False
+    return in_transaction(lambda conn: save_reading(conn, body))
+
+
+def vision_reading(room_id: str, people: int, left_items: int) -> bool:
+    """A head count and left items from the camera detector (app/vision.py); it overrules the board's own presence."""
+    now = clock.now()
+    vision_at[room_id] = now
+    return in_transaction(lambda conn: booking.record_reading(conn, room_id, None, people, now, left_items))
 
 
 class NoCacheStatic(StaticFiles):
