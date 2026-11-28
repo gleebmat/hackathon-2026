@@ -16,6 +16,7 @@ OPEN = time.min
 SLOT = timedelta(minutes=30)
 MAX_HOURS_PER_DAY = 4.0
 BOOKING_HORIZON_DAYS = 14
+BOOKABLE_BELOW = 55   # only rooms with fewer seats can be booked (lecture halls, Aula and atrium can't)
 GHOST_AFTER = (timedelta(seconds=int(os.environ["GHOST_RELEASE_SECONDS"]))
                if "GHOST_RELEASE_SECONDS" in os.environ
                else timedelta(minutes=int(os.environ.get("GHOST_RELEASE_MIN", "10"))))
@@ -194,6 +195,7 @@ def room_state(conn: sqlite3.Connection, room: sqlite3.Row, now: datetime) -> di
             "rating": round(rating["avg"], 1) if rating["votes"] else None, "votes": rating["votes"],
             "status": status, "noise_db": round(noise_db, 1),
             "noise_class": noise_class(noise_db), "people": people, "seats_free": seats_free, "board": board,
+            "bookable": not room["closed"] and room["capacity"] < BOOKABLE_BELOW,
             "live": is_live, "sensor": seen["people"] is not None, "left_items": seen["left_items"] or 0,
             # booked vs actually here: `present` is what the sensor sees (None without one); `counted` is False when
             # the board only knows yes/no (presence model), so the UI shows "someone is here" instead of a number.
@@ -208,6 +210,8 @@ def room_problem(conn: sqlite3.Connection, room: sqlite3.Row, start: datetime, e
     """Why this room can't take the booking, or None if it can."""
     if room["closed"]:
         return "Room is closed"
+    if room["capacity"] >= BOOKABLE_BELOW:
+        return f"Only rooms with fewer than {BOOKABLE_BELOW} seats can be booked"
     if seats > room["capacity"]:
         return f"Room holds at most {room['capacity']} people"
     others = overlapping(conn, room["id"], start, end)
@@ -326,18 +330,20 @@ def availability(conn: sqlite3.Connection, room: sqlite3.Row, day: date, now: da
     while t < close:
         end = t + SLOT
         here = [b for b in bookings if b["start"] < fmt(end) and b["end"] > fmt(t)]
-        used = sum(b["seats"] for b in here)
-        if t <= now < end:
-            used = max(used, people_now)
+        booked = sum(b["seats"] for b in here)
+        # People sitting there without a booking take seats from sharers, but don't block booking the whole room:
+        # a whole-room booking just moves them out (same rule as room_problem).
+        used = max(booked, people_now) if t <= now < end else booked
         exclusive = any(b["mode"] == "full" for b in here)
-        seats_free = 0 if exclusive or room["closed"] else max(0, room["capacity"] - used)
+        closed = room["closed"] or room["capacity"] >= BOOKABLE_BELOW
+        seats_free = 0 if exclusive or closed else max(0, room["capacity"] - used)
         if end <= now:
             status = "past"
-        elif room["closed"]:
+        elif closed:
             status = "closed"
-        elif exclusive or seats_free == 0:
+        elif exclusive or booked >= room["capacity"]:
             status = "full"
-        elif here or used:
+        elif here:
             status = "partial"
         else:
             status = "free"

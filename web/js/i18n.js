@@ -91,7 +91,8 @@ const DICT = {
     // footer and help
     f_university: "University", f_aau: "AAU website", f_campus_online: "CAMPUSonline", f_moodle: "Moodle",
     f_map: "Campus map", f_support: "IT Service Desk (support)", f_how: "How it works",
-    f_how_1: "Book up to 4 hours per day, up to 14 days ahead.",
+    f_how_1: "Book rooms with fewer than 55 seats, up to 4 hours per day and 14 days ahead.",
+    not_bookable: "Rooms with 55 or more seats (lecture halls, Aula, atrium) can't be booked here. Live status only.",
     f_how_2: "Private or open to share: shared rooms keep quiet and loud activities apart.",
     f_how_3: "Ghost bookings: if the room's sensor sees nobody, the booking is released for others.",
     f_how_4: "LIVE rooms show people, noise and things left behind, seen by the room's camera and microphone.",
@@ -187,7 +188,8 @@ const DICT = {
     demo_accounts: "Demo-Konten (Passwort <b>demo</b>), zum Ausfüllen anklicken:",
     f_university: "Universität", f_aau: "AAU-Website", f_campus_online: "CAMPUSonline", f_moodle: "Moodle",
     f_map: "Campusplan", f_support: "IT-Servicedesk (Support)", f_how: "So funktioniert's",
-    f_how_1: "Buche bis zu 4 Stunden pro Tag, bis zu 14 Tage im Voraus.",
+    f_how_1: "Buche Räume mit weniger als 55 Plätzen, bis zu 4 Stunden pro Tag und 14 Tage im Voraus.",
+    not_bookable: "Räume ab 55 Plätzen (Hörsäle, Aula, Atrium) können hier nicht gebucht werden. Nur Live-Status.",
     f_how_2: "Privat oder geteilt: In geteilten Räumen werden leise und laute Aktivitäten getrennt.",
     f_how_3: "Geisterbuchungen: Sieht der Raumsensor niemanden, wird die Buchung für andere freigegeben.",
     f_how_4: "LIVE-Räume zeigen Personen, Lautstärke und liegen gebliebene Dinge, erfasst von Kamera und Mikrofon im Raum.",
@@ -205,6 +207,7 @@ const DICT = {
 const ERRORS_DE = [
   [/^Unknown room (.+)$/, "Unbekannter Raum $1"],
   [/^Room is closed$/, "Der Raum ist geschlossen"],
+  [/^Only rooms with fewer than (\d+) seats can be booked$/, "Nur Räume mit weniger als $1 Plätzen können gebucht werden"],
   [/^Room holds at most (\d+) people$/, "In den Raum passen höchstens $1 Personen"],
   [/^Room is already booked for that time$/, "Der Raum ist zu dieser Zeit schon gebucht"],
   [/^Room is booked exclusively for that time$/, "Der Raum ist zu dieser Zeit privat gebucht"],

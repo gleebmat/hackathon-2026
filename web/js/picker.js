@@ -276,7 +276,7 @@ export function createPicker(root, { onOpen, onError }) {
     /** New live room list from /api/rooms (every few seconds): redraw cards without animation. */
     async setRooms(rooms) {
       const first = !state.rooms.length;
-      state.rooms = rooms;
+      state.rooms = rooms.filter((r) => r.bookable !== false);   // 55+ seats can't be booked: no cards for them
       if (first || state.loadedFor !== state.date) {
         try {
           await loadSlots();

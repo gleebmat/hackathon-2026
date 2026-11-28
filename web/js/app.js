@@ -550,6 +550,10 @@ function renderSlots(popIndex) {
 
 function renderForm() {
   const sh = state.sheet;
+  if (sh.room && sh.room.bookable === false) {   // lecture halls, Aula, atrium: 55+ seats (app/booking.py)
+    $("sh-form").innerHTML = `<div class="block"><div class="alert">${t("not_bookable")}</div></div>`;
+    return;
+  }
   const r = range();
   const { canFull, maxSeats } = rules();
   const left = dayLeft();
