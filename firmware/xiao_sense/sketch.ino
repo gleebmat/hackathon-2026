@@ -177,8 +177,7 @@ bool startCounter() {
   static tflite::MicroInterpreter interp(tflite::GetModel(model), ops, mem, COUNT_ARENA);
   if (interp.AllocateTensors() != kTfLiteOk) return false;
   counter = &interp;
-  Serial.printf("count model arena used: %u bytes
-", (unsigned)interp.arena_used_bytes());
+  Serial.printf("count model arena used: %u bytes\n", (unsigned)interp.arena_used_bytes());
   return true;
 }
 
@@ -244,8 +243,7 @@ void counterTask(void*) {
         peopleCount = n;
         countAt = millis();
       }
-      Serial.printf("people count %d (%lums)
-", n, (unsigned long)(millis() - t0));
+      Serial.printf("people count %d (%lums)\n", n, (unsigned long)(millis() - t0));
       countBusy = false;
     }
     vTaskDelay(pdMS_TO_TICKS(50));
