@@ -1114,6 +1114,22 @@ function checkAlerts() {
   }
 }
 
+// A soft glow on the page background follows the pointer (CSS hides it on touch screens and reduced motion).
+function wireCursorGlow() {
+  const glow = $("cursor-glow");
+  let frame = 0;
+  document.addEventListener("pointermove", (e) => {
+    if (e.pointerType !== "mouse" || frame) return;
+    frame = requestAnimationFrame(() => {
+      frame = 0;
+      glow.style.setProperty("--gx", `${e.clientX}px`);
+      glow.style.setProperty("--gy", `${e.clientY}px`);
+      glow.classList.add("on");
+    });
+  });
+  document.documentElement.addEventListener("pointerleave", () => glow.classList.remove("on"));
+}
+
 async function main() {
   document.title = t("title_app");
   applyStatic();
@@ -1131,6 +1147,7 @@ async function main() {
   $("user-name").textContent = state.user.name;
   $("user-email").textContent = state.user.email;
   wireMenu();
+  wireCursorGlow();
   wireSearch();
   wireSheet();
   wirePage();
