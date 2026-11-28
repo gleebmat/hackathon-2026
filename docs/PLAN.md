@@ -72,13 +72,13 @@ and WiFi reaches the internet ("Velxio-GUEST", open). The same sketch runs on th
 
 **Firmware:** `firmware/xiao_sense/sketch.ino` + `person_model.h` (Arshia's `models/vww_96_int8.tflite` as a C
 array, generated). Libraries in Velxio: `Chirale_TensorFlowLite` (builds TFLM from source; `tflm_esp32` does
-not work on arduino-esp32 3.x) and `PubSubClient`. The recording sketch targets one reading every 500 ms and publishes
+not work on arduino-esp32 3.x) and `PubSubClient`. The sketch publishes one reading per camera frame (no pause; ~1-2 s in Velxio):
 `{"room_id": "Z.1.04", "noise_db": 37.2, "presence": true, "person_score": 0.91, "left_items": 0}`.
 
 **Tested in Velxio with a webcam (28 Nov):**
 | Feature | How | Result |
 |---|---|---|
-| Presence | Arshia's 96x96 RGB int8 model on the board, majority of the last 3 frames, threshold 0.60 | in view 0.70-0.98, empty mostly 0.1-0.5; ~0.95 s per frame; 101 KB arena |
+| Presence | Arshia's 96x96 RGB int8 model on the board, present at once at 0.70+, else 2 of the last 3 frames at 0.60+ | in view 0.70-0.98, empty mostly 0.1-0.5; ~0.95 s per frame; 101 KB arena |
 | Noise | PDM mic RMS mapped to ~30-90 dB | 30-62 dB with the real mic (72 dB = Velxio's test tone when Mic is off) |
 | Ghost booking | presence -> backend ghost timer | marked after 5 s, released after 15 s with the demo timers |
 | Left items | see below | 0 when nothing was left; >0 for an object placed inside the view; the UI shows yes/no |

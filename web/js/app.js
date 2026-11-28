@@ -5,8 +5,8 @@ import * as api from "./api.js";
 import { createPicker } from "./picker.js";
 import { createPlan, layoutBuilding } from "./plan2d.js";
 
-const POLL_MS = 5000;
-const SLOT_REFRESH_TICKS = 6;   // the picker reloads every room's slots every 30 s
+const POLL_MS = 1000;            // map + room list: board changes show up within a second
+const SLOT_REFRESH_TICKS = 30;  // the picker reloads every room's slots every 30 s
 const DAY_LIMIT = 4;
 const HORIZON_DAYS = 14;
 const STATUS = { free: "Free", partial: "Shared", full: "Full", ghost: "Ghost booking", closed: "Closed" };

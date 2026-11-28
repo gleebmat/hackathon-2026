@@ -1,6 +1,7 @@
 // Smart campus room sensor - Seeed XIAO ESP32S3 Sense (runs in the Velxio simulator and on the real board).
 //
-// At most twice per second it measures the room on the board itself and publishes one JSON reading over MQTT to the topic
+// Once per camera frame (about every 1-2 s in Velxio) it measures the room on the board itself and publishes one JSON
+// reading over MQTT to the topic
 // aau-hack26/rooms/<room>/readings on a public broker; the backend (app/mqtt_feed.py) subscribes to it:
 //   {"room_id":"Z.1.04","noise_db":47.0,"presence":true,"person_score":0.91,"left_items":0}
 //  - presence: Arshia's 96x96 person model (models/vww_96_int8.tflite, TensorFlow Lite Micro), majority of the
@@ -44,8 +45,8 @@
 const char* ROOM_ID = "Z.1.04";
 const char* MQTT_HOST = "broker.hivemq.com";   // public broker: fine for a demo, use your own for real data
 const int MQTT_PORT = 1883;
-const uint32_t PERIOD_MS = 500;
 const float PERSON_THRESHOLD = 0.60;
+const float PRESENT_NOW = 0.70;             // a single frame this sure counts as present right away
 
 // Seeed's camera pin map for the Sense board (same as Velxio's camera example)
 #define XCLK_GPIO_NUM 10
@@ -477,10 +478,7 @@ void setup() {
 }
 
 void loop() {
-  static uint32_t last = 0;
-  if (millis() - last < PERIOD_MS) return;
-  last = millis();
-
+  // no pause: one reading per frame, as fast as the person model runs
   String json = String("{\"room_id\":\"") + ROOM_ID + "\"";
   float db = micOk ? noiseDb() : -1;
   if (db >= 0) json += ",\"noise_db\":" + String(db, 1);
@@ -509,7 +507,8 @@ void loop() {
       return;
     }
     votes[voteIdx++ % 3] = score >= PERSON_THRESHOLD;
-    bool present = score >= 0.85f || (votes[0] + votes[1] + votes[2]) >= 2;
+    // one clear frame is enough to say "someone is here"; leaving needs 2 of the last 3 frames below the threshold
+    bool present = score >= PRESENT_NOW || (votes[0] + votes[1] + votes[2]) >= 2;
 #if COUNT_PEOPLE
     wasPresent = present;
 #endif
