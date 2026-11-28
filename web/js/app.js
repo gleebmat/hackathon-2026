@@ -161,9 +161,13 @@ function usedHours(day, exceptId) {
     .reduce((sum, b) => sum + b.hours, 0);
 }
 
+let mineJson = "";   // last bookings drawn: redraw only on a change, so a pending "Sure? Tap again" survives polling
+
 async function refreshMine() {
+  let json;
   try {
     state.mine = await api.myBookings();
+    json = JSON.stringify(state.mine);
   } catch (err) {
     if (!handleAuth(err)) toast(err.message, { error: true });
     return;
@@ -176,7 +180,8 @@ async function refreshMine() {
     void count.offsetWidth;
     count.classList.add("bump");
   }
-  if ($("mine-drawer").open) renderMine();
+  if ($("mine-drawer").open && json !== mineJson) renderMine();
+  mineJson = json;
 }
 
 function bookingCard(b, { actions = true } = {}) {
@@ -435,7 +440,7 @@ function renderSheetHead() {
       <div class="sheet-meta">
         <span class="pill ${esc(r.status)}">${STATUS[r.status] ?? esc(r.status)}</span>${live}${left}
         <span class="meta"><svg class="icon"><use href="#i-users"/></svg>${esc(occupancyText(r))}</span>
-        <span class="meta"><svg class="icon"><use href="#i-sound"/></svg>${r.noise_db.toFixed(0)} dB · ${esc(t(`noise_${r.noise_class}`))}</span>
+        <span class="meta"><svg class="icon"><use href="#i-sound"/></svg>${r.board && !r.live ? "— dB" : `${r.noise_db.toFixed(0)} dB · ${esc(t(`noise_${r.noise_class}`))}`}</span>
       </div>
     </div>
     <div class="sheet-tools">
@@ -448,7 +453,46 @@ function renderSheetHead() {
     : `<div class="now-item"><span>${t("nobody_booked")}</span></div>`;
   const ghost = r.status === "ghost" && r.ghost_release_at
     ? `<div class="ghost-alert" style="margin-top:8px">${t("ghost_room", { t: esc(r.ghost_release_at.slice(11, 19)) })}</div>` : "";
-  $("sh-now").innerHTML = `<div class="block-title"><h3>${t("right_now")}</h3></div><div class="now-list">${now}</div>${sensorCheck(r)}${ghost}`;
+  $("sh-now").innerHTML = `<div class="block-title"><h3>${t("right_now")}</h3></div>${r.board ? boardCard(r) : ""}<div class="now-list">${now}</div>${sensorCheck(r)}${ghost}`;
+}
+
+// The board room's live card: a big head count, the noise with a meter and the last minute as a line.
+const noiseLog = { room: null, values: [] };   // live noise samples of the open board room (~2 per second)
+const PERSON_SVG = `<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="7" r="4"/><path d="M4 21a8 8 0 0 1 16 0z"/></svg>`;
+const CHIP_SVG = `<svg class="board-chip" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4v3M12 4v3M17 4v3M7 17v3M12 17v3M17 17v3M4 7h3M4 12h3M4 17h3M17 7h3M17 12h3M17 17h3"/><rect x="7" y="7" width="10" height="10" rx="2"/><circle cx="12" cy="12" r="2.2"/></svg>`;
+
+function boardCard(r) {
+  if (noiseLog.room !== r.id) Object.assign(noiseLog, { room: r.id, values: [] });
+  if (!r.live) {
+    noiseLog.values = [];
+    return `<div class="board-card off"><div class="board-top">${CHIP_SVG}<b>${t("board_title")}</b></div>
+      <p class="muted small">${t("board_off")}</p></div>`;
+  }
+  noiseLog.values.push(r.noise_db);
+  if (noiseLog.values.length > 120) noiseLog.values.shift();
+  const counted = r.sensor && r.counted;
+  const n = r.sensor ? r.present : null;
+  const big = n === null ? "—" : counted || n === 0 ? n : "1+";
+  const label = n === null ? t("board_no_count") : counted || n === 0 ? t("board_people") : t("board_someone");
+  const icons = counted && n > 0
+    ? `<div class="people-icons">${PERSON_SVG.repeat(Math.min(n, 12))}${n > 12 ? `<span>+${n - 12}</span>` : ""}</div>` : "";
+  const pct = Math.max(0, Math.min(100, ((r.noise_db - 30) / 60) * 100));
+  const v = noiseLog.values;
+  const lo = Math.min(...v) - 2, hi = Math.max(lo + 12, Math.max(...v) + 2);   // zoom to the minute's range
+  const line = v.length > 1
+    ? v.map((d, i) => `${((i / (v.length - 1)) * 120).toFixed(1)},${(28 - ((d - lo) / (hi - lo)) * 26).toFixed(1)}`).join(" ")
+    : "";
+  return `<div class="board-card">
+    <div class="board-top">${CHIP_SVG}<b>${t("board_title")}</b><span class="live-badge">LIVE</span></div>
+    <div class="board-stats">
+      <div class="board-stat"><div class="big">${big}</div><div class="muted small">${esc(label)}</div>${icons}</div>
+      <div class="board-stat"><div class="big ${esc(r.noise_class)}">${r.noise_db.toFixed(0)}<small> dB</small></div>
+        <div class="muted small">${t("board_noise")} · ${esc(t(`noise_${r.noise_class}`))}</div>
+        <div class="noise-meter"><i style="left:${pct.toFixed(1)}%"></i></div></div>
+    </div>
+    ${line ? `<div class="muted small">${t("board_minute")}</div><svg class="noise-line" viewBox="0 0 120 30" preserveAspectRatio="none"><polyline points="${line}"/></svg>` : ""}
+    <p class="muted small board-hw">${t("board_hw")}</p>
+  </div>`;
 }
 
 // Booked seats next to what the room's sensor actually sees. `counted` false = the board only knows yes/no.
@@ -893,10 +937,17 @@ async function main() {
     }
   }, 500);
   let tick = 0;
+  let polling = false;   // a slow answer must not pile up requests
   setInterval(async () => {
-    await Promise.all([refreshRooms(), refreshMine()]);
-    if (state.sheet && !state.sheet.busy) loadSheetData();
-    if (++tick % SLOT_REFRESH_TICKS === 0) state.picker.refresh();
+    if (polling || document.hidden) return;
+    polling = true;
+    try {
+      await Promise.all([refreshRooms(), refreshMine()]);
+      if (state.sheet && !state.sheet.busy) await loadSheetData();
+      if (++tick % SLOT_REFRESH_TICKS === 0) state.picker.refresh();
+    } finally {
+      polling = false;
+    }
   }, POLL_MS);
 }
 

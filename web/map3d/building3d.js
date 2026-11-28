@@ -1,6 +1,6 @@
 // 3D model of AAU buildings (Three.js). API per docs/PLAN.md:
 //   const b = createBuilding(containerEl, campusJson)   // campus.json ({buildings:[...]}) or a single building
-//   b.setStatus(id, {status, noise_class, live}); b.focusRoom(id); b.showAll(); b.setFloor(n|null); b.onRoomClick(cb)
+//   b.setStatus(id, {status, noise_class, live, board}); b.focusRoom(id); b.showAll(); b.setFloor(n|null); b.onRoomClick(cb)
 //   extras: b.setBuilding(id|null), b.buildings(), b.setOfficesVisible(bool), b.onRoomHover(cb), b.rooms()
 //   Roofs are always see-through.
 import * as THREE from "three";
@@ -321,32 +321,54 @@ export function createBuilding(el, input, opts = {}) {
   };
   applyVisibility();
 
-  const badge = (text, color) => {
+  // A badge floating over a room. With `chip`, a small drawing of the sensor board (a chip with pins and a camera
+  // lens) comes first: it marks the room the real board watches.
+  const badge = (text, color, chip = false) => {
     const c = document.createElement("canvas");
-    c.width = 256; c.height = 96;
+    c.width = chip ? 384 : 256; c.height = 96;
     const x = c.getContext("2d");
-    x.fillStyle = color; x.beginPath(); x.roundRect(4, 4, 248, 88, 40); x.fill();
+    x.fillStyle = color; x.beginPath(); x.roundRect(4, 4, c.width - 8, 88, 40); x.fill();
+    if (chip) {
+      x.strokeStyle = "#fff"; x.lineWidth = 5; x.lineCap = "round";
+      for (let i = 0; i < 4; i++) {                       // pins on the left and right
+        const y = 30 + i * 12;
+        x.beginPath(); x.moveTo(34, y); x.lineTo(44, y); x.moveTo(100, y); x.lineTo(110, y); x.stroke();
+      }
+      x.fillStyle = "#fff"; x.beginPath(); x.roundRect(44, 20, 56, 56, 8); x.fill();
+      x.fillStyle = color; x.beginPath(); x.arc(72, 48, 13, 0, Math.PI * 2); x.fill();   // camera lens
+      x.fillStyle = "#fff"; x.beginPath(); x.arc(72, 48, 5, 0, Math.PI * 2); x.fill();
+    }
     x.fillStyle = "#fff"; x.font = "bold 44px system-ui, sans-serif"; x.textAlign = "center"; x.textBaseline = "middle";
-    x.fillText(text, 128, 50);
-    const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(c), depthTest: false }));
-    s.scale.set(4.2, 1.6, 1);
+    x.fillText(text, chip ? 236 : 128, 50);
+    // the board's badge keeps the same size on screen at any zoom, so the sensor room is easy to spot
+    const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(c), depthTest: false,
+                                                          sizeAttenuation: !chip }));
+    if (chip) s.scale.set(0.16, 0.04, 1);
+    else s.scale.set(4.2, 1.6, 1);
+    s.renderOrder = 10;
     return s;
   };
 
   const api = {
     rooms: () => [...rooms.values()].map((r) => r.data),
-    setStatus(id, { status, noise_class, live } = {}) {
+    setStatus(id, { status, noise_class, live, board } = {}) {
       const r = rooms.get(id);
       if (!r) return false;
       r.statusColor.setHex(status && r.data.bookable ? STATUS_COLOR[status] ?? r.baseColor : r.baseColor);
       r.mesh.material.color.copy(r.statusColor);
       textColor(r);
       r.loud = noise_class === "loud";
-      if (live && !r.badge) {
-        r.badge = badge("● LIVE", "#e0483e");
-        r.badge.position.set(0, r.h / 2 + 1.4, 0);
-        r.mesh.add(r.badge);
-      } else if (!live && r.badge) { r.mesh.remove(r.badge); r.badge = null; }
+      const kind = board ? (live ? "board-live" : "board-off") : live ? "live" : null;   // the sensor room always has one
+      if (kind !== r.badgeKind) {
+        if (r.badge) { r.mesh.remove(r.badge); r.badge.material.map.dispose(); r.badge.material.dispose(); r.badge = null; }
+        r.badgeKind = kind;
+        if (kind) {
+          r.badge = kind === "live" ? badge("● LIVE", "#e0483e")
+            : badge(kind === "board-live" ? "LIVE" : "OFFLINE", kind === "board-live" ? "#e0483e" : "#6b7280", true);
+          r.badge.position.set(0, r.h / 2 + (kind === "live" ? 1.4 : 3.2), 0);
+          r.mesh.add(r.badge);
+        }
+      }
       return true;
     },
     /** Highlight a room inside the model: it glows and pulses, the rest dims, the camera frames it with context. */

@@ -64,6 +64,9 @@ and left items (yes/no) reach the website. 50 tests pass. Runbook: `README.md`.
   whole-room booking. UI: an empty room always reads "Nobody here".
 - Lively campus: simulated noise drifts every few seconds, walk-ins change every 5 min, and simulated "Other
   students" (`app/campus_sim.py`) book rooms every 2 min (~45% busy by day). LIVE badge calmer, off 3 s after the board stops.
+- QA pass (28 Nov): API, errors, DB integrity, load and the main UI flows checked. Fixed: cancelling a booking failed
+  when "Sure? Tap again" took over a second (the list redrew every second); the 1 s poll could pile up requests.
+  Board room: board badge on the 3D map, live card (people, noise meter, last minute), no fake noise while offline.
 
 ---
 

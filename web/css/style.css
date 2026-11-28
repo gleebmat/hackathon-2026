@@ -743,3 +743,30 @@ details.history .booking { opacity: .7; margin-top: 8px; }
   .foot-grid { padding: 24px 16px 14px; }
   .foot-bottom { padding: 12px 16px 18px; }
 }
+
+/* Live card of the board room (the one room with a real sensor) */
+.board-card { margin-bottom: 10px; padding: 14px 16px; border-radius: var(--radius-sm); background: var(--surface-2);
+  border: 1px solid color-mix(in srgb, var(--live) 35%, var(--border)); }
+.board-card.off { border-color: var(--border); }
+.board-card.off p { margin: 6px 0 0; }
+.board-top { display: flex; align-items: center; gap: 8px; }
+.board-top .live-badge { margin-left: auto; }
+.board-chip { width: 22px; height: 22px; fill: none; stroke: var(--live); stroke-width: 1.8; stroke-linecap: round; }
+.board-card.off .board-chip { stroke: var(--muted); }
+.board-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 12px 0 8px; }
+.board-stat .big { font-size: 40px; font-weight: 800; line-height: 1; font-variant-numeric: tabular-nums; }
+.board-stat .big small { font-size: 16px; font-weight: 700; color: var(--muted); }
+.board-stat .big.quiet { color: var(--free); }
+.board-stat .big.moderate { color: var(--shared); }
+.board-stat .big.loud { color: var(--full); }
+.people-icons { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 8px; align-items: center; }
+.people-icons svg { width: 18px; height: 18px; fill: var(--live); }
+.people-icons span { font-size: 12px; font-weight: 700; color: var(--muted); }
+.noise-meter { position: relative; height: 8px; margin-top: 10px; border-radius: 4px;
+  background: linear-gradient(90deg, var(--free) 0 17%, var(--shared) 17% 50%, var(--full) 50%); }
+.noise-meter i { position: absolute; top: -4px; width: 4px; height: 16px; margin-left: -2px; border-radius: 2px;
+  background: var(--text); transition: left .4s ease; }
+.noise-line { display: block; width: 100%; height: 44px; margin: 4px 0 2px; }
+.noise-line polyline { fill: none; stroke: var(--live); stroke-width: 1.5; vector-effect: non-scaling-stroke;
+  stroke-linejoin: round; }
+.board-hw { margin: 6px 0 0; }
