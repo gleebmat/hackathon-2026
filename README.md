@@ -41,7 +41,8 @@ API docs: http://localhost:8000/docs. The map alone: http://localhost:8000/map3d
   sensor-board room, a 51-seat seminar room here. Refresh the data with
   `uv run --with shapely python tools/campus3d/fetch_plan.py`, rebuild with
   `uv run --with shapely python tools/campus3d/gen_campus.py` (then restart the backend: it reads the bookable rooms).
-  The map opens on floor 1 (also when you pick a building); a compass (top left) turns with it, click it to go back to the standard view; the main entrance (Z, east,
+  The map opens on floor 1 (also when you pick a building); a compass (top left) turns with it, click it to go back to the standard view; a single building is shown without the bridges and corridors to its
+  neighbours; the main entrance (Z, east,
   floor 1) has a blue door frame, canopy and tag; offices show by default, the "Offices" button hides them.
 - **Notifications** (bell next to My bookings, unread counter, "Mark all as read"): booking starts in 10 min, ends in
   N min, time is over, ghost warning (nobody detected, released at HH:MM), booking released for inactivity, quiet room

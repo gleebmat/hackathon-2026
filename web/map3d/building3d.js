@@ -153,6 +153,7 @@ export function createBuilding(el, input, opts = {}) {
   // --- buildings ---
   const floorGroups = new Map();   // "V:1" -> Group (slab + rooms of that floor)
   const shells = [];               // per building: walls + roof
+  const linkParts = [];            // bridges and corridors to other buildings: hidden when one building is shown
   const rooms = new Map();         // id -> {mesh, data, baseColor, badge, loud, building}
   const bounds = new THREE.Box3();
   const bBounds = new Map();       // building id -> Box3
@@ -168,7 +169,9 @@ export function createBuilding(el, input, opts = {}) {
       for (const b of bd.blocks) {
         if ((b.open && f > 0) || (b.floors && !b.floors.includes(f))) continue;
         const openings = bd.rooms.filter((r) => r.floor < f && f < r.floor + (r.storeys ?? 1)).map(roomCorners);
-        g.add(slab(b, f * H, f > 1, slabMat, SLAB, openings));   // courtyards open above floor 1 (atrium floor)
+        const s = slab(b, f * H, f > 1, slabMat, SLAB, openings);   // courtyards open above floor 1 (atrium floor)
+        if (b.link) linkParts.push(s);
+        g.add(s);
       }
       floorGroups.set(`${bd.id}:${f}`, g);
       scene.add(g);
@@ -178,12 +181,14 @@ export function createBuilding(el, input, opts = {}) {
       const bBase = Math.min(...fl) * H, bTop = (Math.max(...fl) + 1) * H;
       const roof = slab(b, bTop, true, roofMat, 0.5);
       edges(roof, 0x4b5768, 0.55);
-      shell.add(roof);
+      const part = b.link ? new THREE.Group() : shell;     // links (bridges, corridors) hide when one building is shown
+      if (b.link) { shell.add(part); linkParts.push(part); }
+      part.add(roof);
       const pts = corners(b);
       pts.forEach(([x0, z0], i) => {                       // one glass wall per footprint edge
         const [x1, z1] = pts[(i + 1) % pts.length], len = Math.hypot(x1 - x0, z1 - z0);
         if (len < 0.05) return;
-        const w = box((x0 + x1) / 2, (z0 + z1) / 2, len, 0.3, bBase, bTop - bBase, glass, shell);
+        const w = box((x0 + x1) / 2, (z0 + z1) / 2, len, 0.3, bBase, bTop - bBase, glass, part);
         w.rotation.y = -Math.atan2(z1 - z0, x1 - x0);
       });
       const c = b.courtyard;
@@ -192,7 +197,10 @@ export function createBuilding(el, input, opts = {}) {
         box(cx, cz - c.d / 2, c.w, 0.3, H, top - H, glass, shell); box(cx, cz + c.d / 2, c.w, 0.3, H, top - H, glass, shell);
         box(cx - c.w / 2, cz, 0.3, c.d, H, top - H, glass, shell); box(cx + c.w / 2, cz, 0.3, c.d, H, top - H, glass, shell);
       }
-      for (const [x, z] of pts) { bb.expandByPoint(new THREE.Vector3(x, bBase, z)); bb.expandByPoint(new THREE.Vector3(x, bTop, z)); }
+      for (const [x, z] of pts) {                          // links don't count when framing one building
+        (b.link ? bounds : bb).expandByPoint(new THREE.Vector3(x, bBase, z));
+        (b.link ? bounds : bb).expandByPoint(new THREE.Vector3(x, bTop, z));
+      }
     }
     bounds.union(bb);
     for (const c of bd.connectors ?? []) {
@@ -385,6 +393,7 @@ export function createBuilding(el, input, opts = {}) {
       g.visible = inView(bid) && (floorFilter === null || Number(f) <= floorFilter) && !coversTarget;
     }
     for (const { shell, building } of shells) shell.visible = inView(building.id);   // the glass case stays when floors are hidden
+    for (const p of linkParts) p.visible = !buildingFilter;
     for (const r of rooms.values()) {
       const isTarget = r.data.id === highlight;
       r.mesh.visible = isTarget || showOffices || !HIDDEN_BY_DEFAULT.has(r.data.type);
