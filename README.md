@@ -27,7 +27,10 @@ API docs: http://localhost:8000/docs. The map alone: http://localhost:8000/map3d
   CAMPUSonline, Moodle, campus map, IT Service Desk), how booking works and the team's contacts (`web/js/footer.js`).
   Rooms can be shared as links (`/?room=Z.1.04`, "Copy link" in the room panel), bookings exported to a calendar
   (`.ics`, "Calendar" in My bookings), and `?` shows the keyboard shortcuts. Login photo: carinthia.com
-  (`web/img/login.jpg`). The 3D map opens on floor 1 (where the board room Z.1.04 is); "All floors" shows everything.
+  (`web/img/login.jpg`). The 3D map opens on floor 1 (where the board room Z.1.04 is); "All floors" shows everything. A compass above the
+  building buttons turns with the map (true north; click it to turn the map north-up), and the main entrance (east
+  side of Z) is marked with a small door frame and tag. Between Z and S there are three tunnels (in line with the
+  three corridors to N) with open courtyards between them, not a hall.
 - **Notifications** (bell next to My bookings, unread counter, "Mark all as read"): booking starts in 10 min, ends in
   N min, time is over, ghost warning (nobody detected, released at HH:MM), booking released for inactivity, quiet room
   getting loud, something left behind, booked, cancelled. New ones also pop up as toasts; clicking one opens the room.

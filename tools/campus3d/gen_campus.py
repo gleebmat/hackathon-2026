@@ -89,7 +89,7 @@ def build_n():
 # --- Building Z (Zentralgebäude). Traced from a second screenshot at the same zoom; N's label sits at (494,165)
 # there and at (781,326) in the reference screenshot, so Z points are shifted by that offset first.
 Z_SHIFT = (781 - 494, 326 - 165)
-Z_BLOCKS = [(350, 300, 660, 485), (660, 315, 840, 485), (200, 380, 365, 535), (370, 485, 690, 685)]  # x0,y0,x1,y1
+Z_BLOCKS = [(350, 300, 660, 485), (660, 315, 840, 485), (200, 380, 365, 535)]  # x0,y0,x1,y1
 Z_ROOMS = [  # (x0, y0, x1, y1, type, name) on floor 1; repeated on floors 0 and 2 except where noted
     (352, 320, 415, 415, "seminar", "Lecture hall"), (415, 335, 462, 410, "seminar", "Lecture hall"),
     (582, 310, 650, 390, "seminar", "Lecture hall"), (665, 342, 730, 380, "seminar", "Seminar room"),
@@ -98,6 +98,11 @@ Z_ROOMS = [  # (x0, y0, x1, y1, type, name) on floor 1; repeated on floors 0 and
 ]
 Z_OFFICE_ROWS = [(730, 318, 835, 345), (680, 440, 815, 478), (205, 392, 245, 530), (245, 388, 330, 420)]
 Z_CONNECTORS = [(322, 165, 345, 300), (478, 200, 500, 300), (630, 150, 655, 300)]   # corridors up to N
+# Three long tunnels south to S, in line with the corridors up to N (the area between Z and S is courtyards, not a
+# hall); they stop where a building is in the way (L) and go on behind it. Lined up with the N corridors later.
+Z_TUNNELS = [(322, 470, 345, 800), (478, 470, 500, 800), (630, 470, 655, 800)]
+S_WING_INSIDE = 128.0       # a z (metres) inside the S wing for all three tunnels
+Z_ENTRANCE = (840, 452)   # main entrance: east side of Z (screen point on the east wall)
 
 
 def z_rect(x0, y0, x1, y1):
@@ -125,7 +130,6 @@ def snap_connectors(connectors, north_blocks, south_blocks, overlap=1.0):
 
 def build_z():
     blocks = [dict(zip("xzwd", z_rect(*b))) for b in Z_BLOCKS]
-    blocks[3]["open"] = True   # the Aula is one tall hall: no upper floor slabs
     rooms, n = [], {0: 1, 1: 1, 2: 1}
 
     def add(floor, x, z, w, d, kind, name):
@@ -150,11 +154,10 @@ def build_z():
                 off = -length / 2 + (i + 0.5) * length / k
                 add(floor, round(cx + off, 2) if along_x else cx, cz if along_x else round(cz + off, 2),
                     round(length / k, 2) if along_x else w, d if along_x else round(length / k, 2), "office", "Office")
-    cx, cz, w, d = z_rect(525, 485, 690, 685)   # Aula floor area east of building L (L stands inside the hall)
-    add(0, cx, cz, w, d, "hall", "Aula")     # the big glass hall south of Z, ground floor
     add(1, *z_rect(542, 325, 580, 392), "seminar", "Hörsaal 2 - Infineon")   # HS 2, between HS 3 and HS 1
     connectors = [dict(zip("xzwd", z_rect(*c)), floors=[0, 1]) for c in Z_CONNECTORS]
     snap_connectors(connectors, build_n()["blocks"], blocks)
+    connectors += [dict(zip("xzwd", z_rect(*c)), floors=[0, 1], tunnel=True) for c in Z_TUNNELS]
     return {"id": "Z", "name": "Zentralgebäude", "floors": [0, 1, 2], "floor_height": 4.0,
             "blocks": blocks, "rooms": rooms, "connectors": connectors,
             "source": "Traced from campusplan.aau.at (Zentralgebäude, floor 1), simplified; floor 1 layout repeated "
@@ -219,7 +222,7 @@ def build_wing(bid, name, segments, teal, floors, floor_height, extra=(), source
 
 
 def build_l():
-    # small block standing inside the Aula hall, 4 storeys
+    # small block between Z and S (the library box on the satellite picture), 4 storeys; the middle tunnel stops at it
     return build_wing("L", "Hörsaaltrakt L", [(420, 470, 520, 590)], [(455, 555, 500, 588)], (0, 1, 2, 3), 3.8,
                       source="Traced from campusplan.aau.at (building L, floor 1); room numbers approximate.")
 
@@ -368,12 +371,24 @@ def build_v():
 
 if __name__ == "__main__":
     campus = {"campus": "AAU Klagenfurt", "units": "metres; x east, z south; origin = centre of building V",
+              # true north in the model (the campus grid is turned by PHI against the north-up plan): for the compass
+              "north": [round(-math.sin(PHI), 4), round(-math.cos(PHI), 4)],
               "buildings": [build_v(), build_n(), build_z(), build_l(), build_s()]}
-    from resolve_overlaps import resolve_blocks, resolve_connectors, resolve_rooms, smooth_connectors   # needs shapely
+    from resolve_overlaps import (resolve_blocks, resolve_connectors, resolve_rooms, smooth_connectors,   # needs shapely
+                                  split_tunnels, wall_point)
     name_real_rooms(campus["buildings"])
     resolve_blocks(campus["buildings"])
     resolve_connectors(campus["buildings"])
     smooth_connectors(campus["buildings"])
+    z = next(b for b in campus["buildings"] if b["id"] == "Z")
+    corridors = [c for c in z["connectors"] if not c.get("tunnel")]
+    for tunnel, corridor in zip([c for c in z["connectors"] if c.get("tunnel")], corridors):
+        tunnel.update(x=corridor["x"], w=corridor["w"])   # same line as the corridor up to N
+        top = tunnel["z"] - tunnel["d"] / 2                # end inside the S wing, not in the yard behind it
+        tunnel.update(z=round((top + S_WING_INSIDE) / 2, 2), d=round(S_WING_INSIDE - top, 2))
+    split_tunnels(campus["buildings"])
+    ex, ez = zm(*Z_ENTRANCE)
+    z["entrances"] = [{**wall_point(campus["buildings"], ex, ez, +1), "dir": [1, 0], "main": True}]
     print("dropped rooms:", resolve_rooms(campus["buildings"]))
     (HERE.parent.parent / "web" / "map3d" / "campus.json").write_text(json.dumps(campus, indent=1), encoding="utf-8")
     for b in campus["buildings"]:

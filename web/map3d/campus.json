@@ -1,6 +1,10 @@
 {
  "campus": "AAU Klagenfurt",
  "units": "metres; x east, z south; origin = centre of building V",
+ "north": [
+  0.1097,
+  -0.994
+ ],
  "buildings": [
   {
    "id": "V",
@@ -840,7 +844,8 @@
      "name": "Foyer"
     }
    ],
-   "source": "Traced from https://campusplan.aau.at/ (building V / Vorstufe), simplified; capacities are made up."
+   "source": "Traced from https://campusplan.aau.at/ (building V / Vorstufe), simplified; capacities are made up.",
+   "connectors": []
   },
   {
    "id": "N",
@@ -3410,83 +3415,6 @@
        56.56
       ]
      ]
-    },
-    {
-     "poly": [
-      [
-       133.62,
-       95.08
-      ],
-      [
-       131.61,
-       95.08
-      ],
-      [
-       131.61,
-       90.49
-      ],
-      [
-       103.87,
-       90.49
-      ],
-      [
-       103.87,
-       108.44
-      ],
-      [
-       85.69,
-       108.44
-      ],
-      [
-       85.69,
-       90.49
-      ],
-      [
-       77.34,
-       90.49
-      ],
-      [
-       77.34,
-       94.78
-      ],
-      [
-       75.44,
-       94.78
-      ],
-      [
-       75.44,
-       121.74
-      ],
-      [
-       85.02,
-       122.27
-      ],
-      [
-       94.89,
-       122.6
-      ],
-      [
-       104.76,
-       122.69
-      ],
-      [
-       114.63,
-       122.57
-      ],
-      [
-       119.56,
-       122.42
-      ],
-      [
-       129.43,
-       121.95
-      ],
-      [
-       133.62,
-       121.66
-      ]
-     ],
-     "open": true
     }
    ],
    "rooms": [
@@ -4289,57 +4217,6 @@
      "name": "Office"
     },
     {
-     "id": "Z.0.22",
-     "floor": 0,
-     "x": 118.55,
-     "z": 107.23,
-     "w": 30.14,
-     "d": 29.49,
-     "capacity": 300,
-     "type": "hall",
-     "bookable": true,
-     "name": "Aula",
-     "poly": [
-      [
-       133.54,
-       92.03
-      ],
-      [
-       103.87,
-       92.03
-      ],
-      [
-       103.87,
-       108.44
-      ],
-      [
-       103.54,
-       108.44
-      ],
-      [
-       103.54,
-       122.68
-      ],
-      [
-       114.63,
-       122.57
-      ],
-      [
-       119.56,
-       122.42
-      ],
-      [
-       129.43,
-       121.95
-      ],
-      [
-       133.54,
-       121.67
-      ]
-     ],
-     "angle": 1.5708
-    },
-    {
      "id": "Z.1.15",
      "floor": 1,
      "x": 114.65,
@@ -4384,9 +4261,53 @@
       0,
       1
      ]
+    },
+    {
+     "x": 77.8,
+     "z": 106.09,
+     "w": 4.18,
+     "d": 31.78,
+     "floors": [
+      0,
+      1
+     ],
+     "tunnel": true
+    },
+    {
+     "x": 103.8,
+     "z": 106.44,
+     "w": 4.0,
+     "d": 32.49,
+     "floors": [
+      0,
+      1
+     ],
+     "tunnel": true
+    },
+    {
+     "x": 129.79,
+     "z": 106.12,
+     "w": 4.55,
+     "d": 31.84,
+     "floors": [
+      0,
+      1
+     ],
+     "tunnel": true
     }
    ],
-   "source": "Traced from campusplan.aau.at (Zentralgeb\u00e4ude, floor 1), simplified; floor 1 layout repeated on floors 0 and 2; room numbers approximate."
+   "source": "Traced from campusplan.aau.at (Zentralgeb\u00e4ude, floor 1), simplified; floor 1 layout repeated on floors 0 and 2; room numbers approximate.",
+   "entrances": [
+    {
+     "x": 164.34,
+     "z": 90.81,
+     "dir": [
+      1,
+      0
+     ],
+     "main": true
+    }
+   ]
   },
   {
    "id": "L",
@@ -4758,7 +4679,8 @@
      "name": "Office"
     }
    ],
-   "source": "Traced from campusplan.aau.at (building L, floor 1); room numbers approximate."
+   "source": "Traced from campusplan.aau.at (building L, floor 1); room numbers approximate.",
+   "connectors": []
   },
   {
    "id": "S",
@@ -10276,7 +10198,8 @@
      "angle": -1.755
     }
    ],
-   "source": "Traced from campusplan.aau.at (S\u00fcdtrakt, floor 1); the wing is simplified to one arc; room numbers approximate."
+   "source": "Traced from campusplan.aau.at (S\u00fcdtrakt, floor 1); the wing is simplified to one arc; room numbers approximate.",
+   "connectors": []
   }
  ]
 }

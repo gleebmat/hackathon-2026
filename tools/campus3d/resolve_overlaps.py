@@ -151,10 +151,12 @@ def resolve_rooms(buildings):
 
 def resolve_connectors(buildings):
     """Trim every corridor to the open gap between buildings, so it ends flush at both walls.
-    Must run after resolve_blocks (needs the building outlines)."""
+    Must run after resolve_blocks (needs the building outlines). Tunnels are split later (split_tunnels)."""
     everything = unary_union([bd["_footprint"] for bd in buildings])
     for bd in buildings:
         for c in bd.get("connectors", []):
+            if c.get("tunnel"):
+                continue
             pieces = _pieces(_bpoly(c).difference(everything), 0.5)
             if not pieces:
                 continue
@@ -178,6 +180,8 @@ def smooth_connectors(buildings, max_shift=8.0, step=0.25):
     everything = unary_union([bd["_footprint"] for bd in buildings])
     for bd in buildings:
         for c in bd.get("connectors", []):
+            if c.get("tunnel"):
+                continue
             half, zc = c["w"] / 2 - 0.05, c["z"]
             best = None
             for i in range(int(max_shift / step) + 1):
@@ -195,3 +199,34 @@ def smooth_connectors(buildings, max_shift=8.0, step=0.25):
             if best:
                 x, z0, z1 = best
                 c.update(x=round(x, 2), z=round((z0 + z1) / 2, 2), d=round(z1 - z0, 2))
+
+
+def split_tunnels(buildings, min_len=2.0):
+    """A tunnel runs as one long strip; every stretch of it that lies between two buildings becomes its own corridor,
+    so it stops where a building (with its rooms) is in the way and goes on behind it. Stretches that touch a
+    building on one end only (past the last one) are dropped."""
+    everything = unary_union([bd["_footprint"] for bd in buildings])
+    edge = everything.buffer(0.2)
+    for bd in buildings:
+        keep = []
+        for c in bd.get("connectors", []):
+            if not c.get("tunnel"):
+                keep.append(c)
+                continue
+            pieces = sorted(_pieces(_bpoly(c).difference(everything), 0.5), key=lambda g: g.bounds[1])
+            for p in pieces[:c.get("max_pieces", 9)]:
+                x0, z0, x1, z1 = p.bounds
+                ends = [box(x0, z0, x1, z0 + 0.05), box(x0, z1 - 0.05, x1, z1)]
+                if z1 - z0 >= min_len and all(e.intersects(edge) for e in ends):
+                    keep.append({"x": round((x0 + x1) / 2, 2), "z": round((z0 + z1) / 2, 2), "w": round(x1 - x0, 2),
+                                 "d": round(z1 - z0, 2), "floors": c["floors"], "tunnel": True})
+        bd["connectors"] = keep
+
+
+def wall_point(buildings, x, z, direction):
+    """The point where a line from (x, z) going east (+1) or west (-1) leaves the buildings: a door on that wall."""
+    from shapely.geometry import LineString
+    everything = unary_union([bd["_footprint"] for bd in buildings])
+    hit = LineString([(x - direction * 30, z), (x + direction * 30, z)]).intersection(everything)
+    xs = [c[0] for g in getattr(hit, "geoms", [hit]) for c in g.coords]
+    return {"x": round(max(xs) if direction > 0 else min(xs), 2), "z": round(z, 2)}

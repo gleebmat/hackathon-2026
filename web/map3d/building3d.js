@@ -24,6 +24,8 @@ const SLAB = 0.35;
  *               {controls: false} if the page has its own buttons (they should call setBuilding / setFloor).
  */
 export function createBuilding(el, input, opts = {}) {
+  const entranceLabel = opts.labels?.entrance ?? "Main entrance";
+  const pendingEntrances = [];
   const buildings = input.buildings ?? [{ id: input.building, ...input,
     blocks: [{ x: 0, z: 0, w: input.outer.w, d: input.outer.d, courtyard: input.courtyard }] }];
 
@@ -183,6 +185,7 @@ export function createBuilding(el, input, opts = {}) {
     for (const c of bd.connectors ?? []) {
       box(c.x, c.z, c.w, c.d, 0, c.floors.length * H, glass, shell, 0.5);
     }
+    for (const e of bd.entrances ?? []) pendingEntrances.push([bd, e, H]);   // drawn once badge() exists
     for (const r of bd.rooms) {
       const isAtrium = r.type === "atrium", h = isAtrium ? 0.25 : (r.storeys ?? 1) * H - 0.8;   // tall halls span floors
       const mat = new THREE.MeshStandardMaterial({ color: TYPE_COLOR[r.type] ?? 0xcccccc, roughness: 0.7,
@@ -341,6 +344,37 @@ export function createBuilding(el, input, opts = {}) {
   };
   applyVisibility();
 
+  // The main entrance: a slim door frame on the wall, a small mat on the ground in front of it and a small tag.
+  // Kept modest (thin, muted); it belongs to the building's ground floor, so it hides with the floor and building
+  // filters.
+  function addEntrance(bd, e, H) {
+    const [dx, dz] = e.dir ?? [1, 0];
+    const group = new THREE.Group();
+    const frameMat = new THREE.MeshStandardMaterial({ color: 0x2f5be0, roughness: 0.5 });
+    const frame = (w, h, d, x, y, z) => {
+      const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), frameMat);
+      m.position.set(x, y, z);
+      group.add(m);
+    };
+    const across = 2.8, height = 2.6, t = 0.18;             // door width, height, frame thickness (m)
+    // frame posts and lintel just outside the wall, door opening facing `dir`
+    frame(t, height, t, 0.1, height / 2, -across / 2);
+    frame(t, height, t, 0.1, height / 2, across / 2);
+    frame(t, t, across + t, 0.1, height, 0);
+    const mat = new THREE.Mesh(new THREE.PlaneGeometry(2.4, across + 0.6),
+      new THREE.MeshStandardMaterial({ color: 0x2f5be0, transparent: true, opacity: 0.35, depthWrite: false }));
+    mat.rotation.x = -Math.PI / 2;
+    mat.position.set(1.4, 0.06, 0);
+    group.add(mat);
+    const tag = badge(entranceLabel, "#2f5be0");
+    tag.scale.set(7.2, 2.7, 1);                              // readable from the default view, still small
+    tag.position.set(3.2, height + 3.4, 0);
+    group.add(tag);
+    group.position.set(e.x, 0, e.z);
+    group.rotation.y = -Math.atan2(dz, dx);                  // local +x points out of the door
+    (floorGroups.get(`${bd.id}:0`) ?? scene).add(group);
+  }
+
   // A badge floating over a room. With `chip`, a small drawing of the sensor board (a chip with pins and a camera
   // lens) comes first: it marks the room the real board watches.
   const badge = (text, color, chip = false) => {
@@ -368,8 +402,24 @@ export function createBuilding(el, input, opts = {}) {
     s.renderOrder = 10;
     return s;
   };
+  for (const [bd, e, H] of pendingEntrances) addEntrance(bd, e, H);
 
+  const north = input.north ?? [0, -1];   // true north in the model (x east, z south), from gen_campus.py
   const api = {
+    /** Clockwise angle (radians) from the top of the screen to true north: the compass needle turns by it. */
+    heading() {
+      const fx = controls.target.x - camera.position.x, fz = controls.target.z - camera.position.z;
+      const len = Math.hypot(fx, fz) || 1, ux = fx / len, uz = fz / len;
+      return Math.atan2(-north[0] * uz + north[1] * ux, north[0] * ux + north[1] * uz);
+    },
+    /** Turns the camera around its target so north points up the screen (same distance and height). */
+    faceNorth() {
+      const off = camera.position.clone().sub(controls.target);
+      const flat = Math.hypot(off.x, off.z);
+      const pos = new THREE.Vector3(controls.target.x - north[0] * flat, camera.position.y, controls.target.z - north[1] * flat);
+      anim = { t0: performance.now(), ms: 700, p0: camera.position.clone(), q0: controls.target.clone(), p1: pos,
+               q1: controls.target.clone() };
+    },
     rooms: () => [...rooms.values()].map((r) => r.data),
     setStatus(id, { status, noise_class, live, board } = {}) {
       const r = rooms.get(id);
@@ -455,6 +505,41 @@ function mountControls(el, api, labels = {}) {
   box.style.cssText = "position:absolute;left:12px;bottom:12px;display:flex;flex-direction:column;gap:6px;" +
     "font:600 12px/1 'Instrument Sans',system-ui,sans-serif;z-index:5;pointer-events:none";
   el.appendChild(box);
+  // Compass above the building/floor buttons: turns with the view so N always points to true north; letters stay
+  // upright. Click it to turn the map so north is up.
+  const compass = document.createElement("button");
+  compass.type = "button";
+  compass.title = L.compassTitle ?? "Turn the map so north is up";
+  compass.setAttribute("aria-label", compass.title);
+  compass.style.cssText = "width:54px;height:54px;padding:0;border:0;border-radius:50%;cursor:pointer;" +
+    "background:rgba(249,251,255,.94);box-shadow:0 0 0 1px #e3e3e0,0 2px 6px rgba(20,30,60,.12);pointer-events:auto";
+  const [lN, lE, lS, lW] = L.compass ?? ["N", "E", "S", "W"];
+  compass.innerHTML = `<svg viewBox="-27 -27 54 54" width="54" height="54" aria-hidden="true">
+    <g class="rose">
+      <circle r="22" fill="none" stroke="#d6dbe5" stroke-width="1"/>
+      <path d="M0 -17 L4.5 0 L0 2.5 L-4.5 0 Z" fill="#c8412f"/>
+      <path d="M0 17 L4.5 0 L0 -2.5 L-4.5 0 Z" fill="#9aa3b5"/>
+      ${[[lN, 0, -1, "#c8412f"], [lE, 1, 0, "#6d685d"], [lS, 0, 1, "#6d685d"], [lW, -1, 0, "#6d685d"]].map(([t, x, y, c]) =>
+        `<text class="l" x="${x * 21}" y="${y * 21}" fill="${c}" font-size="9" font-weight="800" text-anchor="middle"
+          dominant-baseline="central" font-family="'Instrument Sans',system-ui,sans-serif">${t}</text>`).join("")}
+    </g></svg>`;
+  compass.onclick = () => api.faceNorth?.();
+  box.appendChild(compass);
+  const rose = compass.querySelector(".rose");
+  const letters = [...compass.querySelectorAll(".l")];
+  let lastDeg = null;
+  const spin = () => {
+    if (api.heading && compass.isConnected) {
+      const deg = Math.round(api.heading() * 180 / Math.PI * 10) / 10;
+      if (deg !== lastDeg) {
+        lastDeg = deg;
+        rose.setAttribute("transform", `rotate(${deg})`);
+        for (const t of letters) t.setAttribute("transform", `rotate(${-deg} ${t.getAttribute("x")} ${t.getAttribute("y")})`);
+      }
+    }
+    requestAnimationFrame(spin);
+  };
+  spin();
   let building = null, floor = null;
   const row = () => {
     const r = document.createElement("div");
