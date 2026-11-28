@@ -58,6 +58,7 @@ const float PRESENT_NOW = 0.70;              // a single frame this sure counts 
 const float FACE_SCORE = 0.40;               // face detector score that counts as a person
 const float ITEM_SCORE = 0.30;               // objectness x class score that counts as an item
 const uint32_t RESULT_FRESH_MS = 120000;     // older detector results are not used
+const uint32_t ITEMS_BASELINE_MS = 300000;   // empty room: refresh the item baseline every 5 minutes
 
 // COCO classes people forget (index in the model's 80 classes).
 struct ItemClass { int id; const char* name; };
@@ -404,8 +405,11 @@ void loop() {
   if (fb && modelOk) {
     static bool wasPresent = false;
 #if COUNT_PEOPLE || FIND_ITEMS
-    // hand this frame to the idle worker: faces while someone is here, items while the room is empty
-    int next = wasPresent ? (faceModel ? JOB_FACES : JOB_NONE) : (itemsModel ? JOB_ITEMS : JOB_NONE);
+    // hand this frame to the idle worker: faces while someone is here; items once people have left (and every few
+    // minutes in an empty room for the baseline). An item check is slow, so it doesn't run all the time: a face
+    // count has to wait for a running item check.
+    bool itemsDue = items < 0 || occupied || millis() - itemsAt > ITEMS_BASELINE_MS;
+    int next = wasPresent ? (faceModel ? JOB_FACES : JOB_NONE) : (itemsModel && itemsDue ? JOB_ITEMS : JOB_NONE);
     bool feed = job == JOB_NONE && next != JOB_NONE;
     prepare(fb, feed ? jobRgb : nullptr);
     if (feed) {
